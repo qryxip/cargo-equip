@@ -1,6 +1,8 @@
 pub mod shell;
+mod workspace;
 
 use crate::shell::Shell;
+use crate::workspace::MetadataExt as _;
 use std::path::PathBuf;
 use structopt::{clap::AppSettings, StructOpt};
 
@@ -30,10 +32,6 @@ pub enum Opt {
         #[structopt(long, value_name("NAME"))]
         bin: Option<String>,
 
-        /// Package with the bin target
-        #[structopt(short, long, value_name("SPEC"))]
-        package: Option<String>,
-
         /// Path to Cargo.toml
         #[structopt(long, value_name("PATH"))]
         manifest_path: Option<PathBuf>,
@@ -49,11 +47,29 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let Opt::Equip {
         src,
         bin,
-        package,
         manifest_path,
     } = opt;
 
     let Context { cwd, shell } = ctx;
+
+    let manifest_path = if let Some(manifest_path) = manifest_path {
+        cwd.join(manifest_path.strip_prefix(".").unwrap_or(&manifest_path))
+    } else {
+        workspace::locate_project(&cwd)?
+    };
+
+    let metadata = workspace::cargo_metadata(&manifest_path, &cwd)?;
+
+    let (bin, package) = if let Some(bin) = bin {
+        metadata.bin_target_by_name(&bin)
+    } else if let Some(src) = src {
+        metadata.bin_target_by_src_path(&cwd.join(src))
+    } else {
+        metadata.exactly_one_bin_target()
+    }?;
+
+    dbg!(&bin.name);
+    dbg!(&package.name);
 
     todo!();
 }
