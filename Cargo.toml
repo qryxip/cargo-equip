@@ -1,0 +1,12 @@
+[package]
+name = "cargo-equip"
+version = "0.0.0"
+authors = ["Ryo Yamashita <qryxip@gmail.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "A Cargo subcommand to bundle your code into one `.rs` file for competitive programming."
+repository = "https://github.com/qryxip/cargo-equip"
+keywords = ["competitive", "cli", "windows"]
+categories = ["command-line-utilities", "development-tools::cargo-plugins"]
+
+[dependencies]
