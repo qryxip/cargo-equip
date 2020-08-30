@@ -74,6 +74,64 @@ impl cm::Metadata {
             ),
         }
     }
+
+    pub(crate) fn dep_lib_by_extern_crate_name<'a>(
+        &'a self,
+        package_id: &cm::PackageId,
+        extern_crate_name: &str,
+    ) -> anyhow::Result<(&cm::Target, &cm::Package)> {
+        // https://docs.rs/cargo/0.47.0/src/cargo/core/resolver/resolve.rs.html#323-352
+
+        let package = &self[package_id];
+
+        let node = self
+            .resolve
+            .as_ref()
+            .into_iter()
+            .flat_map(|cm::Resolve { nodes, .. }| nodes)
+            .find(|cm::Node { id, .. }| id == package_id)
+            .with_context(|| format!("`{}` not found in the dependency graph", package_id))?;
+
+        let found_explicitly_renamed_one = package
+            .dependencies
+            .iter()
+            .flat_map(|cm::Dependency { rename, .. }| rename)
+            .any(|rename| rename == extern_crate_name);
+
+        if found_explicitly_renamed_one {
+            let package = &self[&node
+                .deps
+                .iter()
+                .find(|cm::NodeDep { name, .. }| name == extern_crate_name)
+                .expect("found the dep in `dependencies`, not in `resolve.deps`")
+                .pkg];
+
+            let lib = package
+                .targets
+                .iter()
+                .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])
+                .with_context(|| {
+                    format!(
+                        "`{}` is resolved as `{}` but it has no `lib` target",
+                        extern_crate_name, package.name,
+                    )
+                })?;
+
+            Ok((lib, package))
+        } else {
+            node.dependencies
+                .iter()
+                .map(|dep_id| &self[dep_id])
+                .flat_map(|p| p.targets.iter().map(move |t| (t, p)))
+                .find(|(t, _)| *t.kind == ["lib".to_owned()])
+                .with_context(|| {
+                    format!(
+                        "no external library found which `extern_crate_name` is `{}`",
+                        extern_crate_name,
+                    )
+                })
+        }
+    }
 }
 
 fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &cm::Package)> {
