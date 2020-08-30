@@ -13,3 +13,7 @@ keywords = ["competitive", "cli", "windows"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins"]
 
 [dependencies]
+anyhow = "1.0.32"
+structopt = "0.3.17"
+atty = "0.2.14"
+termcolor = "1.1.0"
