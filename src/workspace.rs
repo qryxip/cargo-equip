@@ -2,7 +2,11 @@ use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
 use itertools::Itertools as _;
-use std::path::{Path, PathBuf};
+use serde::Deserialize;
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::{Path, PathBuf},
+};
 
 pub(crate) fn locate_project(cwd: &Path) -> anyhow::Result<PathBuf> {
     cwd.ancestors()
@@ -141,4 +145,16 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
         .filter(move |cm::Package { id, .. }| metadata.workspace_members.contains(id))
         .flat_map(|p| p.targets.iter().map(move |t| (t, p)))
         .filter(|(cm::Target { kind, .. }, _)| *kind == ["bin".to_owned()])
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+struct PackageMetadata {
+    cargo_equip: PackageMetadataCargoEquip,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+struct PackageMetadataCargoEquip {
+    mod_dependencies: HashMap<String, BTreeSet<String>>,
 }

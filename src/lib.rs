@@ -1,3 +1,4 @@
+mod rust;
 pub mod shell;
 mod workspace;
 
@@ -68,8 +69,14 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         metadata.exactly_one_bin_target()
     }?;
 
-    dbg!(&bin.name);
-    dbg!(&package.name);
+    let code = syn::parse_file(&std::fs::read_to_string(&bin.src_path)?)?;
+
+    let output = rust::parse_exactly_one_use(&code)?;
+    if let Some(output) = output {
+        dbg!(output.extern_crate_name);
+        dbg!(output.mods);
+        dbg!(output.uses.len());
+    }
 
     todo!();
 }
