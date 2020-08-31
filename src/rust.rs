@@ -92,7 +92,7 @@ pub(crate) fn parse_exactly_one_use(file: &syn::File) -> syn::Result<Option<Equi
         _ => {
             return Err(syn::Error::new(
                 item_use.tree.span(),
-                "expected `$ident::$tree`",
+                "expected `::$ident::$tree`",
             ));
         }
     };
