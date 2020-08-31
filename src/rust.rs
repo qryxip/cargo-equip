@@ -1,6 +1,10 @@
-use maplit::btreeset;
+use anyhow::bail;
+use maplit::{btreemap, btreeset};
 use proc_macro2::Span;
-use std::{collections::BTreeSet, mem};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    mem,
+};
 use syn::{
     parse_quote, spanned::Spanned, Ident, Item, ItemUse, Meta, PathSegment, UseGroup, UseName,
     UseRename, UseTree,
@@ -15,6 +19,8 @@ pub(crate) struct Equipment {
 
 #[allow(clippy::type_complexity)]
 pub(crate) fn parse_exactly_one_use(file: &syn::File) -> syn::Result<Option<Equipment>> {
+    // TODO: find `#[cargo_equip::..]` in inline/external `mod`s and raise an error
+
     let mut uses = vec![];
 
     for item in &file.items {
@@ -161,4 +167,49 @@ pub(crate) fn parse_exactly_one_use(file: &syn::File) -> syn::Result<Option<Equi
         uses,
         span,
     }))
+}
+
+pub(crate) fn read_mods(
+    src_path: &std::path::Path,
+    names: Option<&BTreeSet<String>>,
+) -> anyhow::Result<BTreeMap<Ident, String>> {
+    let file = syn::parse_file(&std::fs::read_to_string(src_path)?)?;
+
+    let mut contents = btreemap!();
+
+    for item in &file.items {
+        if let Item::Mod(item_mod) = item {
+            if names.map_or(true, |names| names.contains(&item_mod.ident.to_string())) {
+                if item_mod.content.is_some() {
+                    todo!("TODO: inline mod");
+                }
+                if let Some(Meta::List(_)) = item_mod
+                    .attrs
+                    .iter()
+                    .flat_map(|a| a.parse_meta())
+                    .find(|m| matches!(m.path().get_ident(), Some(i) if i == "path"))
+                {
+                    todo!("TODO: `#[path = \"..\"]`");
+                }
+                let paths = vec![
+                    src_path
+                        .with_file_name("")
+                        .join(item_mod.ident.to_string())
+                        .join("mod.rs"),
+                    src_path
+                        .with_file_name("")
+                        .join(item_mod.ident.to_string())
+                        .with_extension("rs"),
+                ];
+                if let Some(path) = paths.iter().find(|p| p.exists()) {
+                    let content = std::fs::read_to_string(path)?;
+                    contents.insert(item_mod.ident.clone(), content);
+                } else {
+                    bail!("none of `{:?}` found", paths);
+                }
+            }
+        }
+    }
+
+    Ok(contents)
 }

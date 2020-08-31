@@ -2,7 +2,7 @@ use std::{
     fmt,
     io::{self, Write},
 };
-use termcolor::{Color, ColorSpec, NoColor, StandardStream, WriteColor as _};
+use termcolor::{Color, ColorSpec, StandardStream, WriteColor as _};
 
 pub struct Shell {
     output: ShellOut,
@@ -13,6 +13,11 @@ impl Shell {
         Self {
             output: ShellOut::stream(),
         }
+    }
+
+    pub(crate) fn out(&mut self) -> &mut dyn Write {
+        let ShellOut::Stream { stdout, .. } = &mut self.output;
+        stdout
     }
 
     pub fn err(&mut self) -> &mut dyn Write {
@@ -26,6 +31,10 @@ impl Shell {
         message: impl fmt::Display,
     ) -> io::Result<()> {
         self.print(status, message, Color::Green, true)
+    }
+
+    pub(crate) fn warn(&mut self, message: impl fmt::Display) -> io::Result<()> {
+        self.print("warn", message, Color::Yellow, false)
     }
 
     pub fn error(&mut self, message: impl fmt::Display) -> io::Result<()> {
@@ -50,6 +59,12 @@ impl Shell {
         }
         stderr.reset()?;
         writeln!(stderr, " {}", message)
+    }
+}
+
+impl Default for Shell {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

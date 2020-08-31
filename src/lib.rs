@@ -2,9 +2,12 @@ mod rust;
 pub mod shell;
 mod workspace;
 
+use crate::rust::Equipment;
 use crate::shell::Shell;
-use crate::workspace::MetadataExt as _;
-use std::path::PathBuf;
+use crate::workspace::{MetadataExt as _, PackageExt as _, PackageMetadataCargoEquip};
+use anyhow::anyhow;
+use quote::ToTokens as _;
+use std::{collections::BTreeSet, path::PathBuf};
 use structopt::{clap::AppSettings, StructOpt};
 
 #[derive(StructOpt, Debug)]
@@ -61,7 +64,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let metadata = workspace::cargo_metadata(&manifest_path, &cwd)?;
 
-    let (bin, package) = if let Some(bin) = bin {
+    let (bin, bin_package) = if let Some(bin) = bin {
         metadata.bin_target_by_name(&bin)
     } else if let Some(src) = src {
         metadata.bin_target_by_src_path(&cwd.join(src))
@@ -69,14 +72,100 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         metadata.exactly_one_bin_target()
     }?;
 
-    let code = syn::parse_file(&std::fs::read_to_string(&bin.src_path)?)?;
+    shell.status("Bundling", "code")?;
 
-    let output = rust::parse_exactly_one_use(&code)?;
-    if let Some(output) = output {
-        dbg!(output.extern_crate_name);
-        dbg!(output.mods);
-        dbg!(output.uses.len());
+    let code = &std::fs::read_to_string(&bin.src_path)?;
+
+    if let Some(Equipment {
+        extern_crate_name,
+        mods,
+        uses,
+        span,
+    }) = rust::parse_exactly_one_use(&syn::parse_file(&code)?)
+        .map_err(|e| anyhow!("{} (span: {:?})", e, e.span()))?
+    {
+        let (lib, lib_package) = metadata
+            .dep_lib_by_extern_crate_name(&bin_package.id, &extern_crate_name.to_string())?;
+
+        let PackageMetadataCargoEquip { mod_dependencies } = lib_package.parse_metadata()?;
+
+        let mod_names = mods.map(|mods| {
+            mods.iter()
+                .map(ToString::to_string)
+                .collect::<BTreeSet<_>>()
+        });
+
+        let mod_names = if let Some(mut cur) = mod_names {
+            'search: loop {
+                let mut next = cur.clone();
+                for mod_name in &cur {
+                    if let Some(mod_dependencies) = mod_dependencies.get(mod_name) {
+                        next.extend(mod_dependencies.iter().cloned());
+                    } else {
+                        shell.warn(format!(
+                            "`package.metadata.cargo-equip.mod-dependencies.\"{}\"`. \
+                             including all of the modules",
+                            mod_name
+                        ))?;
+                        break 'search None;
+                    }
+                }
+                if next.len() == cur.len() {
+                    break Some(next);
+                }
+                cur = next;
+            }
+        } else {
+            None
+        };
+
+        let mod_contents = rust::read_mods(&lib.src_path, mod_names.as_ref())?;
+
+        let mut edit = "".to_owned();
+
+        for (i, s) in code.lines().enumerate() {
+            if i + 1 == span.start().line && i + 1 == span.end().line {
+                edit += &s[..span.start().column];
+                edit += &s[span.end().column..];
+            } else if i + 1 == span.start().line && i + 1 < span.end().line {
+                edit += &s[..span.start().column];
+            } else if i + 1 > span.start().line && i + 1 == span.end().line {
+                edit += &s[span.end().column..];
+            } else if i + 1 < span.start().line || i + 1 > span.end().line {
+                edit += s;
+            }
+            edit += "\n";
+        }
+
+        edit += "\n";
+
+        for item_use in uses {
+            edit += &item_use.into_token_stream().to_string();
+            edit += "\n";
+        }
+
+        for (mod_name, mod_content) in mod_contents {
+            edit += "\npub mod ";
+            edit += &mod_name.to_string();
+            edit += " {\n";
+            for line in mod_content.lines() {
+                if !line.is_empty() {
+                    edit += "    ";
+                }
+                edit += line;
+                edit += "\n";
+            }
+            edit += "}\n";
+        }
+
+        write!(shell.out(), "{}", edit)?;
+    } else {
+        shell.warn(format!(
+            "could not find `#[::cargo_equip::equip]` attribute in `{}`. returning the file \
+             content as-is",
+            bin.src_path.display(),
+        ))?;
+        write!(shell.out(), "{}", code)?;
     }
-
-    todo!();
+    Ok(())
 }

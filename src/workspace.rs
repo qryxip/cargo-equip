@@ -127,7 +127,7 @@ impl cm::Metadata {
                 .iter()
                 .map(|dep_id| &self[dep_id])
                 .flat_map(|p| p.targets.iter().map(move |t| (t, p)))
-                .find(|(t, _)| *t.kind == ["lib".to_owned()])
+                .find(|(t, _)| t.name == extern_crate_name && *t.kind == ["lib".to_owned()])
                 .with_context(|| {
                     format!(
                         "no external library found which `extern_crate_name` is `{}`",
@@ -147,14 +147,36 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
         .filter(|(cm::Target { kind, .. }, _)| *kind == ["bin".to_owned()])
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-struct PackageMetadata {
-    cargo_equip: PackageMetadataCargoEquip,
+#[ext(PackageExt)]
+impl cm::Package {
+    pub(crate) fn parse_metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "kebab-case")]
+        struct PackageMetadata {
+            cargo_equip: Option<PackageMetadataCargoEquip>,
+        }
+
+        let PackageMetadata { cargo_equip } = serde_json::from_value(self.metadata.clone())
+            .with_context(|| {
+                format!(
+                    "could not parse `package.metadata.cargo-equip` at `{}`",
+                    self.manifest_path.display(),
+                )
+            })?;
+
+        if let Some(cargo_equip) = cargo_equip {
+            Ok(cargo_equip)
+        } else {
+            bail!(
+                "missing `package.metadata.cargo-equip` in `{}`",
+                self.manifest_path.display(),
+            );
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
-struct PackageMetadataCargoEquip {
-    mod_dependencies: HashMap<String, BTreeSet<String>>,
+pub(crate) struct PackageMetadataCargoEquip {
+    pub(crate) mod_dependencies: HashMap<String, BTreeSet<String>>,
 }
