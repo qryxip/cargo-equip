@@ -132,7 +132,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                         next.extend(mod_dependencies.iter().cloned());
                     } else {
                         shell.warn(format!(
-                            "`package.metadata.cargo-equip.mod-dependencies.\"{}\"`. \
+                            "missing `package.metadata.cargo-equip.mod-dependencies.\"{}\"`. \
                              including all of the modules",
                             mod_name
                         ))?;
