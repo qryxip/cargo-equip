@@ -185,7 +185,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         if oneline == Oneline::Mods {
             edit += "\n";
             for (mod_name, mod_content) in mod_contents {
-                edit += "#[rustfmt::skip] pub mod ";
+                edit += "#[allow(clippy::deprecated_cfg_attr)] #[cfg_attr(rustfmt, rustfmt::skip)]";
+                edit += " pub mod ";
                 edit += &mod_name.to_string();
                 edit += " { ";
                 edit += &mod_content
