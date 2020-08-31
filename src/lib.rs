@@ -7,7 +7,7 @@ use crate::shell::Shell;
 use crate::workspace::{MetadataExt as _, PackageExt as _, PackageMetadataCargoEquip};
 use anyhow::anyhow;
 use quote::ToTokens as _;
-use std::{collections::BTreeSet, path::PathBuf};
+use std::{collections::BTreeSet, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
 
 #[derive(StructOpt, Debug)]
@@ -36,10 +36,38 @@ pub enum Opt {
         #[structopt(long, value_name("NAME"))]
         bin: Option<String>,
 
+        /// Fold part of code
+        #[structopt(long, possible_values(Oneline::VARIANTS), default_value("none"))]
+        oneline: Oneline,
+
         /// Path to Cargo.toml
         #[structopt(long, value_name("PATH"))]
         manifest_path: Option<PathBuf>,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Oneline {
+    None,
+    Mods,
+    All,
+}
+
+impl Oneline {
+    const VARIANTS: &'static [&'static str] = &["none", "mods", "all"];
+}
+
+impl FromStr for Oneline {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, &'static str> {
+        match s {
+            "none" => Ok(Self::None),
+            "mods" => Ok(Self::Mods),
+            "all" => Ok(Self::All),
+            _ => Err(r#"expected "none", "mods", or "all""#),
+        }
+    }
 }
 
 pub struct Context<'a> {
@@ -51,6 +79,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let Opt::Equip {
         src,
         bin,
+        oneline,
         manifest_path,
     } = opt;
 
@@ -144,18 +173,39 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             edit += "\n";
         }
 
-        for (mod_name, mod_content) in mod_contents {
-            edit += "\npub mod ";
-            edit += &mod_name.to_string();
-            edit += " {\n";
-            for line in mod_content.lines() {
-                if !line.is_empty() {
-                    edit += "    ";
-                }
-                edit += line;
-                edit += "\n";
+        if oneline == Oneline::Mods {
+            edit += "\n";
+            for (mod_name, mod_content) in mod_contents {
+                edit += "#[rustfmt::skip] pub mod ";
+                edit += &mod_name.to_string();
+                edit += " { ";
+                edit += &mod_content
+                    .parse::<proc_macro2::TokenStream>()
+                    .map_err(|e| anyhow!("{:?}", e))?
+                    .to_string();
+                edit += " }\n";
             }
-            edit += "}\n";
+        } else {
+            for (mod_name, mod_content) in mod_contents {
+                edit += "\npub mod ";
+                edit += &mod_name.to_string();
+                edit += " {\n";
+                for line in mod_content.lines() {
+                    if !line.is_empty() {
+                        edit += "    ";
+                    }
+                    edit += line;
+                    edit += "\n";
+                }
+                edit += "}\n";
+            }
+        }
+
+        if oneline == Oneline::All {
+            edit = edit
+                .parse::<proc_macro2::TokenStream>()
+                .map_err(|e| anyhow!("{:?}", e))?
+                .to_string();
         }
 
         write!(shell.out(), "{}", edit)?;
