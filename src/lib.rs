@@ -155,17 +155,26 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         for (i, s) in code.lines().enumerate() {
             if i + 1 == span.start().line && i + 1 == span.end().line {
                 edit += &s[..span.start().column];
+                edit += "/* ";
+                edit += &s[span.start().column..span.end().column];
+                edit += " */";
                 edit += &s[span.end().column..];
             } else if i + 1 == span.start().line && i + 1 < span.end().line {
                 edit += &s[..span.start().column];
+                edit += "/* ";
+                edit += &s[span.start().column..];
             } else if i + 1 > span.start().line && i + 1 == span.end().line {
+                edit += &s[..span.end().column];
+                edit += " */";
                 edit += &s[span.end().column..];
-            } else if i + 1 < span.start().line || i + 1 > span.end().line {
+            } else {
                 edit += s;
             }
             edit += "\n";
         }
 
+        edit += "\n";
+        edit += "// The following code was expanded by `cargo-equip`.\n";
         edit += "\n";
 
         for item_use in uses {
