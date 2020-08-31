@@ -18,11 +18,12 @@ atty = "0.2.14"
 cargo_metadata = "0.11.1"
 easy-ext = "0.2.3"
 itertools = "0.9.0"
-serde = { version = "1.0.115", features = ["derive"] }
-structopt = "0.3.17"
-termcolor = "1.1.0"
-syn = { version = "1.0.39", features = ["full"] }
-proc-macro2 = { version = "1.0.19", features = ["span-locations"] }
 maplit = "1.0.2"
+proc-macro2 = { version = "1.0.19", features = ["span-locations"] }
 quote = "1.0.7"
+serde = { version = "1.0.115", features = ["derive"] }
 serde_json = "1.0.57"
+structopt = "0.3.17"
+syn = { version = "1.0.39", features = ["full"] }
+tempfile = "3.1.0"
+termcolor = "1.1.0"

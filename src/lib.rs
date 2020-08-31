@@ -1,4 +1,5 @@
 mod rust;
+mod rustfmt;
 pub mod shell;
 mod workspace;
 
@@ -36,7 +37,11 @@ pub enum Opt {
         #[structopt(long, value_name("NAME"))]
         bin: Option<String>,
 
-        /// Fold part of code
+        /// Format the output
+        #[structopt(long)]
+        rustfmt: bool,
+
+        /// Fold part of the output
         #[structopt(long, possible_values(Oneline::VARIANTS), default_value("none"))]
         oneline: Oneline,
 
@@ -79,6 +84,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let Opt::Equip {
         src,
         bin,
+        rustfmt,
         oneline,
         manifest_path,
     } = opt;
@@ -216,6 +222,10 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                 .parse::<proc_macro2::TokenStream>()
                 .map_err(|e| anyhow!("{:?}", e))?
                 .to_string();
+        }
+
+        if rustfmt {
+            edit = rustfmt::rustfmt(&edit, &bin.edition)?;
         }
 
         write!(shell.out(), "{}", edit)?;
