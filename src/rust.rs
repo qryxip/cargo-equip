@@ -17,7 +17,6 @@ pub(crate) struct Equipment {
     pub(crate) span: Span,
 }
 
-#[allow(clippy::type_complexity)]
 pub(crate) fn parse_exactly_one_use(file: &syn::File) -> syn::Result<Option<Equipment>> {
     // TODO: find `#[cargo_equip::..]` in inline/external `mod`s and raise an error
 
