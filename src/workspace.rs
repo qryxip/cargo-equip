@@ -2,10 +2,12 @@ use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
 use itertools::Itertools as _;
+use rand::Rng as _;
 use serde::Deserialize;
 use std::{
     collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
+    str,
 };
 
 pub(crate) fn locate_project(cwd: &Path) -> anyhow::Result<PathBuf> {
@@ -32,7 +34,23 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     package: &cm::Package,
     code: &str,
 ) -> anyhow::Result<()> {
-    let temp_pkg = tempfile::Builder::new().prefix("cargo-equip-").tempdir()?;
+    let name = {
+        let mut rng = rand::thread_rng();
+        let suf = (0..16)
+            .map(|_| match rng.gen_range(0, 26 + 10) {
+                n @ 0..=25 => b'a' + n,
+                n @ 26..=35 => b'0' + n - 26,
+                _ => unreachable!(),
+            })
+            .collect::<Vec<_>>();
+        let suf = str::from_utf8(&suf).expect("should be valid ASCII");
+        format!("cargo-equip-check-output-{}", suf)
+    };
+
+    let temp_pkg = tempfile::Builder::new()
+        .prefix(&name)
+        .rand_bytes(0)
+        .tempdir()?;
 
     let cargo_exe = crate::process::cargo_exe()?;
 
@@ -45,7 +63,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .arg("--edition")
         .arg(&package.edition)
         .arg("--name")
-        .arg("cargo-equip-check-output")
+        .arg(&name)
         .arg(temp_pkg.path())
         .cwd(&metadata.workspace_root)
         .exec()?;
@@ -63,7 +81,18 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         temp_manifest.to_string(),
     )?;
 
-    std::fs::write(temp_pkg.path().join("src").join("main.rs"), code)?;
+    std::fs::create_dir(temp_pkg.path().join("src").join("bin"))?;
+    std::fs::write(
+        temp_pkg
+            .path()
+            .join("src")
+            .join("bin")
+            .join(name)
+            .with_extension("rs"),
+        code,
+    )?;
+
+    std::fs::remove_file(temp_pkg.path().join("src").join("main.rs"))?;
 
     std::fs::copy(
         metadata.workspace_root.join("Cargo.lock"),
