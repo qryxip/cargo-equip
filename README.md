@@ -8,6 +8,78 @@
 
 A Cargo subcommand to bundle your code into one `.rs` file for competitive programming.
 
+## Example
+
+[Point Add Range Sum - Library-Cheker](https://judge.yosupo.jp/problem/point_add_range_sum)
+
+`lib`
+
+```toml
+[package.metadata.cargo-equip-lib.mod-dependencies]
+"algebraic" = []
+"fenwick" = ["algebraic"]
+"input" = []
+"output" = []
+```
+
+`bin`
+
+```toml
+[dependencies]
+__complib = { package = "complib", path = "/path/to/complib" }
+cargo_equip_marker = { git = "https://github.com/qryxip/cargo-equip", rev = "37d4972d57be0d41d3d8edfb5db691487359cb3b" }
+```
+
+```rust
+#[cargo_equip::equip]
+use ::__complib::{fenwick::AdditiveFenwickTree, input, output};
+
+use std::io::Write as _;
+
+fn main() {
+    input! {
+        n: usize,
+        q: usize,
+        r#as: [i64; n],
+    }
+
+    let mut bit = AdditiveFenwickTree::new(n);
+
+    for (i, a) in r#as.into_iter().enumerate() {
+        bit.plus(i, &a);
+    }
+
+    output::buf_print(|out| {
+        macro_rules! println(($($tt:tt)*) => (std::writeln!(out, $($tt)*).unwrap()));
+        for _ in 0..q {
+            input!(kind: u32);
+            match kind {
+                0 => {
+                    input!(p: usize, x: i64);
+                    bit.plus(p, &x);
+                }
+                1 => {
+                    input!(l: usize, r: usize);
+                    println!("{}", bit.query(l..r));
+                }
+                _ => unreachable!(),
+            }
+        }
+    });
+}
+```
+
+↓
+
+```console
+$ cargo equip --oneline mods --rustfmt --check | xsel -ib
+    Bundling code
+    Checking cargo-equip-check-output-ixtp05p7mhbiumzg v0.1.0 (/tmp/cargo-equip-check-output-ixtp05p7mhbiumzg)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.21s
+```
+
+<https://judge.yosupo.jp/submission/20767>
+
 ## License
 
 Dual-licensed under [MIT](https://opensource.org/licenses/MIT) or [Apache-2.0](http://www.apache.org/licenses/LICENSE-2.0).
