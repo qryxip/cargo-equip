@@ -1,4 +1,3 @@
-use crate::shell::Shell;
 use anyhow::{bail, Context as _};
 use itertools::Itertools as _;
 use std::{
@@ -62,11 +61,6 @@ impl ProcessBuilder<Present> {
             bail!("{} didn't exit successfully: {}", self, status);
         }
         Ok(())
-    }
-
-    pub(crate) fn exec_with_shell_status(&self, shell: &mut Shell) -> anyhow::Result<()> {
-        shell.status("Running", self)?;
-        self.exec()
     }
 }
 

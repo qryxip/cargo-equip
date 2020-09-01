@@ -231,7 +231,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         }
 
         if rustfmt {
-            edit = rustfmt::rustfmt(shell, &metadata.workspace_root, &edit, &bin.edition)?;
+            edit = rustfmt::rustfmt(&metadata.workspace_root, &edit, &bin.edition)?;
         }
 
         edit

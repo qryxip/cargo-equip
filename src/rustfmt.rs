@@ -1,12 +1,6 @@
-use crate::shell::Shell;
 use std::{env, path::Path};
 
-pub(crate) fn rustfmt(
-    shell: &mut Shell,
-    workspace_root: &Path,
-    code: &str,
-    edition: &str,
-) -> anyhow::Result<String> {
+pub(crate) fn rustfmt(workspace_root: &Path, code: &str, edition: &str) -> anyhow::Result<String> {
     let tempfile = tempfile::Builder::new()
         .prefix("cargo-equip-")
         .suffix(".rs")
@@ -23,7 +17,7 @@ pub(crate) fn rustfmt(
         .args(&["--edition", edition])
         .arg(&tempfile)
         .cwd(workspace_root)
-        .exec_with_shell_status(shell)?;
+        .exec()?;
 
     let formatted = std::fs::read_to_string(&tempfile)?;
 
