@@ -1,3 +1,4 @@
+mod process;
 mod rust;
 mod rustfmt;
 pub mod shell;
@@ -225,7 +226,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         }
 
         if rustfmt {
-            edit = rustfmt::rustfmt(&edit, &bin.edition)?;
+            edit = rustfmt::rustfmt(shell, &metadata.workspace_root, &edit, &bin.edition)?;
         }
 
         write!(shell.out(), "{}", edit)?;
