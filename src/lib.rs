@@ -6,7 +6,7 @@ mod workspace;
 
 use crate::rust::Equipment;
 use crate::shell::Shell;
-use crate::workspace::{MetadataExt as _, PackageExt as _, PackageMetadataCargoEquip};
+use crate::workspace::{LibPackageMetadata, MetadataExt as _, PackageExt as _};
 use anyhow::anyhow;
 use quote::ToTokens as _;
 use std::{collections::BTreeSet, path::PathBuf, str::FromStr};
@@ -128,7 +128,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         let (lib, lib_package) = metadata
             .dep_lib_by_extern_crate_name(&bin_package.id, &extern_crate_name.to_string())?;
 
-        let PackageMetadataCargoEquip { mod_dependencies } = lib_package.parse_metadata()?;
+        let LibPackageMetadata { mod_dependencies } = lib_package.parse_lib_metadata()?;
 
         let mod_names = mods.map(|mods| {
             mods.iter()
@@ -144,7 +144,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                         next.extend(mod_dependencies.iter().cloned());
                     } else {
                         shell.warn(format!(
-                            "missing `package.metadata.cargo-equip.mod-dependencies.\"{}\"`. \
+                            "missing `package.metadata.cargo-equip-lib.mod-dependencies.\"{}\"`. \
                              including all of the modules",
                             mod_name
                         ))?;

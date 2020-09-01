@@ -214,26 +214,26 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 
 #[ext(PackageExt)]
 impl cm::Package {
-    pub(crate) fn parse_metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
+    pub(crate) fn parse_lib_metadata(&self) -> anyhow::Result<LibPackageMetadata> {
         #[derive(Deserialize)]
         #[serde(rename_all = "kebab-case")]
         struct PackageMetadata {
-            cargo_equip: Option<PackageMetadataCargoEquip>,
+            cargo_equip_lib: Option<LibPackageMetadata>,
         }
 
-        let PackageMetadata { cargo_equip } = serde_json::from_value(self.metadata.clone())
+        let PackageMetadata { cargo_equip_lib } = serde_json::from_value(self.metadata.clone())
             .with_context(|| {
                 format!(
-                    "could not parse `package.metadata.cargo-equip` at `{}`",
+                    "could not parse `package.metadata.cargo-equip-lib` at `{}`",
                     self.manifest_path.display(),
                 )
             })?;
 
-        if let Some(cargo_equip) = cargo_equip {
-            Ok(cargo_equip)
+        if let Some(cargo_equip_lib) = cargo_equip_lib {
+            Ok(cargo_equip_lib)
         } else {
             bail!(
-                "missing `package.metadata.cargo-equip` in `{}`",
+                "missing `package.metadata.cargo-equip-lib` in `{}`",
                 self.manifest_path.display(),
             );
         }
@@ -242,6 +242,6 @@ impl cm::Package {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) struct PackageMetadataCargoEquip {
+pub(crate) struct LibPackageMetadata {
     pub(crate) mod_dependencies: HashMap<String, BTreeSet<String>>,
 }
