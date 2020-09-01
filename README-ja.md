@@ -3,8 +3,10 @@
 [![CI](https://github.com/qryxip/cargo-equip/workflows/CI/badge.svg)](https://github.com/qryxip/cargo-equip/actions?workflow=CI)
 [![codecov](https://codecov.io/gh/qryxip/cargo-equip/branch/master/graph/badge.svg)](https://codecov.io/gh/qryxip/cargo-equip/branch/master)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
+[![Crates.io](https://img.shields.io/crates/v/cargo-equip.svg)](https://crates.io/crates/cargo-equip)
+[![Crates.io](https://img.shields.io/crates/l/cargo-equip.svg)](https://crates.io/crates/cargo-equip)
 
-[日本語](https://github.com/qryxip/cargo-equip/blob/master/README-ja.md)
+[English](https://github.com/qryxip/cargo-equip)
 
 競技プログラミング用にRustコードを一つの`.rs`ファイルにバンドルするCargoサブコマンドです。
 
@@ -84,7 +86,9 @@ $ cargo equip --oneline mods --rustfmt --check | xsel -ib
 
 ### Crates.io
 
-まだです。
+```console
+$ cargo install cargo-equip
+```
 
 ### `master`
 
@@ -94,7 +98,7 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
 
 ### GitHub Releases
 
-まだです。
+[バイナリでの提供](https://github.com/qryxip/cargo-equip/releases)もしています。
 
 ## 使い方
 
