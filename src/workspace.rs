@@ -1,3 +1,4 @@
+use crate::shell::Shell;
 use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
@@ -25,6 +26,70 @@ pub(crate) fn cargo_metadata(manifest_path: &Path, cwd: &Path) -> cm::Result<cm:
         .manifest_path(manifest_path)
         .current_dir(cwd)
         .exec()
+}
+
+pub(crate) fn cargo_check_using_current_lockfile_and_cache(
+    shell: &mut Shell,
+    metadata: &cm::Metadata,
+    package: &cm::Package,
+    code: &str,
+) -> anyhow::Result<()> {
+    shell.status("Checking", "the generated code")?;
+
+    let temp_pkg = tempfile::Builder::new().prefix("cargo-equip-").tempdir()?;
+
+    let cargo_exe = crate::process::cargo_exe()?;
+
+    crate::process::process(&cargo_exe)
+        .arg("init")
+        .arg("-q")
+        .arg("--vcs")
+        .arg("none")
+        .arg("--bin")
+        .arg("--edition")
+        .arg(&package.edition)
+        .arg("--name")
+        .arg("cargo-equip-check-output")
+        .arg(temp_pkg.path())
+        .cwd(&metadata.workspace_root)
+        .exec_with_shell_status(shell)?;
+
+    let orig_manifest =
+        std::fs::read_to_string(&package.manifest_path)?.parse::<toml_edit::Document>()?;
+
+    let mut temp_manifest = std::fs::read_to_string(temp_pkg.path().join("Cargo.toml"))?
+        .parse::<toml_edit::Document>()?;
+
+    temp_manifest["dependencies"] = orig_manifest["dependencies"].clone();
+
+    let path = temp_pkg.path().join("Cargo.toml");
+    std::fs::write(&path, temp_manifest.to_string())?;
+    shell.status("Modified", path.display())?;
+
+    let path = temp_pkg.path().join("src").join("main.rs");
+    std::fs::write(&path, code)?;
+    shell.status("Modified", path.display())?;
+
+    let cp_src = metadata.workspace_root.join("Cargo.lock");
+    let cp_dst = temp_pkg.path().join("Cargo.lock");
+    std::fs::copy(&cp_src, &cp_dst)?;
+    shell.status(
+        "Copied",
+        format!("{} to {}", cp_src.display(), cp_dst.display()),
+    )?;
+
+    crate::process::process(cargo_exe)
+        .arg("check")
+        .arg("--target-dir")
+        .arg(&metadata.target_directory)
+        .arg("--manifest-path")
+        .arg(temp_pkg.path().join("Cargo.toml"))
+        .arg("--offline")
+        .cwd(&metadata.workspace_root)
+        .exec_with_shell_status(shell)?;
+
+    temp_pkg.close()?;
+    Ok(())
 }
 
 #[ext(MetadataExt)]

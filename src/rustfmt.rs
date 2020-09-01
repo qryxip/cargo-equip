@@ -1,5 +1,4 @@
 use crate::shell::Shell;
-use anyhow::Context as _;
 use std::{env, path::Path};
 
 pub(crate) fn rustfmt(
@@ -16,11 +15,7 @@ pub(crate) fn rustfmt(
 
     std::fs::write(&tempfile, code)?;
 
-    let cargo_exe = env::var_os("CARGO").with_context(|| {
-        "missing `$CARGO`. run this program with `cargo equip`, not `cargo-equip equip`"
-    })?;
-
-    let rustfmt_exe = Path::new(&cargo_exe)
+    let rustfmt_exe = crate::process::cargo_exe()?
         .with_file_name("rustfmt")
         .with_extension(env::consts::EXE_EXTENSION);
 

@@ -38,17 +38,21 @@ pub enum Opt {
         #[structopt(long, value_name("NAME"))]
         bin: Option<String>,
 
-        /// Format the output
-        #[structopt(long)]
-        rustfmt: bool,
-
-        /// Fold part of the output
-        #[structopt(long, possible_values(Oneline::VARIANTS), default_value("none"))]
-        oneline: Oneline,
-
         /// Path to Cargo.toml
         #[structopt(long, value_name("PATH"))]
         manifest_path: Option<PathBuf>,
+
+        /// Fold part of the output before emitting
+        #[structopt(long, possible_values(Oneline::VARIANTS), default_value("none"))]
+        oneline: Oneline,
+
+        /// Format the output before emitting
+        #[structopt(long)]
+        rustfmt: bool,
+
+        /// Check the output before emitting
+        #[structopt(long)]
+        check: bool,
     },
 }
 
@@ -85,9 +89,10 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let Opt::Equip {
         src,
         bin,
-        rustfmt,
-        oneline,
         manifest_path,
+        oneline,
+        rustfmt,
+        check,
     } = opt;
 
     let Context { cwd, shell } = ctx;
@@ -112,7 +117,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let code = &std::fs::read_to_string(&bin.src_path)?;
 
-    if let Some(Equipment {
+    let edit = if let Some(Equipment {
         extern_crate_name,
         mods,
         uses,
@@ -229,14 +234,26 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             edit = rustfmt::rustfmt(shell, &metadata.workspace_root, &edit, &bin.edition)?;
         }
 
-        write!(shell.out(), "{}", edit)?;
+        edit
     } else {
         shell.warn(format!(
             "could not find `#[::cargo_equip::equip]` attribute in `{}`. returning the file \
              content as-is",
             bin.src_path.display(),
         ))?;
-        write!(shell.out(), "{}", code)?;
+
+        code.clone()
+    };
+
+    if check {
+        workspace::cargo_check_using_current_lockfile_and_cache(
+            shell,
+            &metadata,
+            &bin_package,
+            &edit,
+        )?;
     }
+
+    write!(shell.out(), "{}", edit)?;
     Ok(())
 }

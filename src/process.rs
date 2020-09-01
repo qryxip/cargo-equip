@@ -1,7 +1,8 @@
 use crate::shell::Shell;
-use anyhow::bail;
+use anyhow::{bail, Context as _};
 use itertools::Itertools as _;
 use std::{
+    env,
     ffi::{OsStr, OsString},
     fmt,
     path::{Path, PathBuf},
@@ -13,6 +14,14 @@ pub(crate) fn process(program: impl AsRef<OsStr>) -> ProcessBuilder<NotPresent> 
         args: vec![],
         cwd: (),
     }
+}
+
+pub(crate) fn cargo_exe() -> anyhow::Result<PathBuf> {
+    env::var_os("CARGO")
+        .with_context(|| {
+            "missing `$CARGO`. run this program with `cargo equip`, not `cargo-equip equip`"
+        })
+        .map(Into::into)
 }
 
 #[derive(Debug)]
