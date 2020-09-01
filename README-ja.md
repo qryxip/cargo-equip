@@ -153,7 +153,7 @@ cargo_equip_marker = { git = "https://github.com/qryxip/cargo-equip", rev = "37d
 use ::__my_lib::{b::B, c::C};
 ```
 
-`use`のパスにはtrailing colon (`::`)を付けてください。
+`use`のパスにはleading colon (`::`)を付けてください。
 
 ```
 #[cargo_equip::equip]
@@ -162,7 +162,7 @@ use ::__my_lib::{b::B, c::C};
 ```
 
 パスの1つ目のsegmentから展開するべきライブラリを決定します。
-trailing colonを必須としているのはこのためです。
+leading colonを必須としているのはこのためです。
 
 ```
 #[cargo_equip::equip]
