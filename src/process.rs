@@ -52,9 +52,7 @@ impl<C: Presence<PathBuf>> ProcessBuilder<C> {
 }
 
 impl ProcessBuilder<Present> {
-    pub(crate) fn exec_with_shell_status(&self, shell: &mut Shell) -> anyhow::Result<()> {
-        shell.status("Running", self)?;
-
+    pub(crate) fn exec(&self) -> anyhow::Result<()> {
         let status = std::process::Command::new(&self.program)
             .args(&self.args)
             .current_dir(&self.cwd)
@@ -64,6 +62,11 @@ impl ProcessBuilder<Present> {
             bail!("{} didn't exit successfully: {}", self, status);
         }
         Ok(())
+    }
+
+    pub(crate) fn exec_with_shell_status(&self, shell: &mut Shell) -> anyhow::Result<()> {
+        shell.status("Running", self)?;
+        self.exec()
     }
 }
 

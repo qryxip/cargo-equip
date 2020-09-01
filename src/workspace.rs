@@ -1,4 +1,3 @@
-use crate::shell::Shell;
 use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
@@ -29,13 +28,10 @@ pub(crate) fn cargo_metadata(manifest_path: &Path, cwd: &Path) -> cm::Result<cm:
 }
 
 pub(crate) fn cargo_check_using_current_lockfile_and_cache(
-    shell: &mut Shell,
     metadata: &cm::Metadata,
     package: &cm::Package,
     code: &str,
 ) -> anyhow::Result<()> {
-    shell.status("Checking", "the generated code")?;
-
     let temp_pkg = tempfile::Builder::new().prefix("cargo-equip-").tempdir()?;
 
     let cargo_exe = crate::process::cargo_exe()?;
@@ -52,7 +48,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .arg("cargo-equip-check-output")
         .arg(temp_pkg.path())
         .cwd(&metadata.workspace_root)
-        .exec_with_shell_status(shell)?;
+        .exec()?;
 
     let orig_manifest =
         std::fs::read_to_string(&package.manifest_path)?.parse::<toml_edit::Document>()?;
@@ -62,20 +58,16 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
 
     temp_manifest["dependencies"] = orig_manifest["dependencies"].clone();
 
-    let path = temp_pkg.path().join("Cargo.toml");
-    std::fs::write(&path, temp_manifest.to_string())?;
-    shell.status("Modified", path.display())?;
+    std::fs::write(
+        temp_pkg.path().join("Cargo.toml"),
+        temp_manifest.to_string(),
+    )?;
 
-    let path = temp_pkg.path().join("src").join("main.rs");
-    std::fs::write(&path, code)?;
-    shell.status("Modified", path.display())?;
+    std::fs::write(temp_pkg.path().join("src").join("main.rs"), code)?;
 
-    let cp_src = metadata.workspace_root.join("Cargo.lock");
-    let cp_dst = temp_pkg.path().join("Cargo.lock");
-    std::fs::copy(&cp_src, &cp_dst)?;
-    shell.status(
-        "Copied",
-        format!("{} to {}", cp_src.display(), cp_dst.display()),
+    std::fs::copy(
+        metadata.workspace_root.join("Cargo.lock"),
+        temp_pkg.path().join("Cargo.lock"),
     )?;
 
     crate::process::process(cargo_exe)
@@ -86,7 +78,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .arg(temp_pkg.path().join("Cargo.toml"))
         .arg("--offline")
         .cwd(&metadata.workspace_root)
-        .exec_with_shell_status(shell)?;
+        .exec()?;
 
     temp_pkg.close()?;
     Ok(())

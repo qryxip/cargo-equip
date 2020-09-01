@@ -246,12 +246,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     };
 
     if check {
-        workspace::cargo_check_using_current_lockfile_and_cache(
-            shell,
-            &metadata,
-            &bin_package,
-            &edit,
-        )?;
+        workspace::cargo_check_using_current_lockfile_and_cache(&metadata, &bin_package, &edit)?;
     }
 
     write!(shell.out(), "{}", edit)?;
