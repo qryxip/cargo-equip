@@ -10,7 +10,7 @@ mod workspace;
 use crate::rust::Equipment;
 use crate::shell::Shell;
 use crate::workspace::{LibPackageMetadata, MetadataExt as _, PackageExt as _};
-use anyhow::anyhow;
+use anyhow::{anyhow, Context as _};
 use quote::ToTokens as _;
 use std::{collections::BTreeSet, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
@@ -56,6 +56,10 @@ pub enum Opt {
         /// Check the output before emitting
         #[structopt(long)]
         check: bool,
+
+        /// Write to the file instead of STDOUT
+        #[structopt(short, long, value_name("PATH"))]
+        output: Option<PathBuf>,
     },
 }
 
@@ -96,6 +100,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         oneline,
         rustfmt,
         check,
+        output,
     } = opt;
 
     let Context { cwd, shell } = ctx;
@@ -252,6 +257,12 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         workspace::cargo_check_using_current_lockfile_and_cache(&metadata, &bin_package, &edit)?;
     }
 
-    write!(shell.out(), "{}", edit)?;
+    if let Some(output) = output {
+        let output = cwd.join(output);
+        std::fs::write(&output, edit)
+            .with_context(|| format!("could not write `{}`", output.display()))?;
+    } else {
+        write!(shell.out(), "{}", edit)?;
+    }
     Ok(())
 }
