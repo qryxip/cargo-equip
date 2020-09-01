@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+#![warn(rust_2018_idioms)]
+
 mod process;
 mod rust;
 mod rustfmt;
