@@ -34,7 +34,7 @@ impl Shell {
     }
 
     pub(crate) fn warn(&mut self, message: impl fmt::Display) -> io::Result<()> {
-        self.print("warn", message, Color::Yellow, false)
+        self.print("warning", message, Color::Yellow, false)
     }
 
     pub fn error(&mut self, message: impl fmt::Display) -> io::Result<()> {
