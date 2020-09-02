@@ -75,6 +75,16 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .parse::<toml_edit::Document>()?;
 
     temp_manifest["dependencies"] = orig_manifest["dependencies"].clone();
+    if let toml_edit::Item::Table(dependencies) = &mut temp_manifest["dependencies"] {
+        let path_deps = dependencies
+            .iter()
+            .filter(|(_, i)| !i["path"].is_none())
+            .map(|(k, _)| k.to_owned())
+            .collect::<Vec<_>>();
+        for path_dep in path_deps {
+            dependencies.remove(&path_dep);
+        }
+    }
 
     std::fs::write(
         temp_pkg.path().join("Cargo.toml"),
