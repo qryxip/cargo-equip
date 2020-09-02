@@ -171,41 +171,44 @@ pub(crate) fn parse_exactly_one_use(file: &syn::File) -> syn::Result<Option<Equi
 pub(crate) fn read_mods(
     src_path: &std::path::Path,
     names: Option<&BTreeSet<String>>,
-) -> anyhow::Result<BTreeMap<Ident, String>> {
+) -> anyhow::Result<BTreeMap<Ident, Option<String>>> {
     let file = syn::parse_file(&std::fs::read_to_string(src_path)?)?;
 
     let mut contents = btreemap!();
 
     for item in &file.items {
         if let Item::Mod(item_mod) = item {
-            if names.map_or(true, |names| names.contains(&item_mod.ident.to_string())) {
-                if item_mod.content.is_some() {
-                    todo!("TODO: inline mod");
-                }
-                if let Some(Meta::List(_)) = item_mod
-                    .attrs
-                    .iter()
-                    .flat_map(|a| a.parse_meta())
-                    .find(|m| matches!(m.path().get_ident(), Some(i) if i == "path"))
-                {
-                    todo!("TODO: `#[path = \"..\"]`");
-                }
-                let paths = vec![
-                    src_path
-                        .with_file_name("")
-                        .join(item_mod.ident.to_string())
-                        .join("mod.rs"),
-                    src_path
-                        .with_file_name("")
-                        .join(item_mod.ident.to_string())
-                        .with_extension("rs"),
-                ];
-                if let Some(path) = paths.iter().find(|p| p.exists()) {
-                    let content = std::fs::read_to_string(path)?;
-                    contents.insert(item_mod.ident.clone(), content);
+            let is_target = names.map_or(true, |names| names.contains(&item_mod.ident.to_string()));
+            if item_mod.content.is_some() {
+                todo!("TODO: inline mod");
+            }
+            if let Some(Meta::List(_)) = item_mod
+                .attrs
+                .iter()
+                .flat_map(|a| a.parse_meta())
+                .find(|m| matches!(m.path().get_ident(), Some(i) if i == "path"))
+            {
+                todo!("TODO: `#[path = \"..\"]`");
+            }
+            let paths = vec![
+                src_path
+                    .with_file_name("")
+                    .join(item_mod.ident.to_string())
+                    .join("mod.rs"),
+                src_path
+                    .with_file_name("")
+                    .join(item_mod.ident.to_string())
+                    .with_extension("rs"),
+            ];
+            if let Some(path) = paths.iter().find(|p| p.exists()) {
+                let content = if is_target {
+                    Some(std::fs::read_to_string(path)?)
                 } else {
-                    bail!("none of `{:?}` found", paths);
-                }
+                    None
+                };
+                contents.insert(item_mod.ident.clone(), content);
+            } else {
+                bail!("none of `{:?}` found", paths);
             }
         }
     }
