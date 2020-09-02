@@ -14,6 +14,7 @@ use anyhow::{anyhow, Context as _};
 use quote::ToTokens as _;
 use std::{collections::BTreeSet, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
+use url::Url;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -125,6 +126,10 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let code = &std::fs::read_to_string(&bin.src_path)?;
 
+    if syn::parse_file(code)?.shebang.is_some() {
+        todo!("shebang is currently not supported");
+    }
+
     let edit = if let Some(Equipment {
         extern_crate_name,
         mods,
@@ -172,6 +177,46 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
         let mut edit = "".to_owned();
 
+        edit += "//! # Bundled libraries\n";
+        edit += "//!\n";
+        edit += "//! ## ";
+        let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
+            format!(
+                "https://crates.io/{}/{}",
+                lib_package.name, lib_package.version
+            )
+            .parse::<Url>()
+            .ok()
+        } else {
+            lib_package.repository.as_ref().and_then(|s| s.parse().ok())
+        };
+        if let Some(link) = link {
+            edit += "[`";
+            edit += &lib_package.name;
+            edit += "`](";
+            edit += link.as_str();
+            edit += ")";
+        } else {
+            edit += "`";
+            edit += &lib_package.name;
+            edit += "` (private)";
+        }
+        edit += "\n";
+        edit += "//!\n";
+        for (mod_name, mod_content) in &mod_contents {
+            if mod_content.is_some() {
+                edit += "//! - `";
+                edit += &lib.name;
+                edit += "::";
+                edit += &mod_name.to_string();
+                edit += "` → `$crate::";
+                edit += &mod_name.to_string();
+                edit += "`\n";
+            }
+        }
+
+        edit += "\n";
+
         for (i, s) in code.lines().enumerate() {
             if i + 1 == span.start().line && i + 1 == span.end().line {
                 edit += &s[..span.start().column];
@@ -205,29 +250,34 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         if oneline == Oneline::Mods {
             edit += "\n";
             for (mod_name, mod_content) in mod_contents {
-                edit += "#[allow(clippy::deprecated_cfg_attr)] #[cfg_attr(rustfmt, rustfmt::skip)]";
-                edit += " pub mod ";
-                edit += &mod_name.to_string();
-                edit += " { ";
-                edit += &mod_content
-                    .parse::<proc_macro2::TokenStream>()
-                    .map_err(|e| anyhow!("{:?}", e))?
-                    .to_string();
-                edit += " }\n";
+                if let Some(mod_content) = mod_content {
+                    edit += "#[allow(clippy::deprecated_cfg_attr)] ";
+                    edit += "#[cfg_attr(rustfmt, rustfmt::skip)] ";
+                    edit += "pub mod ";
+                    edit += &mod_name.to_string();
+                    edit += " { ";
+                    edit += &mod_content
+                        .parse::<proc_macro2::TokenStream>()
+                        .map_err(|e| anyhow!("{:?}", e))?
+                        .to_string();
+                    edit += " }\n";
+                }
             }
         } else {
             for (mod_name, mod_content) in mod_contents {
-                edit += "\npub mod ";
-                edit += &mod_name.to_string();
-                edit += " {\n";
-                for line in mod_content.lines() {
-                    if !line.is_empty() {
-                        edit += "    ";
+                if let Some(mod_content) = mod_content {
+                    edit += "\npub mod ";
+                    edit += &mod_name.to_string();
+                    edit += " {\n";
+                    for line in mod_content.lines() {
+                        if !line.is_empty() {
+                            edit += "    ";
+                        }
+                        edit += line;
+                        edit += "\n";
                     }
-                    edit += line;
-                    edit += "\n";
+                    edit += "}\n";
                 }
-                edit += "}\n";
             }
         }
 
