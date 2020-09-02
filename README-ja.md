@@ -33,8 +33,8 @@ cargo_equip_marker = "0.1.1"
 ```
 
 ```rust
-#[cargo_equip::equip]
-use ::__complib::{fenwick::AdditiveFenwickTree, input, output};
+#[::cargo_equip::equip]
+use ::__lib::{fenwick::AdditiveFenwickTree, input, output};
 
 use std::io::Write as _;
 
@@ -45,24 +45,24 @@ fn main() {
         r#as: [i64; n],
     }
 
-    let mut bit = AdditiveFenwickTree::new(n);
+    let mut fenwick = AdditiveFenwickTree::new(n);
 
     for (i, a) in r#as.into_iter().enumerate() {
-        bit.plus(i, &a);
+        fenwick.plus(i, &a);
     }
 
     output::buf_print(|out| {
-        macro_rules! println(($($tt:tt)*) => (std::writeln!(out, $($tt)*).unwrap()));
+        macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
         for _ in 0..q {
             input!(kind: u32);
             match kind {
                 0 => {
                     input!(p: usize, x: i64);
-                    bit.plus(p, &x);
+                    fenwick.plus(p, &x);
                 }
                 1 => {
                     input!(l: usize, r: usize);
-                    println!("{}", bit.query(l..r));
+                    println!("{}", fenwick.query(l..r));
                 }
                 _ => unreachable!(),
             }
@@ -74,13 +74,13 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --oneline mods --rustfmt --check | xsel -ib
+$ cargo equip --oneline mods --rustfmt --check > ./bundled.rs
     Bundling code
-    Checking cargo-equip-check-output-ixtp05p7mhbiumzg v0.1.0 (/tmp/cargo-equip-check-output-ixtp05p7mhbiumzg)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.21s
+    Checking cargo-equip-check-output-mlswfwkzaxwf3681 v0.1.0 (/tmp/cargo-equip-check-output-mlswfwkzaxwf3681)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.20s
 ```
 
-<https://judge.yosupo.jp/submission/20767>
+<https://judge.yosupo.jp/submission/20911>
 
 ## インストール
 
@@ -203,6 +203,14 @@ $ cargo equip --bin "$name"
 コードはこのように展開されます。
 
 ```rust
+//! # Bundled libraries
+//!
+//! ## [`my_lib`]({ a link to Crates.io or the repository })
+//!
+//! - `my_lib::a` → `$crate::a`
+//! - `my_lib::b` → `$crate::b`
+//! - `my_lib::c` → `$crate::c`
+
 /*#[cargo_equip::equip]
 use ::__my_lib::{b::B, c::C};*/
 
