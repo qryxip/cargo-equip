@@ -29,7 +29,7 @@
 ```toml
 [dependencies]
 __complib = { package = "complib", path = "/path/to/complib" }
-cargo_equip_marker = { git = "https://github.com/qryxip/cargo-equip", rev = "37d4972d57be0d41d3d8edfb5db691487359cb3b" }
+cargo_equip_marker = "0.1.1"
 ```
 
 ```rust
@@ -140,7 +140,7 @@ pub mod c;
 ```toml
 [dependencies]
 __my_lib = { package = "my_lib", path = "/path/to/my_lib" }
-cargo_equip_marker = { git = "https://github.com/qryxip/cargo-equip", rev = "37d4972d57be0d41d3d8edfb5db691487359cb3b" }
+cargo_equip_marker = "0.1.1"
 ```
 
 ライブラリは誤って直接使わないようにリネームしておくことを強く推奨します。

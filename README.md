@@ -29,7 +29,7 @@ A Cargo subcommand to bundle your code into one `.rs` file for competitive progr
 ```toml
 [dependencies]
 __complib = { package = "complib", path = "/path/to/complib" }
-cargo_equip_marker = { git = "https://github.com/qryxip/cargo-equip", rev = "37d4972d57be0d41d3d8edfb5db691487359cb3b" }
+cargo_equip_marker = "0.1.1"
 ```
 
 ```rust
