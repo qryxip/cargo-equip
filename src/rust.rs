@@ -1,14 +1,16 @@
 use anyhow::bail;
+use if_chain::if_chain;
 use itertools::Itertools as _;
 use maplit::{btreemap, btreeset};
 use proc_macro2::Span;
+use quote::ToTokens as _;
 use std::{
     collections::{BTreeMap, BTreeSet},
     mem,
 };
 use syn::{
-    parse_quote, spanned::Spanned, Attribute, Ident, Item, ItemUse, Lit, Meta, MetaNameValue,
-    PathSegment, UseGroup, UseName, UseRename, UseTree,
+    parse_quote, spanned::Spanned, Attribute, Ident, Item, ItemUse, Lit, Meta, MetaList,
+    MetaNameValue, NestedMeta, PathSegment, UseGroup, UseName, UseRename, UseTree,
 };
 
 pub(crate) struct Equipment {
@@ -19,46 +21,82 @@ pub(crate) struct Equipment {
 }
 
 pub(crate) fn parse_exactly_one_use(file: &syn::File) -> syn::Result<Option<Equipment>> {
-    // TODO: find `#[cargo_equip::..]` in inline/external `mod`s and raise an error
+    // TODO: find the matched attributes in inline/external `mod`s and raise an error
 
     let mut uses = vec![];
 
     for item in &file.items {
         if let Item::Use(item_use) = item {
-            if let Some((i, meta)) = item_use
+            if let Some(i) = item_use
                 .attrs
                 .iter()
                 .enumerate()
                 .flat_map(|(i, a)| a.parse_meta().map(|m| (i, m)))
-                .find(|(_, meta)| {
-                    matches!(
-                        meta.path().segments.first(),
-                        Some(PathSegment { ident, .. }) if ident == "cargo_equip"
-                    )
+                .map(|(i, meta)| {
+                    fn starts_with_cargo_equip(path: &syn::Path) -> bool {
+                        matches!(
+                            path.segments.first(),
+                            Some(PathSegment { ident, .. }) if ident == "cargo_equip"
+                        )
+                    }
+
+                    let validate = |meta: &Meta| -> syn::Result<()> {
+                        if matches!(
+                            meta.path().segments.first(),
+                            Some(PathSegment { ident, .. }) if ident == "cargo_equip"
+                        ) {
+                            if meta
+                                .path()
+                                .segments
+                                .iter()
+                                .map(|PathSegment { ident, .. }| ident)
+                                .collect::<Vec<_>>()
+                                != ["cargo_equip", "equip"]
+                            {
+                                return Err(syn::Error::new(
+                                    item_use.span(),
+                                    "expected `cargo_equip::equip`",
+                                ));
+                            }
+
+                            if let Meta::List(_) | Meta::NameValue(_) = meta {
+                                return Err(syn::Error::new(
+                                    item_use.span(),
+                                    "`cargo_equip::equip` take no argument",
+                                ));
+                            }
+                        }
+                        Ok(())
+                    };
+
+                    if starts_with_cargo_equip(meta.path()) {
+                        validate(&meta)?;
+                        return Ok::<_, syn::Error>(Some(i));
+                    }
+
+                    if_chain! {
+                        if let Meta::List(MetaList { path, nested, .. }) = &meta;
+                        if matches!(path.get_ident(), Some(i) if i == "cfg_attr");
+                        if let [expr, attr] = *nested.iter().collect::<Vec<_>>();
+                        let expr = expr.to_token_stream().to_string();
+                        if let Ok(expr) = cfg_expr::Expression::parse(&expr);
+                        if expr.eval(|pred| *pred == cfg_expr::Predicate::Flag("cargo_equip"));
+                        if let NestedMeta::Meta(attr) = attr;
+                        if starts_with_cargo_equip(attr.path());
+                        then {
+                            validate(attr)?;
+                            return Ok(Some(i));
+                        }
+                    }
+
+                    Ok(None)
                 })
+                .flat_map(Result::transpose)
+                .next()
             {
                 let span = item_use.span();
-
-                if meta
-                    .path()
-                    .segments
-                    .iter()
-                    .map(|PathSegment { ident, .. }| ident)
-                    .collect::<Vec<_>>()
-                    != ["cargo_equip", "equip"]
-                {
-                    return Err(syn::Error::new(span, "expected `cargo_equip::equip`"));
-                }
-
-                if let Meta::List(_) | Meta::NameValue(_) = meta {
-                    return Err(syn::Error::new(
-                        span,
-                        "`cargo_equip::equip` take no argument",
-                    ));
-                }
-
                 let mut item_use = item_use.clone();
-                item_use.attrs.remove(i);
+                item_use.attrs.remove(i?);
                 uses.push((item_use, span));
             }
         }

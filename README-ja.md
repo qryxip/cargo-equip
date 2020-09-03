@@ -28,12 +28,11 @@
 
 ```toml
 [dependencies]
-__complib = { package = "complib", path = "/path/to/complib" }
-cargo_equip_marker = "0.1.1"
+__lib = { package = "lib", path = "/path/to/lib" }
 ```
 
 ```rust
-#[::cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__lib::{fenwick::AdditiveFenwickTree, input, output};
 
 use std::io::Write as _;
@@ -74,13 +73,13 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --oneline mods --rustfmt --check > ./bundled.rs
+$ cargo equip --oneline mods --rustfmt --check -o ./bundled.rs
     Bundling code
-    Checking cargo-equip-check-output-mlswfwkzaxwf3681 v0.1.0 (/tmp/cargo-equip-check-output-mlswfwkzaxwf3681)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.20s
+    Checking cargo-equip-check-output-b6yi355fkyhc37tj v0.1.0 (/tmp/cargo-equip-check-output-b6yi355fkyhc37tj)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.18s
 ```
 
-<https://judge.yosupo.jp/submission/20911>
+<https://judge.yosupo.jp/submission/21202>
 
 ## インストール
 
@@ -132,35 +131,27 @@ pub mod c;
 "c" = ["a"]
 ```
 
-`bin`側の準備としては、次の2つを`dependencies`に加えてください。
-
-- 展開したいライブラリ
-- `cargo_equip_marker`
+そして`bin`側の準備として、バンドルしたいライブラリを`dependencies`に加えてください。
 
 ```toml
 [dependencies]
 __my_lib = { package = "my_lib", path = "/path/to/my_lib" }
-cargo_equip_marker = "0.1.1"
 ```
 
-ライブラリは誤って直接使わないようにリネームしておくことを強く推奨します。
-
-`cargo_equip_marker`は何もしないattribute macroである`#[equip]`を提供します。
-[`cargo-snippet`](https://github.com/hatoo/cargo-snippet)のやりかたを真似たものですが、本ツールでは別のパッケージに分けています。
-`cargo-equip`と間違えないようにしてください。
-`cargo_equip_marker`から`#[::cargo_equip::equip]`として呼びます。
+ただしこの際、ライブラリは誤って直接使わないようにリネームしておくことを強く推奨します。
+直接使った場合`cargo-equip`はそれについて何も操作しません。
 
 準備ができたらこのようにライブラリを`use`します。
 
 ```rust
-#[cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::{b::B, c::C};
 ```
 
 `use`のパスにはleading colon (`::`)を付けてください。
 
 ```
-#[cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::{b::B, c::C};
     ^^
 ```
@@ -169,7 +160,7 @@ use ::__my_lib::{b::B, c::C};
 leading colonを必須としているのはこのためです。
 
 ```
-#[cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::{b::B, c::C};
       ^^^^^^^^
 ```
@@ -178,7 +169,7 @@ use ::__my_lib::{b::B, c::C};
 これらのモジュールと、先程書いた`mod-dependencies`で繋がっているモジュールが展開されます。
 
 ```
-#[cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::{b::B, c::C};
                  ^     ^
 ```
@@ -186,7 +177,7 @@ use ::__my_lib::{b::B, c::C};
 パスの3つ目以降のsegmentは`use self::$name::{ .. }`として展開されます。
 
 ```
-#[cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::{b::B, c::C};
                     ^     ^
 ```
@@ -207,11 +198,13 @@ $ cargo equip --bin "$name"
 //!
 //! ## [`my_lib`]({ a link to Crates.io or the repository })
 //!
-//! - `my_lib::a` → `$crate::a`
-//! - `my_lib::b` → `$crate::b`
-//! - `my_lib::c` → `$crate::c`
+//! ### Modules
+//!
+//! - `::__my_lib::a` → `$crate::a`
+//! - `::__my_lib::b` → `$crate::b`
+//! - `::__my_lib::c` → `$crate::c`
 
-/*#[cargo_equip::equip]
+/*#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::{b::B, c::C};*/
 
 fn main() {
@@ -255,7 +248,7 @@ macro_rules! input {
 ```
 
 ```rust
-#[cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::input;
 ```
 
@@ -277,9 +270,9 @@ use ::__my_lib::input;
 バンドルしたコードを出力する前にtarget directoryを共有した一時パッケージを作り、それの上で`cargo check`します。
 
 ```console
-$ cargo equip --check > /dev/null
+$ cargo equip --check -o /dev/null
     Bundling code
-    Checking cargo-equip-check-output-6oxyyu9lsf9s0f6g v0.1.0 (/tmp/cargo-equip-check-output-6oxyyu9lsf9s0f6g)
+    Checking cargo-equip-check-output-r3cw9cy0swqb5yac v0.1.0 (/tmp/cargo-equip-check-output-r3cw9cy0swqb5yac)
     Finished dev [unoptimized + debuginfo] target(s) in 0.18s
 ```
 

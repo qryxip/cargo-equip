@@ -16,7 +16,9 @@ categories = ["command-line-utilities", "development-tools::cargo-plugins"]
 anyhow = "1.0.32"
 atty = "0.2.14"
 cargo_metadata = "0.11.1"
+cfg-expr = "0.4.1"
 easy-ext = "0.2.3"
+if_chain = "1.0.0"
 itertools = "0.9.0"
 maplit = "1.0.2"
 proc-macro2 = { version = "1.0.19", features = ["span-locations"] }

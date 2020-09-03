@@ -28,12 +28,11 @@ A Cargo subcommand to bundle your code into one `.rs` file for competitive progr
 
 ```toml
 [dependencies]
-__complib = { package = "complib", path = "/path/to/complib" }
-cargo_equip_marker = "0.1.1"
+__lib = { package = "lib", path = "/path/to/lib" }
 ```
 
 ```rust
-#[::cargo_equip::equip]
+#[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__lib::{fenwick::AdditiveFenwickTree, input, output};
 
 use std::io::Write as _;
@@ -74,13 +73,13 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --oneline mods --rustfmt --check > ./bundled.rs
+$ cargo equip --oneline mods --rustfmt --check -o ./bundled.rs
     Bundling code
-    Checking cargo-equip-check-output-mlswfwkzaxwf3681 v0.1.0 (/tmp/cargo-equip-check-output-mlswfwkzaxwf3681)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.20s
+    Checking cargo-equip-check-output-b6yi355fkyhc37tj v0.1.0 (/tmp/cargo-equip-check-output-b6yi355fkyhc37tj)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.18s
 ```
 
-<https://judge.yosupo.jp/submission/20911>
+<https://judge.yosupo.jp/submission/21202>
 
 ## License
 
