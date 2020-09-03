@@ -227,8 +227,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             doc += "\n\n ### Modules\n\n";
             for (mod_name, mod_content) in &mod_contents {
                 if mod_content.is_some() {
-                    doc += " - `";
-                    doc += &lib.name;
+                    doc += " - `::";
+                    doc += &extern_crate_name.to_string();
                     doc += "::";
                     doc += &mod_name.to_string();
                     doc += "` → `$crate::";
