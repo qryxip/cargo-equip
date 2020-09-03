@@ -308,6 +308,7 @@ fn main() {
             r#"//! aaaaaaa
 //! bbbbbbb
 //! ccccccc
+//!
 //! ddddddd
 
 fn main() {
