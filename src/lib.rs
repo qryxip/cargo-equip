@@ -177,46 +177,6 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
         let mut edit = "".to_owned();
 
-        edit += "//! # Bundled libraries\n";
-        edit += "//!\n";
-        edit += "//! ## ";
-        let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
-            format!(
-                "https://crates.io/{}/{}",
-                lib_package.name, lib_package.version
-            )
-            .parse::<Url>()
-            .ok()
-        } else {
-            lib_package.repository.as_ref().and_then(|s| s.parse().ok())
-        };
-        if let Some(link) = link {
-            edit += "[`";
-            edit += &lib_package.name;
-            edit += "`](";
-            edit += link.as_str();
-            edit += ")";
-        } else {
-            edit += "`";
-            edit += &lib_package.name;
-            edit += "` (private)";
-        }
-        edit += "\n";
-        edit += "//!\n";
-        for (mod_name, mod_content) in &mod_contents {
-            if mod_content.is_some() {
-                edit += "//! - `";
-                edit += &lib.name;
-                edit += "::";
-                edit += &mod_name.to_string();
-                edit += "` → `$crate::";
-                edit += &mod_name.to_string();
-                edit += "`\n";
-            }
-        }
-
-        edit += "\n";
-
         for (i, s) in code.lines().enumerate() {
             if i + 1 == span.start().line && i + 1 == span.end().line {
                 edit += &s[..span.start().column];
@@ -237,6 +197,47 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             }
             edit += "\n";
         }
+
+        edit = rust::append_mod_doc(&edit, &{
+            let mut doc = "".to_owned();
+            doc += " # Bundled libraries\n";
+            doc += "\n";
+            doc += " ## ";
+            let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
+                format!(
+                    "https://crates.io/{}/{}",
+                    lib_package.name, lib_package.version
+                )
+                .parse::<Url>()
+                .ok()
+            } else {
+                lib_package.repository.as_ref().and_then(|s| s.parse().ok())
+            };
+            if let Some(link) = link {
+                doc += "[`";
+                doc += &lib_package.name;
+                doc += "`](";
+                doc += link.as_str();
+                doc += ")";
+            } else {
+                doc += "`";
+                doc += &lib_package.name;
+                doc += "` (private)";
+            }
+            doc += "\n\n ### Modules\n\n";
+            for (mod_name, mod_content) in &mod_contents {
+                if mod_content.is_some() {
+                    doc += " - `";
+                    doc += &lib.name;
+                    doc += "::";
+                    doc += &mod_name.to_string();
+                    doc += "` → `$crate::";
+                    doc += &mod_name.to_string();
+                    doc += "`\n";
+                }
+            }
+            doc
+        })?;
 
         edit += "\n";
         edit += "// The following code was expanded by `cargo-equip`.\n";

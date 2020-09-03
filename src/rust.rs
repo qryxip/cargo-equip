@@ -1,4 +1,5 @@
 use anyhow::bail;
+use itertools::Itertools as _;
 use maplit::{btreemap, btreeset};
 use proc_macro2::Span;
 use std::{
@@ -6,8 +7,8 @@ use std::{
     mem,
 };
 use syn::{
-    parse_quote, spanned::Spanned, Ident, Item, ItemUse, Meta, PathSegment, UseGroup, UseName,
-    UseRename, UseTree,
+    parse_quote, spanned::Spanned, Attribute, Ident, Item, ItemUse, Lit, Meta, MetaNameValue,
+    PathSegment, UseGroup, UseName, UseRename, UseTree,
 };
 
 pub(crate) struct Equipment {
@@ -214,4 +215,120 @@ pub(crate) fn read_mods(
     }
 
     Ok(contents)
+}
+
+pub(crate) fn append_mod_doc(code: &str, append: &str) -> syn::Result<String> {
+    let syn::File { shebang, attrs, .. } = syn::parse_file(code)?;
+
+    let mut code = code.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
+    let mut doc = vec![];
+
+    if shebang.is_some() {
+        code[0] = "".to_owned();
+    }
+
+    for (val, span) in attrs
+        .iter()
+        .flat_map(Attribute::parse_meta)
+        .flat_map(|meta| match meta {
+            Meta::NameValue(name_value) => Some(name_value),
+            _ => None,
+        })
+        .filter(|MetaNameValue { path, .. }| matches!(path.get_ident(), Some(i) if i == "doc"))
+        .flat_map(|name_value| match &name_value.lit {
+            Lit::Str(val) => Some((val.value(), name_value.span())),
+            _ => None,
+        })
+    {
+        doc.push(val);
+
+        if span.start().line == span.end().line {
+            let i = span.start().line - 1;
+            let l = span.start().column;
+            let r = span.end().column;
+            code[i] = format!("{}{}{}", &code[i][..l], " ".repeat(r - l), &code[i][r..]);
+        } else {
+            let i = span.start().line - 1;
+            let l = span.start().column;
+            code[i] = format!("{}{}", &code[i][..l], code[i].len() - l);
+
+            for line in &mut code[span.start().line..span.end().line - 2] {
+                *line = " ".repeat(line.len());
+            }
+
+            let i = span.end().line - 1;
+            let r = span.end().column;
+            code[i] = format!("{}{}", " ".repeat(code[i].len() - r), &code[i][r..]);
+        }
+    }
+
+    Ok(format!(
+        "{}{}{}{}\n{}\n",
+        match shebang {
+            Some(shebang) => format!("{}\n", shebang),
+            None => "".to_owned(),
+        },
+        doc.iter()
+            .format_with("", |l, f| f(&format_args!("//!{}\n", l))),
+        if doc.iter().all(|s| s.is_empty()) {
+            ""
+        } else {
+            "//!\n"
+        },
+        append
+            .lines()
+            .format_with("", |l, f| f(&format_args!("//!{}\n", l))),
+        code.join("\n").trim_start(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use difference::assert_diff;
+
+    #[test]
+    fn append_mod_doc() -> syn::Result<()> {
+        fn test(code: &str, append: &str, expected: &str) -> syn::Result<()> {
+            let actual = super::append_mod_doc(code, append)?;
+            assert_diff!(expected, &actual, "\n", 0);
+            Ok(())
+        }
+
+        test(
+            r#"//! aaaaaaa
+//! bbbbbbb
+//! ccccccc
+
+fn main() {
+    todo!();
+}
+"#,
+            r" ddddddd
+",
+            r#"//! aaaaaaa
+//! bbbbbbb
+//! ccccccc
+//! ddddddd
+
+fn main() {
+    todo!();
+}
+"#,
+        )?;
+        test(
+            r#"fn main() {
+    todo!();
+}
+"#,
+            r" dddddd
+",
+            r#"//! dddddd
+
+fn main() {
+    todo!();
+}
+"#,
+        )?;
+        Ok(())
+    }
 }

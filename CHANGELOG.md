@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Appends the `"# Bundled libralies"` section to existing doc comment.
+
 ## [0.2.0] - 2020-09-02Z
 
 ### Changed
