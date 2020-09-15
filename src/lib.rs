@@ -7,12 +7,12 @@ mod rustfmt;
 pub mod shell;
 mod workspace;
 
-use crate::rust::Equipment;
+use crate::rust::Equipments;
 use crate::shell::Shell;
 use crate::workspace::{LibPackageMetadata, MetadataExt as _, PackageExt as _};
 use anyhow::{anyhow, Context as _};
 use quote::ToTokens as _;
-use std::{collections::BTreeSet, path::PathBuf, str::FromStr};
+use std::{path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
 use url::Url;
 
@@ -130,53 +130,23 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         todo!("shebang is currently not supported");
     }
 
-    let edit = if let Some(Equipment {
-        extern_crate_name,
-        mods,
-        uses,
+    let Equipments {
         span,
-    }) = rust::parse_exactly_one_use(&syn::parse_file(&code)?)
-        .map_err(|e| anyhow!("{} (span: {:?})", e, e.span()))?
-    {
+        uses,
+        contents,
+    } = rust::equipments(&syn::parse_file(&code)?, shell, |extern_crate_name| {
         let (lib, lib_package) = metadata
             .dep_lib_by_extern_crate_name(&bin_package.id, &extern_crate_name.to_string())?;
-
         let LibPackageMetadata { mod_dependencies } = lib_package.parse_lib_metadata()?;
+        Ok((
+            lib_package.id.clone(),
+            lib.src_path.clone(),
+            mod_dependencies,
+        ))
+    })?;
 
-        let mod_names = mods.map(|mods| {
-            mods.iter()
-                .map(ToString::to_string)
-                .collect::<BTreeSet<_>>()
-        });
-
-        let mod_names = if let Some(mut cur) = mod_names {
-            'search: loop {
-                let mut next = cur.clone();
-                for mod_name in &cur {
-                    if let Some(mod_dependencies) = mod_dependencies.get(mod_name) {
-                        next.extend(mod_dependencies.iter().cloned());
-                    } else {
-                        shell.warn(format!(
-                            "missing `package.metadata.cargo-equip-lib.mod-dependencies.\"{}\"`. \
-                             including all of the modules",
-                            mod_name
-                        ))?;
-                        break 'search None;
-                    }
-                }
-                if next.len() == cur.len() {
-                    break Some(next);
-                }
-                cur = next;
-            }
-        } else {
-            None
-        };
-
-        let mod_contents = rust::read_mods(&lib.src_path, mod_names.as_ref())?;
-
+    let mut code = if let Some(span) = span {
         let mut edit = "".to_owned();
-
         for (i, s) in code.lines().enumerate() {
             if i + 1 == span.start().line && i + 1 == span.end().line {
                 edit += &s[..span.start().column];
@@ -197,123 +167,118 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             }
             edit += "\n";
         }
+        edit
+    } else {
+        code.clone()
+    };
 
-        edit = rust::append_mod_doc(&edit, &{
-            let mut doc = "".to_owned();
-            doc += " # Bundled libraries\n";
-            doc += "\n";
-            doc += " ## ";
-            let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
-                format!(
-                    "https://crates.io/{}/{}",
-                    lib_package.name, lib_package.version
-                )
-                .parse::<Url>()
-                .ok()
+    code = rust::append_mod_doc(&code, &{
+        let mut doc = " # Bundled libraries\n".to_owned();
+        for ((package, extern_crate_name), contents) in &contents {
+            let package = &metadata[&package];
+            doc += "\n ## ";
+            let link = if matches!(&package.source, Some(s) if s.is_crates_io()) {
+                format!("https://crates.io/{}/{}", package.name, package.version)
+                    .parse::<Url>()
+                    .ok()
             } else {
-                lib_package.repository.as_ref().and_then(|s| s.parse().ok())
+                package.repository.as_ref().and_then(|s| s.parse().ok())
             };
             if let Some(link) = link {
                 doc += "[`";
-                doc += &lib_package.name;
+                doc += &package.name;
                 doc += "`](";
                 doc += link.as_str();
                 doc += ")";
             } else {
                 doc += "`";
-                doc += &lib_package.name;
+                doc += &package.name;
                 doc += "` (private)";
             }
             doc += "\n\n ### Modules\n\n";
-            for (mod_name, mod_content) in &mod_contents {
-                if mod_content.is_some() {
+            for (name, content) in contents {
+                if content.is_some() {
                     doc += " - `::";
                     doc += &extern_crate_name.to_string();
                     doc += "::";
-                    doc += &mod_name.to_string();
+                    doc += &name.to_string();
                     doc += "` → `$crate::";
-                    doc += &mod_name.to_string();
+                    doc += &name.to_string();
                     doc += "`\n";
                 }
             }
-            doc
-        })?;
-
-        edit += "\n";
-        edit += "// The following code was expanded by `cargo-equip`.\n";
-        edit += "\n";
-
-        for item_use in uses {
-            edit += &item_use.into_token_stream().to_string();
-            edit += "\n";
         }
+        doc
+    })?;
 
-        if oneline == Oneline::Mods {
-            edit += "\n";
+    code += "\n";
+    code += "// The following code was expanded by `cargo-equip`.\n";
+    code += "\n";
+
+    for item_use in uses {
+        code += &item_use.into_token_stream().to_string();
+        code += "\n";
+    }
+
+    if oneline == Oneline::Mods {
+        code += "\n";
+        for mod_contents in contents.values() {
             for (mod_name, mod_content) in mod_contents {
                 if let Some(mod_content) = mod_content {
-                    edit += "#[allow(clippy::deprecated_cfg_attr)] ";
-                    edit += "#[cfg_attr(rustfmt, rustfmt::skip)] ";
-                    edit += "pub mod ";
-                    edit += &mod_name.to_string();
-                    edit += " { ";
-                    edit += &mod_content
+                    code += "#[allow(clippy::deprecated_cfg_attr)] ";
+                    code += "#[cfg_attr(rustfmt, rustfmt::skip)] ";
+                    code += "pub mod ";
+                    code += &mod_name.to_string();
+                    code += " { ";
+                    code += &mod_content
                         .parse::<proc_macro2::TokenStream>()
                         .map_err(|e| anyhow!("{:?}", e))?
                         .to_string();
-                    edit += " }\n";
+                    code += " }\n";
                 }
             }
-        } else {
+        }
+    } else {
+        for mod_contents in contents.values() {
             for (mod_name, mod_content) in mod_contents {
                 if let Some(mod_content) = mod_content {
-                    edit += "\npub mod ";
-                    edit += &mod_name.to_string();
-                    edit += " {\n";
+                    code += "\npub mod ";
+                    code += &mod_name.to_string();
+                    code += " {\n";
                     for line in mod_content.lines() {
                         if !line.is_empty() {
-                            edit += "    ";
+                            code += "    ";
                         }
-                        edit += line;
-                        edit += "\n";
+                        code += line;
+                        code += "\n";
                     }
-                    edit += "}\n";
+                    code += "}\n";
                 }
             }
         }
+    }
 
-        if oneline == Oneline::All {
-            edit = edit
-                .parse::<proc_macro2::TokenStream>()
-                .map_err(|e| anyhow!("{:?}", e))?
-                .to_string();
-        }
+    if oneline == Oneline::All {
+        code = code
+            .parse::<proc_macro2::TokenStream>()
+            .map_err(|e| anyhow!("{:?}", e))?
+            .to_string();
+    }
 
-        if rustfmt {
-            edit = rustfmt::rustfmt(&metadata.workspace_root, &edit, &bin.edition)?;
-        }
-
-        edit
-    } else {
-        shell.warn(format!(
-            "could not find `#[::cargo_equip::equip]` attribute in `{}`. returning the file \
-             content as-is",
-            bin.src_path.display(),
-        ))?;
-
-        code.clone()
-    };
+    if rustfmt {
+        code = rustfmt::rustfmt(&metadata.workspace_root, &code, &bin.edition)?;
+    }
 
     if check {
-        workspace::cargo_check_using_current_lockfile_and_cache(&metadata, &bin_package, &edit)?;
+        workspace::cargo_check_using_current_lockfile_and_cache(&metadata, &bin_package, &code)?;
     }
 
     if let Some(output) = output {
         let output = cwd.join(output);
-        std::fs::write(&output, edit)
+        std::fs::write(&output, code)
             .with_context(|| format!("could not write `{}`", output.display()))?;
     } else {
-        write!(shell.out(), "{}", edit)?;
+        write!(shell.out(), "{}", code)?;
     }
     Ok(())
 }

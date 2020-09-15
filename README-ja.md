@@ -101,11 +101,17 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
 
 ## 使い方
 
-`cargo-equip`で展開できるライブラリには以下3つの制限があります。
+`cargo-equip`で展開できるライブラリには以下5つの制限があります。
 
-- 非inline module (`mod $name;`)は深さ1まで
-- 深さ2以上のモジュールはすべてinline module (`mod $name { .. }`)
-- crate root直下には`mod`以外の`pub`なアイテムが置かれていない。(置いてもいいけど使わないでください)
+1. 非inline module (`mod $name;`)は深さ1まで
+2. 深さ2以上のモジュールはすべてinline module (`mod $name { .. }`)
+3. crate root直下には`mod`以外の`pub`なアイテムが置かれていない (置いてもいいですが使わないでください)
+4. `#[macro_export] macro_rules! name { .. }`は`mod name`の中に置かれている (それ以外の場所に置いていいですがその場合`#[macro_use]`で使ってください)
+5. `#[macro_export]`には組み込み以外のアトリビュート(e.g. `#[rustfmt::skip]`)を使用しない (原理的に展開すると壊れる)
+
+1.と2.はそのうち対応しようと思います。
+
+このように薄く広く作ってください。
 
 ```
 src
@@ -123,6 +129,7 @@ pub mod c;
 ```
 
 この制限に合うようなライブラリを書いたら、その`Cargo.toml`の`package.metadata`にモジュールの依存関係を手で書いてください。
+直接`use`したモジュールと、その連結成分だけを展開します。
 欠けている場合はwarningと共にすべてのモジュールを展開します。
 
 [使う側で指定できるようにすることも考えています](https://github.com/qryxip/cargo-equip/issues/2)。
@@ -150,6 +157,14 @@ __my_lib = { package = "my_lib", path = "/path/to/my_lib" }
 ```rust
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
 use ::__my_lib::{b::B, c::C};
+
+// or
+//
+//#[cfg_attr(cargo_equip, cargo_equip::equip)]
+//use ::{
+//    __my_lib1::{b::B, c::C},
+//    __my_lib2::{d::D, e::E},
+//};
 ```
 
 `use`のパスにはleading colon (`::`)を付けてください。
@@ -169,8 +184,7 @@ use ::__my_lib::{b::B, c::C};
       ^^^^^^^^
 ```
 
-パスの2つ目のsegmentから使用しているモジュールを判定します。
-ライブラリの制限としてモジュールの深さ1をまでとし、crate root直下に`mod`以外のアイテムを置かないようにしているのはこのためです。
+先述したライブラリの制約より、パスの第二セグメントはモジュールとみなします。
 これらのモジュールと、先程書いた`mod-dependencies`で繋がっているモジュールが展開されます。
 
 ```
@@ -179,7 +193,7 @@ use ::__my_lib::{b::B, c::C};
                  ^     ^
 ```
 
-パスの3つ目以降のsegmentは`use self::$name::{ .. }`として展開されます。
+第三セグメント以降は`use self::$name::{..}`と展開されます。
 
 ```
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
