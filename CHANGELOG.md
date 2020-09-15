@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Enabled bundling multiple libraries.
+
+    ```rust
+    #[cfg_attr(cargo_equip, cargo_equip::equip)]
+    use ::{
+        __lib1::{a::A, b::B, c::C},
+        __lib2::{d::D, e::E, f::F},
+    };
+    ```
+
 ## [0.3.0] - 2020-09-03Z
 
 ### Added
