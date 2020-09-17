@@ -677,10 +677,7 @@ fn main() {}
 /// ccccc
 struct Foo;
 "#,
-            r#"         
-         
-
-fn main() {}
+            r#"fn main() {}
 
          
 struct Foo;
@@ -706,9 +703,7 @@ fn main() {
 }
 // ggggg
 "#,
-            r#"        
-        
-fn main() {
+            r#"fn main() {
             
              println!("Hi!");         
             
