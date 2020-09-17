@@ -342,7 +342,7 @@ fn error_with_span(message: impl fmt::Display, span: Span) -> anyhow::Error {
     anyhow!("{}", message).context(format!("Error at {:?}", span))
 }
 
-pub(crate) fn append_mod_doc(code: &str, append: &str) -> syn::Result<String> {
+pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
     let syn::File { shebang, attrs, .. } = syn::parse_file(code)?;
 
     let mut code = code.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
@@ -574,9 +574,9 @@ mod tests {
     use difference::assert_diff;
 
     #[test]
-    fn append_mod_doc() -> syn::Result<()> {
+    fn prepend_mod_doc() -> syn::Result<()> {
         fn test(code: &str, append: &str, expected: &str) -> syn::Result<()> {
-            let actual = super::append_mod_doc(code, append)?;
+            let actual = super::prepend_mod_doc(code, append)?;
             assert_diff!(expected, &actual, "\n", 0);
             Ok(())
         }

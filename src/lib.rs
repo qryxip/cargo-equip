@@ -222,7 +222,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         code.clone()
     };
 
-    code = rust::append_mod_doc(&code, &{
+    code = rust::prepend_mod_doc(&code, &{
         let mut doc = " # Bundled libraries\n".to_owned();
         for ((package, extern_crate_name), contents) in &contents {
             let package = &metadata[&package];
