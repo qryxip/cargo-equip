@@ -1,5 +1,42 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added `--remove` option. Now you can remove
+
+    1. Items with `#[cfg(test)]`
+    2. Doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`)
+    3. Comments (`// ..`, `/* .. */`)
+
+    from the output.
+
+    ```rust
+    pub mod a {
+        //! A.
+
+        /// A.
+        pub struct A; // aaaaa
+
+        #[cfg(test)]
+        mod tests {
+            #[test]
+            fn it_works() {
+                assert_eq!(2 + 2, 4);
+            }
+        }
+    }
+    ```
+
+    ↓
+
+    ```rust
+    pub mod a {
+        pub struct A;
+    }
+    ```
+
 ## [0.3.1] - 2020-09-15Z
 
 ### Added

@@ -12,7 +12,7 @@ use crate::shell::Shell;
 use crate::workspace::{LibPackageMetadata, MetadataExt as _, PackageExt as _};
 use anyhow::{anyhow, Context as _};
 use quote::ToTokens as _;
-use std::{path::PathBuf, str::FromStr};
+use std::{collections::BTreeMap, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
 use url::Url;
 
@@ -46,8 +46,17 @@ pub enum Opt {
         #[structopt(long, value_name("PATH"))]
         manifest_path: Option<PathBuf>,
 
+        /// Remove some part
+        #[structopt(long, value_name("REMOVE"), possible_values(Remove::VARIANTS))]
+        remove: Vec<Remove>,
+
         /// Fold part of the output before emitting
-        #[structopt(long, possible_values(Oneline::VARIANTS), default_value("none"))]
+        #[structopt(
+            long,
+            value_name("ONELINE"),
+            possible_values(Oneline::VARIANTS),
+            default_value("none")
+        )]
         oneline: Oneline,
 
         /// Format the output before emitting
@@ -62,6 +71,30 @@ pub enum Opt {
         #[structopt(short, long, value_name("PATH"))]
         output: Option<PathBuf>,
     },
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Remove {
+    TestItems,
+    Docs,
+    Comments,
+}
+
+impl Remove {
+    const VARIANTS: &'static [&'static str] = &["test-items", "docs", "comments"];
+}
+
+impl FromStr for Remove {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, &'static str> {
+        match s {
+            "test-items" => Ok(Self::TestItems),
+            "docs" => Ok(Self::Docs),
+            "comments" => Ok(Self::Comments),
+            _ => Err(r#"expected "test-items", "docs", or "comments""#),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -98,6 +131,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         src,
         bin,
         manifest_path,
+        remove,
         oneline,
         rustfmt,
         check,
@@ -133,7 +167,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let Equipments {
         span,
         uses,
-        contents,
+        mut contents,
     } = rust::equipments(&syn::parse_file(&code)?, shell, |extern_crate_name| {
         let (lib, lib_package) = metadata
             .dep_lib_by_extern_crate_name(&bin_package.id, &extern_crate_name.to_string())?;
@@ -144,6 +178,22 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             mod_dependencies,
         ))
     })?;
+
+    for content in contents
+        .values_mut()
+        .flat_map(BTreeMap::values_mut)
+        .flat_map(Option::as_mut)
+    {
+        if remove.contains(&Remove::TestItems) {
+            *content = rust::erase_test_items(content)?;
+        }
+        if remove.contains(&Remove::Docs) {
+            *content = rust::erase_docs(content)?;
+        }
+        if remove.contains(&Remove::Comments) {
+            *content = rust::erase_comments(content)?;
+        }
+    }
 
     let mut code = if let Some(span) = span {
         let mut edit = "".to_owned();
