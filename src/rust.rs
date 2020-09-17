@@ -1,19 +1,26 @@
 use crate::shell::Shell;
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
+use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
 use itertools::Itertools as _;
 use maplit::{btreemap, btreeset};
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenTree};
 use quote::ToTokens as _;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     fmt, io, mem,
     path::PathBuf,
+    str,
 };
 use syn::{
-    parse_quote, spanned::Spanned, Attribute, Ident, Item, ItemUse, Lit, Meta, MetaList,
-    MetaNameValue, NestedMeta, PathSegment, UseGroup, UseName, UsePath, UseRename, UseTree,
+    parse_quote,
+    spanned::Spanned,
+    visit::{self, Visit},
+    Attribute, Ident, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl,
+    ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType,
+    ItemUnion, ItemUse, Lit, Meta, MetaList, MetaNameValue, NestedMeta, PathSegment, UseGroup,
+    UseName, UsePath, UseRename, UseTree,
 };
 
 #[derive(Default)]
@@ -335,7 +342,7 @@ fn error_with_span(message: impl fmt::Display, span: Span) -> anyhow::Error {
     anyhow!("{}", message).context(format!("Error at {:?}", span))
 }
 
-pub(crate) fn append_mod_doc(code: &str, append: &str) -> syn::Result<String> {
+pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
     let syn::File { shebang, attrs, .. } = syn::parse_file(code)?;
 
     let mut code = code.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
@@ -400,14 +407,176 @@ pub(crate) fn append_mod_doc(code: &str, append: &str) -> syn::Result<String> {
     ))
 }
 
+pub(crate) fn erase_test_items(code: &str) -> anyhow::Result<String> {
+    fn contains_cfg_test(attrs: &[Attribute]) -> bool {
+        attrs
+            .iter()
+            .flat_map(Attribute::parse_meta)
+            .flat_map(|meta| match meta {
+                Meta::List(MetaList { path, nested, .. }) => Some((path, nested)),
+                _ => None,
+            })
+            .any(|(path, nested)| {
+                matches!(path.get_ident(), Some(i) if i == "cfg")
+                    && matches!(
+                        cfg_expr::Expression::parse(&nested.to_token_stream().to_string()), Ok(expr)
+                        if expr.eval(|pred| *pred == cfg_expr::Predicate::Test)
+                    )
+            })
+    }
+
+    struct Visitor<'a>(&'a mut [FixedBitSet]);
+
+    macro_rules! visit {
+        ($(($method:ident, <$ty:ty>)),* $(,)?) => {
+            $(
+                fn $method(&mut self, item: &'_ $ty) {
+                    if contains_cfg_test(&item.attrs) {
+                        set_span(self.0, item.span(), true);
+                    } else {
+                        visit::$method(self, item);
+                    }
+                }
+            )*
+        }
+    }
+
+    impl Visit<'_> for Visitor<'_> {
+        visit! {
+            (visit_item_const, <ItemConst>),
+            (visit_item_enum, <ItemEnum>),
+            (visit_item_extern_crate, <ItemExternCrate>),
+            (visit_item_fn, <ItemFn>),
+            (visit_item_foreign_mod, <ItemForeignMod>),
+            (visit_item_impl, <ItemImpl>),
+            (visit_item_macro, <ItemMacro>),
+            (visit_item_macro2, <ItemMacro2>),
+            (visit_item_mod, <ItemMod>),
+            (visit_item_static, <ItemStatic>),
+            (visit_item_struct, <ItemStruct>),
+            (visit_item_trait, <ItemTrait>),
+            (visit_item_trait_alias, <ItemTraitAlias>),
+            (visit_item_type, <ItemType>),
+            (visit_item_union, <ItemUnion>),
+            (visit_item_use, <ItemUse>),
+        }
+
+        fn visit_file(&mut self, file: &syn::File) {
+            if contains_cfg_test(&file.attrs) {
+                for mask in &mut *self.0 {
+                    mask.insert_range(..);
+                }
+            } else {
+                visit::visit_file(self, file);
+            }
+        }
+    }
+
+    erase(
+        code,
+        |mask, file| Visitor(mask).visit_file(file),
+        "failed to erase `#[cfg(test)]` items",
+    )
+}
+
+pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
+    struct Visitor<'a>(&'a mut [FixedBitSet]);
+
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_attribute(&mut self, attr: &'_ Attribute) {
+            if matches!(
+                attr.parse_meta(), Ok(m) if matches!(m.path().get_ident(), Some(i) if i == "doc")
+            ) {
+                set_span(self.0, attr.span(), true);
+            }
+        }
+    }
+
+    erase(
+        code,
+        |mask, file| Visitor(mask).visit_file(file),
+        "failed to erase doc comments",
+    )
+}
+
+pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
+    fn visit_file(mask: &mut [FixedBitSet], file: &syn::File) {
+        fn visit_token_stream(mask: &mut [FixedBitSet], token_stream: proc_macro2::TokenStream) {
+            for tt in token_stream {
+                if let TokenTree::Group(group) = tt {
+                    set_span(mask, group.span_open(), false);
+                    visit_token_stream(mask, group.stream());
+                    set_span(mask, group.span_close(), false);
+                } else {
+                    set_span(mask, tt.span(), false);
+                }
+            }
+        }
+
+        for mask in &mut *mask {
+            mask.insert_range(..);
+        }
+        visit_token_stream(mask, file.to_token_stream());
+    }
+
+    erase(code, visit_file, "failed to erase comments")
+}
+
+fn erase(
+    code: &str,
+    visit_file: fn(&mut [FixedBitSet], &syn::File),
+    err_msg: &'static str,
+) -> anyhow::Result<String> {
+    let file = syn::parse_file(code).map_err(|e| anyhow!("could not parse the code: {:?}", e))?;
+
+    let mut erase = code
+        .lines()
+        .map(|l| FixedBitSet::with_capacity(l.len()))
+        .collect::<Vec<_>>();
+
+    visit_file(&mut erase, &file);
+
+    let mut acc = vec![];
+    for (line, erase) in code.lines().zip_eq(erase) {
+        for (j, ch) in line.bytes().enumerate() {
+            acc.push(if erase[j] { b' ' } else { ch });
+        }
+        acc.push(b'\n');
+    }
+    let acc = str::from_utf8(&acc)
+        .with_context(|| err_msg)?
+        .trim_start()
+        .to_owned();
+    Ok(acc)
+}
+
+fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
+    if span.start().line == span.end().line {
+        let i = span.start().line - 1;
+        let l = span.start().column;
+        let r = span.end().column;
+        mask[i].set_range(l..r, p);
+    } else {
+        let i1 = span.start().line - 1;
+        let i2 = span.end().line - 1;
+        let l = span.start().column;
+        mask[i1].insert_range(l..);
+        for mask in &mut mask[i1 + 1..i2] {
+            mask.set_range(.., p);
+        }
+        let r = span.end().column;
+        mask[i2].set_range(..r, p);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use difference::assert_diff;
 
     #[test]
-    fn append_mod_doc() -> syn::Result<()> {
+    fn prepend_mod_doc() -> syn::Result<()> {
         fn test(code: &str, append: &str, expected: &str) -> syn::Result<()> {
-            let actual = super::append_mod_doc(code, append)?;
+            let actual = super::prepend_mod_doc(code, append)?;
             assert_diff!(expected, &actual, "\n", 0);
             Ok(())
         }
@@ -449,5 +618,98 @@ fn main() {
 "#,
         )?;
         Ok(())
+    }
+
+    #[test]
+    fn erase_test_items() -> anyhow::Result<()> {
+        fn test(input: &str, expected: &str) -> anyhow::Result<()> {
+            let actual = super::erase_test_items(input)?;
+            assert_diff!(expected, &actual, "\n", 0);
+            Ok(())
+        }
+
+        test(
+            r#"//
+#[cfg(test)]
+use foo::Foo;
+
+fn hello() -> &'static str {
+    #[cfg(test)]
+    use bar::Bar;
+
+    "Hello!"
+}
+
+#[cfg(test)]
+mod tests {}
+"#,
+            r#"//
+            
+             
+
+fn hello() -> &'static str {
+                
+                 
+
+    "Hello!"
+}
+
+            
+            
+"#,
+        )
+    }
+
+    #[test]
+    fn erase_docs() -> anyhow::Result<()> {
+        fn test(input: &str, expected: &str) -> anyhow::Result<()> {
+            let actual = super::erase_docs(input)?;
+            assert_diff!(expected, &actual, "\n", 0);
+            Ok(())
+        }
+
+        test(
+            r#"//! aaaaa
+//! bbbbb
+
+fn main() {}
+
+/// ccccc
+struct Foo;
+"#,
+            r#"fn main() {}
+
+         
+struct Foo;
+"#,
+        )
+    }
+
+    #[test]
+    fn erase_comments() -> anyhow::Result<()> {
+        fn test(input: &str, expected: &str) -> anyhow::Result<()> {
+            let actual = super::erase_comments(input)?;
+            assert_diff!(expected, &actual, "\n", 0);
+            Ok(())
+        }
+
+        test(
+            r#"// aaaaa
+// bbbbb
+fn main() {
+    // ccccc
+    /*ddddd*/println!("Hi!");/*eeeee*/
+    // fffff
+}
+// ggggg
+"#,
+            r#"fn main() {
+            
+             println!("Hi!");         
+            
+}
+        
+"#,
+        )
     }
 }

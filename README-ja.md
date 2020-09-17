@@ -273,7 +273,40 @@ use ::__my_lib::input;
 
 ## オプション
 
-### `--oneline`
+### `--remove <REMOVE>...`
+
+1. `--remove test-items`で`#[cfg(test)]`が付いたアイテムを
+2. `--remove docs`でDoc comment (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`)を
+3. `--remove comments`でコメント (`// ..`, `/* .. */`)を
+
+除去することができます。
+
+```rust
+pub mod a {
+    //! A.
+
+    /// A.
+    pub struct A; // aaaaa
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn it_works() {
+            assert_eq!(2 + 2, 4);
+        }
+    }
+}
+```
+
+↓
+
+```rust
+pub mod a {
+    pub struct A;
+}
+```
+
+### `--oneline <ONELINE>`
 
 `--oneline mods`で展開後の各モジュールをそれぞれ一行に折り畳みます。
 `--oneline all`でコード全体を一行に折り畳みます。
