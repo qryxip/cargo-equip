@@ -1,14 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.3.2] - 2020-09-17Z
 
 ### Added
 
-- Added `--remove` option. Now you can remove
+- Added `--remove` option. ([#13](https://github.com/qryxip/cargo-equip/pull/13))
 
-    1. Items with `#[cfg(test)]`
-    2. Doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`)
-    3. Comments (`// ..`, `/* .. */`)
+    Now you can remove
+
+    - Items with `#[cfg(test)]`
+    - Doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`)
+    - Comments (`// ..`, `/* .. */`)
 
     from the output.
 
