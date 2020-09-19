@@ -1,5 +1,5 @@
 use crate::shell::Shell;
-use anyhow::{anyhow, bail, Context as _};
+use anyhow::{anyhow, bail};
 use cargo_metadata as cm;
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
@@ -472,11 +472,7 @@ pub(crate) fn erase_test_items(code: &str) -> anyhow::Result<String> {
         }
     }
 
-    erase(
-        code,
-        |mask, file| Visitor(mask).visit_file(file),
-        "failed to erase `#[cfg(test)]` items",
-    )
+    erase(code, |mask, file| Visitor(mask).visit_file(file))
 }
 
 pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
@@ -492,11 +488,7 @@ pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
         }
     }
 
-    erase(
-        code,
-        |mask, file| Visitor(mask).visit_file(file),
-        "failed to erase doc comments",
-    )
+    erase(code, |mask, file| Visitor(mask).visit_file(file))
 }
 
 pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
@@ -519,35 +511,27 @@ pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
         visit_token_stream(mask, file.to_token_stream());
     }
 
-    erase(code, visit_file, "failed to erase comments")
+    erase(code, visit_file)
 }
 
-fn erase(
-    code: &str,
-    visit_file: fn(&mut [FixedBitSet], &syn::File),
-    err_msg: &'static str,
-) -> anyhow::Result<String> {
+fn erase(code: &str, visit_file: fn(&mut [FixedBitSet], &syn::File)) -> anyhow::Result<String> {
     let file = syn::parse_file(code).map_err(|e| anyhow!("could not parse the code: {:?}", e))?;
 
     let mut erase = code
         .lines()
-        .map(|l| FixedBitSet::with_capacity(l.len()))
+        .map(|l| FixedBitSet::with_capacity(l.chars().count()))
         .collect::<Vec<_>>();
 
     visit_file(&mut erase, &file);
 
-    let mut acc = vec![];
+    let mut acc = "".to_owned();
     for (line, erase) in code.lines().zip_eq(erase) {
-        for (j, ch) in line.bytes().enumerate() {
-            acc.push(if erase[j] { b' ' } else { ch });
+        for (j, ch) in line.chars().enumerate() {
+            acc.push(if erase[j] { ' ' } else { ch });
         }
-        acc.push(b'\n');
+        acc += "\n";
     }
-    let acc = str::from_utf8(&acc)
-        .with_context(|| err_msg)?
-        .trim_start()
-        .to_owned();
-    Ok(acc)
+    Ok(acc.trim_start().to_owned())
 }
 
 fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
@@ -682,6 +666,16 @@ struct Foo;
          
 struct Foo;
 "#,
+        )?;
+
+        test(
+            r#"//! モジュールのドキュメント
+
+/// アイテムのドキュメント
+fn foo() {}
+"#,
+            r#"fn foo() {}
+"#,
         )
     }
 
@@ -709,6 +703,18 @@ fn main() {
             
 }
         
+"#,
+        )?;
+
+        test(
+            r#"// あああ
+/*いいい*/fn foo() {
+    let _ = 1 + 1; // ううううう
+}
+"#,
+            r#"fn foo() {
+    let _ = 1 + 1;         
+}
 "#,
         )
     }

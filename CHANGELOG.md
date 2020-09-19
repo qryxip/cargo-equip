@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- `--remove` option now works for code that contains non-ASCII characters.
+
 ## [0.3.2] - 2020-09-17Z
 
 ### Added
