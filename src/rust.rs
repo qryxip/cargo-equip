@@ -1,5 +1,5 @@
 use crate::shell::Shell;
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
@@ -472,7 +472,9 @@ pub(crate) fn erase_test_items(code: &str) -> anyhow::Result<String> {
         }
     }
 
-    erase(code, |mask, file| Visitor(mask).visit_file(file))
+    erase(code, |mask, token_stream| {
+        syn::parse2(token_stream).map(|f| Visitor(mask).visit_file(&f))
+    })
 }
 
 pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
@@ -488,11 +490,16 @@ pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
         }
     }
 
-    erase(code, |mask, file| Visitor(mask).visit_file(file))
+    erase(code, |mask, token_stream| {
+        syn::parse2(token_stream).map(|f| Visitor(mask).visit_file(&f))
+    })
 }
 
 pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
-    fn visit_file(mask: &mut [FixedBitSet], file: &syn::File) {
+    fn visit_file(
+        mask: &mut [FixedBitSet],
+        token_stream: proc_macro2::TokenStream,
+    ) -> syn::Result<()> {
         fn visit_token_stream(mask: &mut [FixedBitSet], token_stream: proc_macro2::TokenStream) {
             for tt in token_stream {
                 if let TokenTree::Group(group) = tt {
@@ -508,21 +515,37 @@ pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
         for mask in &mut *mask {
             mask.insert_range(..);
         }
-        visit_token_stream(mask, file.to_token_stream());
+        visit_token_stream(mask, token_stream);
+        Ok(())
     }
 
     erase(code, visit_file)
 }
 
-fn erase(code: &str, visit_file: fn(&mut [FixedBitSet], &syn::File)) -> anyhow::Result<String> {
-    let file = syn::parse_file(code).map_err(|e| anyhow!("could not parse the code: {:?}", e))?;
+fn erase(
+    code: &str,
+    visit_file: fn(&mut [FixedBitSet], proc_macro2::TokenStream) -> syn::Result<()>,
+) -> anyhow::Result<String> {
+    let code = if code.starts_with("#!") {
+        let (_, code) = code.split_at(code.find('\n').unwrap_or_else(|| code.len()));
+        code
+    } else {
+        code
+    };
+
+    let token_stream = code
+        .parse::<proc_macro2::TokenStream>()
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could lex the code")?;
 
     let mut erase = code
         .lines()
         .map(|l| FixedBitSet::with_capacity(l.chars().count()))
         .collect::<Vec<_>>();
 
-    visit_file(&mut erase, &file);
+    visit_file(&mut erase, token_stream)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could parse the code")?;
 
     let mut acc = "".to_owned();
     for (line, erase) in code.lines().zip_eq(erase) {
@@ -703,6 +726,13 @@ fn main() {
             
 }
         
+"#,
+        )?;
+
+        test(
+            r#"/* aaaaa */ type A = (i64, i64, i64); // bbbbb
+"#,
+            r#"type A = (i64, i64, i64);         
 "#,
         )?;
 
