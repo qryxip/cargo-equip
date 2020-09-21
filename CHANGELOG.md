@@ -1,10 +1,16 @@
 # Changelog
 
+## [0.3.4] - 2020-09-21Z
+
+### Fixed
+
+- Fixed the problem where `--remove comments` ruined code that contains tuple types. ([#19](https://github.com/qryxip/cargo-equip/pull/19))
+
 ## [0.3.3] - 2020-09-19Z
 
 ### Fixed
 
-- `--remove` option now works for code that contains non-ASCII characters.
+- `--remove` option now works for code that contains non-ASCII characters. ([#16](https://github.com/qryxip/cargo-equip/pull/16))
 
 ## [0.3.2] - 2020-09-17Z
 
