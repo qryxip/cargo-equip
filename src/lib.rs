@@ -10,7 +10,7 @@ mod workspace;
 use crate::rust::Equipments;
 use crate::shell::Shell;
 use crate::workspace::{LibPackageMetadata, MetadataExt as _, PackageExt as _};
-use anyhow::{anyhow, Context as _};
+use anyhow::Context as _;
 use quote::ToTokens as _;
 use std::{collections::BTreeMap, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
@@ -50,14 +50,23 @@ pub enum Opt {
         #[structopt(long, value_name("REMOVE"), possible_values(Remove::VARIANTS))]
         remove: Vec<Remove>,
 
-        /// Fold part of the output before emitting
+        /// Minify part of the output before emitting
+        #[structopt(
+            long,
+            value_name("MINIFY"),
+            possible_values(Minify::VARIANTS),
+            default_value("none")
+        )]
+        minify: Minify,
+
+        /// Alias for `--minify`. Deprecated
         #[structopt(
             long,
             value_name("ONELINE"),
-            possible_values(Oneline::VARIANTS),
+            possible_values(Minify::VARIANTS),
             default_value("none")
         )]
-        oneline: Oneline,
+        oneline: Minify,
 
         /// Format the output before emitting
         #[structopt(long)]
@@ -98,17 +107,17 @@ impl FromStr for Remove {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Oneline {
+pub enum Minify {
     None,
     Mods,
     All,
 }
 
-impl Oneline {
+impl Minify {
     const VARIANTS: &'static [&'static str] = &["none", "mods", "all"];
 }
 
-impl FromStr for Oneline {
+impl FromStr for Minify {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, &'static str> {
@@ -132,11 +141,17 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         bin,
         manifest_path,
         remove,
+        minify,
         oneline,
         rustfmt,
         check,
         output,
     } = opt;
+
+    let minify = match (minify, oneline) {
+        (Minify::None, oneline) => oneline,
+        (minify, _) => minify,
+    };
 
     let Context { cwd, shell } = ctx;
 
@@ -270,21 +285,18 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         code += "\n";
     }
 
-    if oneline == Oneline::Mods {
+    if minify == Minify::Mods {
         code += "\n";
         for mod_contents in contents.values() {
             for (mod_name, mod_content) in mod_contents {
                 if let Some(mod_content) = mod_content {
-                    code += "#[allow(clippy::deprecated_cfg_attr)] ";
-                    code += "#[cfg_attr(rustfmt, rustfmt::skip)] ";
+                    code += "#[allow(clippy::deprecated_cfg_attr)]";
+                    code += "#[cfg_attr(rustfmt,rustfmt::skip)]";
                     code += "pub mod ";
                     code += &mod_name.to_string();
-                    code += " { ";
-                    code += &mod_content
-                        .parse::<proc_macro2::TokenStream>()
-                        .map_err(|e| anyhow!("{:?}", e))?
-                        .to_string();
-                    code += " }\n";
+                    code += "{";
+                    code += &rust::minify(shell, &mod_content)?;
+                    code += "}\n";
                 }
             }
         }
@@ -308,11 +320,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         }
     }
 
-    if oneline == Oneline::All {
-        code = code
-            .parse::<proc_macro2::TokenStream>()
-            .map_err(|e| anyhow!("{:?}", e))?
-            .to_string();
+    if minify == Minify::All {
+        code = rust::minify(shell, &code)?;
     }
 
     if rustfmt {

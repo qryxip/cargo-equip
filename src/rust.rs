@@ -576,6 +576,80 @@ fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
     }
 }
 
+pub(crate) fn minify(shell: &mut Shell, code: &str) -> anyhow::Result<String> {
+    fn minify(acc: &mut String, token_stream: proc_macro2::TokenStream) {
+        let mut space_on_ident = false;
+        let mut space_on_punct = false;
+        let mut space_on_literal = false;
+        for tt in token_stream {
+            match tt {
+                proc_macro2::TokenTree::Group(group) => {
+                    let (left, right) = match group.delimiter() {
+                        proc_macro2::Delimiter::Parenthesis => (Some('('), Some(')')),
+                        proc_macro2::Delimiter::Brace => (Some('{'), Some('}')),
+                        proc_macro2::Delimiter::Bracket => (Some('['), Some(']')),
+                        proc_macro2::Delimiter::None => (Some(' '), Some(' ')),
+                    };
+                    if let Some(left) = left {
+                        acc.push(left);
+                    }
+                    minify(acc, group.stream());
+                    if let Some(right) = right {
+                        acc.push(right);
+                    }
+                    space_on_ident = false;
+                    space_on_punct = false;
+                    space_on_literal = false;
+                }
+                proc_macro2::TokenTree::Ident(ident) => {
+                    if space_on_ident {
+                        *acc += " ";
+                    }
+                    *acc += &ident.to_string();
+                    space_on_ident = true;
+                    space_on_punct = false;
+                    space_on_literal = true;
+                }
+                proc_macro2::TokenTree::Punct(punct) => {
+                    if space_on_punct {
+                        *acc += " ";
+                    }
+                    acc.push(punct.as_char());
+                    space_on_ident = false;
+                    space_on_punct = false;
+                    space_on_literal = false;
+                }
+                proc_macro2::TokenTree::Literal(literal) => {
+                    if space_on_literal {
+                        *acc += " ";
+                    }
+                    *acc += &literal.to_string();
+                    space_on_ident = false;
+                    space_on_punct = false;
+                    space_on_literal = true;
+                }
+            }
+        }
+    }
+
+    let token_stream = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?
+        .into_token_stream();
+
+    let safe = token_stream.to_string();
+
+    let mut acc = "".to_owned();
+    minify(&mut acc, token_stream);
+
+    if syn::parse_file(&acc).is_ok() {
+        Ok(acc)
+    } else {
+        shell.warn("could not minify the code. inserting spaces")?;
+        Ok(safe)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use difference::assert_diff;

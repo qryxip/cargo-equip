@@ -73,13 +73,13 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --oneline mods --rustfmt --check -o ./bundled.rs
+$ cargo equip --minify mods --rustfmt --check -o ./bundled.rs
     Bundling code
-    Checking cargo-equip-check-output-b6yi355fkyhc37tj v0.1.0 (/tmp/cargo-equip-check-output-b6yi355fkyhc37tj)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.18s
+    Checking cargo-equip-check-output-dsznj7zzfki6wfpq v0.1.0 (/tmp/cargo-equip-check-output-dsznj7zzfki6wfpq)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.19s
 ```
 
-<https://judge.yosupo.jp/submission/21202>
+<https://judge.yosupo.jp/submission/23733>
 
 ## License
 
