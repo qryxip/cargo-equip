@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Renamed `--oneline` option to `--minify`. `--oneline` remains as an alias for `--minify`.
+
+    With `--minify` option, cargo-equip removes spaces as much as possible.
+
+    ```rust
+    #[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]pub mod factorial{pub fn factorial(n:u64)->u64{match n{0=>1,n=>n*factorial(n-1),}}}
+    ```
+
 ## [0.3.4] - 2020-09-21Z
 
 ### Fixed
