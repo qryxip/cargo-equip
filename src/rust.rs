@@ -576,7 +576,7 @@ fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
     }
 }
 
-pub(crate) fn minify(shell: &mut Shell, code: &str) -> anyhow::Result<String> {
+pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyhow::Result<String> {
     fn minify(acc: &mut String, token_stream: proc_macro2::TokenStream) {
         let mut space_on_ident = false;
         let mut space_on_punct = false;
@@ -585,18 +585,14 @@ pub(crate) fn minify(shell: &mut Shell, code: &str) -> anyhow::Result<String> {
             match tt {
                 proc_macro2::TokenTree::Group(group) => {
                     let (left, right) = match group.delimiter() {
-                        proc_macro2::Delimiter::Parenthesis => (Some('('), Some(')')),
-                        proc_macro2::Delimiter::Brace => (Some('{'), Some('}')),
-                        proc_macro2::Delimiter::Bracket => (Some('['), Some(']')),
-                        proc_macro2::Delimiter::None => (Some(' '), Some(' ')),
+                        proc_macro2::Delimiter::Parenthesis => ('(', ')'),
+                        proc_macro2::Delimiter::Brace => ('{', '}'),
+                        proc_macro2::Delimiter::Bracket => ('[', ']'),
+                        proc_macro2::Delimiter::None => (' ', ' '),
                     };
-                    if let Some(left) = left {
-                        acc.push(left);
-                    }
+                    acc.push(left);
                     minify(acc, group.stream());
-                    if let Some(right) = right {
-                        acc.push(right);
-                    }
+                    acc.push(right);
                     space_on_ident = false;
                     space_on_punct = false;
                     space_on_literal = false;
@@ -616,7 +612,7 @@ pub(crate) fn minify(shell: &mut Shell, code: &str) -> anyhow::Result<String> {
                     }
                     acc.push(punct.as_char());
                     space_on_ident = false;
-                    space_on_punct = false;
+                    space_on_punct = punct.spacing() == proc_macro2::Spacing::Alone;
                     space_on_literal = false;
                 }
                 proc_macro2::TokenTree::Literal(literal) => {
@@ -642,10 +638,13 @@ pub(crate) fn minify(shell: &mut Shell, code: &str) -> anyhow::Result<String> {
     let mut acc = "".to_owned();
     minify(&mut acc, token_stream);
 
-    if syn::parse_file(&acc).is_ok() {
+    if matches!(syn::parse_file(&acc), Ok(f) if f.to_token_stream().to_string() == safe) {
         Ok(acc)
     } else {
-        shell.warn("could not minify the code. inserting spaces")?;
+        shell.warn(format!(
+            "could not minify the code. inserting spaces{}",
+            name.map(|s| format!(": `{}`", s)).unwrap_or_default(),
+        ))?;
         Ok(safe)
     }
 }

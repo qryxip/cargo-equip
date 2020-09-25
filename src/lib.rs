@@ -7,9 +7,11 @@ mod rustfmt;
 pub mod shell;
 mod workspace;
 
-use crate::rust::Equipments;
-use crate::shell::Shell;
-use crate::workspace::{LibPackageMetadata, MetadataExt as _, PackageExt as _};
+use crate::{
+    rust::Equipments,
+    shell::Shell,
+    workspace::{LibPackageMetadata, MetadataExt as _, PackageExt as _},
+};
 use anyhow::Context as _;
 use quote::ToTokens as _;
 use std::{collections::BTreeMap, path::PathBuf, str::FromStr};
@@ -62,7 +64,7 @@ pub enum Opt {
         /// Alias for `--minify`. Deprecated
         #[structopt(
             long,
-            value_name("ONELINE"),
+            value_name("MINIFY"),
             possible_values(Minify::VARIANTS),
             default_value("none")
         )]
@@ -295,7 +297,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                     code += "pub mod ";
                     code += &mod_name.to_string();
                     code += "{";
-                    code += &rust::minify(shell, &mod_content)?;
+                    code += &rust::minify(&mod_content, shell, Some(&mod_name.to_string()))?;
                     code += "}\n";
                 }
             }
@@ -321,7 +323,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     }
 
     if minify == Minify::All {
-        code = rust::minify(shell, &code)?;
+        code = rust::minify(&code, shell, None)?;
     }
 
     if rustfmt {
