@@ -5,41 +5,33 @@ use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
 use itertools::Itertools as _;
 use maplit::{btreemap, btreeset};
+use proc_macro2::LineColumn;
+use proc_macro2::TokenStream;
 use proc_macro2::{Span, TokenTree};
-use quote::ToTokens as _;
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
-    fmt, io, mem,
-    path::PathBuf,
-    str,
-};
+use quote::{quote, ToTokens as _};
+use std::collections::BTreeSet;
+use std::{collections::BTreeMap, fmt, mem, path::PathBuf, str};
 use syn::{
     parse_quote,
     spanned::Spanned,
     visit::{self, Visit},
     Attribute, Ident, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl,
     ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType,
-    ItemUnion, ItemUse, Lit, Meta, MetaList, MetaNameValue, NestedMeta, PathSegment, UseGroup,
-    UseName, UsePath, UseRename, UseTree,
+    ItemUnion, ItemUse, Lit, Macro, Meta, MetaList, MetaNameValue, NestedMeta, PathSegment,
+    UseGroup, UseName, UsePath, UseRename, UseTree,
 };
 
 #[derive(Default)]
 pub(crate) struct Equipments {
     pub(crate) span: Option<Span>,
     pub(crate) uses: Vec<ItemUse>,
+    pub(crate) directly_used_mods: BTreeMap<Ident, BTreeSet<Ident>>,
     pub(crate) contents: BTreeMap<(cm::PackageId, Ident), BTreeMap<Ident, Option<String>>>,
 }
 
 pub(crate) fn equipments(
     file: &syn::File,
-    shell: &mut Shell,
-    mut lib_info: impl FnMut(
-        &Ident,
-    ) -> anyhow::Result<(
-        cm::PackageId,
-        PathBuf,
-        HashMap<String, BTreeSet<String>>,
-    )>,
+    mut lib_info: impl FnMut(&Ident) -> anyhow::Result<(cm::PackageId, PathBuf)>,
 ) -> anyhow::Result<Equipments> {
     // TODO: find the matched attributes in inline/external `mod`s and raise an error
 
@@ -142,6 +134,7 @@ pub(crate) fn equipments(
     let mut equipments = Equipments {
         span: Some(span),
         uses: vec![],
+        directly_used_mods: btreemap!(),
         contents: btreemap!(),
     };
 
@@ -168,15 +161,18 @@ pub(crate) fn equipments(
 
     for UsePath { ident, tree, .. } in use_paths {
         let extern_crate_name = ident.clone();
-        let (lib_pkg, lib_src_path, mod_dependencies) = lib_info(&extern_crate_name)?;
-        let (uses, contents) =
-            extract_usage(&item_use, tree, &lib_src_path, &mod_dependencies, shell)?;
+        let (lib_pkg, lib_src_path) = lib_info(&extern_crate_name)?;
+        let (uses, directly_used_mods, contents) =
+            extract_usage(&item_use, tree, &extern_crate_name, &lib_src_path)?;
         equipments.uses.extend(uses);
+        equipments
+            .directly_used_mods
+            .insert(extern_crate_name.clone(), directly_used_mods);
         equipments
             .contents
             .entry((lib_pkg, extern_crate_name))
             .or_default()
-            .extend(contents);
+            .extend(contents.into_iter().map(|(e, c)| (e, Some(c))));
     }
 
     Ok(equipments)
@@ -186,11 +182,11 @@ pub(crate) fn equipments(
 fn extract_usage(
     item_use: &ItemUse,
     tree: &UseTree,
+    extern_crate_name: &Ident,
     lib_src_path: &std::path::Path,
-    mod_dependencies: &HashMap<String, BTreeSet<String>>,
-    shell: &mut Shell,
-) -> anyhow::Result<(Vec<ItemUse>, BTreeMap<Ident, Option<String>>)> {
+) -> anyhow::Result<(Vec<ItemUse>, BTreeSet<Ident>, BTreeMap<Ident, String>)> {
     let new_item_use = |tree| ItemUse {
+        vis: parse_quote!(pub),
         leading_colon: None,
         tree,
         ..item_use.clone()
@@ -199,17 +195,21 @@ fn extract_usage(
     let (mod_names, uses) = match tree {
         UseTree::Path(use_path) => {
             let mods = Some(btreeset!(use_path.ident.clone()));
-            let uses = vec![new_item_use(parse_quote!(self::#use_path))];
+            let uses = vec![new_item_use(
+                parse_quote!(self::#extern_crate_name::#use_path),
+            )];
             (mods, uses)
         }
         UseTree::Name(UseName { ident }) => {
             let mods = Some(btreeset!(ident.clone()));
-            let uses = vec![];
+            let uses = vec![new_item_use(parse_quote!(self::#extern_crate_name::#ident))];
             (mods, uses)
         }
         UseTree::Rename(UseRename { ident, rename, .. }) => {
             let mods = Some(btreeset!(ident.clone()));
-            let uses = vec![new_item_use(parse_quote!(self::#ident as #rename))];
+            let uses = vec![new_item_use(
+                parse_quote!(self::#extern_crate_name::#ident as #rename),
+            )];
             (mods, uses)
         }
         UseTree::Glob(_) => {
@@ -235,18 +235,23 @@ fn extract_usage(
                         if let Some(mods) = &mut mods {
                             mods.insert(use_path.ident.clone());
                         }
-                        uses.push(new_item_use(parse_quote!(self::#use_path)));
+                        uses.push(new_item_use(
+                            parse_quote!(self::#extern_crate_name::#use_path),
+                        ));
                     }
                     UseTree::Name(UseName { ident }) => {
                         if let Some(mods) = &mut mods {
                             mods.insert(ident.clone());
                         }
+                        uses.push(new_item_use(parse_quote!(self::#extern_crate_name::#ident)));
                     }
                     UseTree::Rename(UseRename { ident, rename, .. }) => {
                         if let Some(mods) = &mut mods {
                             mods.insert(ident.clone());
                         }
-                        uses.push(new_item_use(parse_quote!(self::#ident as #rename)));
+                        uses.push(new_item_use(
+                            parse_quote!(self::#extern_crate_name::#ident as #rename),
+                        ));
                     }
                     UseTree::Glob(_) => {
                         mods = None;
@@ -260,35 +265,6 @@ fn extract_usage(
         }
     };
 
-    let mod_names = mod_names
-        .map(|mod_names| {
-            let mut mod_names = mod_names
-                .iter()
-                .map(ToString::to_string)
-                .collect::<BTreeSet<_>>();
-            let mut queue = mod_names.iter().cloned().collect::<VecDeque<_>>();
-            while let Some(name) = queue.pop_front() {
-                if let Some(mod_dependencies) = mod_dependencies.get(&name) {
-                    for mod_dependency in mod_dependencies {
-                        if !mod_names.contains(mod_dependency) {
-                            mod_names.insert(mod_dependency.clone());
-                            queue.push_back(mod_dependency.clone());
-                        }
-                    }
-                } else {
-                    shell.warn(format!(
-                        "missing `package.metadata.cargo-equip-lib.mod-dependencies.\"{}\"`. \
-                         including all of the modules",
-                        name,
-                    ))?;
-                    return Ok(None);
-                }
-            }
-            Ok::<_, io::Error>(Some(mod_names))
-        })
-        .transpose()?
-        .flatten();
-
     let lib_contents = {
         let file = syn::parse_file(&std::fs::read_to_string(lib_src_path)?)?;
 
@@ -296,9 +272,6 @@ fn extract_usage(
 
         for item in &file.items {
             if let Item::Mod(item_mod) = item {
-                let is_target = mod_names
-                    .as_ref()
-                    .map_or(true, |names| names.contains(&item_mod.ident.to_string()));
                 if item_mod.content.is_some() {
                     todo!("TODO: inline mod");
                 }
@@ -321,11 +294,7 @@ fn extract_usage(
                         .with_extension("rs"),
                 ];
                 if let Some(path) = paths.iter().find(|p| p.exists()) {
-                    let content = if is_target {
-                        Some(std::fs::read_to_string(path)?)
-                    } else {
-                        None
-                    };
+                    let content = std::fs::read_to_string(path)?;
                     lib_contents.insert(item_mod.ident.clone(), content);
                 } else {
                     bail!("none of `{:?}` found", paths);
@@ -335,11 +304,173 @@ fn extract_usage(
         lib_contents
     };
 
-    Ok((uses, lib_contents))
+    let mod_names = mod_names.unwrap_or_else(|| lib_contents.keys().cloned().collect());
+
+    Ok((uses, mod_names, lib_contents))
 }
 
 fn error_with_span(message: impl fmt::Display, span: Span) -> anyhow::Error {
     anyhow!("{}", message).context(format!("Error at {:?}", span))
+}
+
+pub(crate) fn replace_extern_crates(
+    code: &str,
+    convert_extern_crate_name: impl FnMut(&syn::Ident) -> Option<String>,
+) -> anyhow::Result<String> {
+    struct Visitor<'a, F> {
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+        convert_extern_crate_name: F,
+    };
+
+    impl<F: FnMut(&syn::Ident) -> Option<String>> Visit<'_> for Visitor<'_, F> {
+        fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
+            let ItemExternCrate {
+                attrs,
+                vis,
+                ident,
+                rename,
+                semi_token,
+                ..
+            } = item_use;
+
+            if let Some(to) = (self.convert_extern_crate_name)(ident) {
+                let to = Ident::new(&to, Span::call_site());
+                self.replacements.insert(
+                    (item_use.span().start(), semi_token.span().end()),
+                    if let Some((_, rename)) = rename {
+                        quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
+                    } else {
+                        quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
+                    },
+                );
+            }
+        }
+    }
+
+    let file = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut replacements = btreemap!();
+
+    Visitor {
+        replacements: &mut replacements,
+        convert_extern_crate_name,
+    }
+    .visit_file(&file);
+
+    Ok(replace_ranges(code, replacements))
+}
+
+pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Result<String> {
+    fn find_dollar_crates(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
+        for (i, (tt1, tt2)) in token_stream.into_iter().tuple_windows().enumerate() {
+            if i == 0 {
+                if let proc_macro2::TokenTree::Group(group) = &tt1 {
+                    find_dollar_crates(group.stream(), acc);
+                }
+            }
+
+            if let proc_macro2::TokenTree::Group(group) = &tt2 {
+                find_dollar_crates(group.stream(), acc);
+            }
+
+            if matches!(
+                (&tt1, &tt2),
+                (proc_macro2::TokenTree::Punct(p), proc_macro2::TokenTree::Ident(i))
+                if p.as_char() == '$' && i == "crate"
+            ) {
+                acc.insert(tt2.span().end());
+            }
+        }
+    };
+
+    fn remove_crate_macros(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
+        for tts in token_stream
+            .clone()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .windows(6)
+        {
+            if let [proc_macro2::TokenTree::Punct(punct1), proc_macro2::TokenTree::Ident(ident), proc_macro2::TokenTree::Punct(punct2), proc_macro2::TokenTree::Punct(punct3), proc_macro2::TokenTree::Ident(_), proc_macro2::TokenTree::Punct(punct4)] =
+                &*tts
+            {
+                if punct1.as_char() == '$'
+                    && ident == "crate"
+                    && punct2.as_char() == ':'
+                    && punct3.as_char() == ':'
+                    && punct4.as_char() == '!'
+                {
+                    acc.remove(&ident.span().end());
+                }
+            }
+        }
+
+        for tt in token_stream.clone() {
+            if let proc_macro2::TokenTree::Group(group) = tt {
+                remove_crate_macros(group.stream(), acc);
+            }
+        }
+    }
+
+    let syn::File { items, .. } = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut dollar_crates = btreeset!();
+
+    for item in items {
+        if let Item::Macro(ItemMacro {
+            mac: Macro { tokens, .. },
+            ..
+        }) = item
+        {
+            find_dollar_crates(tokens.clone(), &mut dollar_crates);
+            remove_crate_macros(tokens, &mut dollar_crates);
+        }
+    }
+
+    Ok(replace_ranges(
+        code,
+        dollar_crates
+            .into_iter()
+            .map(|p| ((p, p), format!("::{}", extern_crate_name)))
+            .collect(),
+    ))
+}
+
+fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), String>) -> String {
+    let replacements = replacements.into_iter().collect::<Vec<_>>();
+    let mut replacements = &*replacements;
+    let mut skip_until = None;
+    let mut ret = "".to_owned();
+    for (i, s) in code.trim_end().split('\n').enumerate() {
+        for (j, c) in s.chars().enumerate() {
+            if_chain! {
+                if let Some(((start, end), replacement)) = replacements.get(0);
+                if (i, j) == (start.line - 1, start.column);
+                then {
+                    ret += replacement;
+                    if start == end {
+                        ret.push(c);
+                    } else {
+                        skip_until = Some(*end);
+                    }
+                    replacements = &replacements[1..];
+                } else {
+                    if !matches!(skip_until, Some(LineColumn { line, column }) if (i, j) < (line - 1, column)) {
+                        ret.push(c);
+                        skip_until = None;
+                    }
+                }
+            }
+        }
+        ret += "\n";
+    }
+
+    debug_assert!(syn::parse_file(&code).is_ok());
+
+    ret
 }
 
 pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
@@ -496,11 +627,8 @@ pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
 }
 
 pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
-    fn visit_file(
-        mask: &mut [FixedBitSet],
-        token_stream: proc_macro2::TokenStream,
-    ) -> syn::Result<()> {
-        fn visit_token_stream(mask: &mut [FixedBitSet], token_stream: proc_macro2::TokenStream) {
+    fn visit_file(mask: &mut [FixedBitSet], token_stream: TokenStream) -> syn::Result<()> {
+        fn visit_token_stream(mask: &mut [FixedBitSet], token_stream: TokenStream) {
             for tt in token_stream {
                 if let TokenTree::Group(group) = tt {
                     set_span(mask, group.span_open(), false);
@@ -524,7 +652,7 @@ pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
 
 fn erase(
     code: &str,
-    visit_file: fn(&mut [FixedBitSet], proc_macro2::TokenStream) -> syn::Result<()>,
+    visit_file: fn(&mut [FixedBitSet], TokenStream) -> syn::Result<()>,
 ) -> anyhow::Result<String> {
     let code = if code.starts_with("#!") {
         let (_, code) = code.split_at(code.find('\n').unwrap_or_else(|| code.len()));
@@ -534,7 +662,7 @@ fn erase(
     };
 
     let token_stream = code
-        .parse::<proc_macro2::TokenStream>()
+        .parse::<TokenStream>()
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could lex the code")?;
 
@@ -577,7 +705,7 @@ fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
 }
 
 pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyhow::Result<String> {
-    fn minify(acc: &mut String, token_stream: proc_macro2::TokenStream) {
+    fn minify(acc: &mut String, token_stream: TokenStream) {
         let mut space_on_ident = false;
         let mut space_on_punct = false;
         let mut space_on_literal = false;
@@ -652,6 +780,55 @@ pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyho
 #[cfg(test)]
 mod tests {
     use difference::assert_diff;
+
+    #[test]
+    fn modify_macros() -> anyhow::Result<()> {
+        fn test(input: &str, expected: &str) -> anyhow::Result<()> {
+            static EXTERN_CRATE_NAME: &str = "lib";
+            let actual = super::modify_macros(input, EXTERN_CRATE_NAME)?;
+            assert_diff!(expected, &actual, "\n", 0);
+            Ok(())
+        }
+
+        test(
+            r#"
+#[macro_export]
+macro_rules! hello {
+    ($n:expr $(,)?) => {
+        $crate::__hello_inner!($n)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __hello_inner {
+    ($n:expr $(,)?) => {
+        for _ in 0..$n {
+            $crate::hello::hello();
+        }
+    };
+}
+"#,
+            r#"
+#[macro_export]
+macro_rules! hello {
+    ($n:expr $(,)?) => {
+        $crate::__hello_inner!($n)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __hello_inner {
+    ($n:expr $(,)?) => {
+        for _ in 0..$n {
+            $crate::lib::hello::hello();
+        }
+    };
+}
+"#,
+        )
+    }
 
     #[test]
     fn prepend_mod_doc() -> syn::Result<()> {
