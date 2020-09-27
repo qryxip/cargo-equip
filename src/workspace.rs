@@ -2,13 +2,20 @@ use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
 use itertools::Itertools as _;
+use once_cell::sync::Lazy;
 use rand::Rng as _;
-use serde::Deserialize;
+use regex::Regex;
+use serde::{de::Error as _, Deserialize, Deserializer};
+use std::collections::HashSet;
 use std::{
     collections::{BTreeSet, HashMap},
+    fmt,
     path::{Path, PathBuf},
-    str,
+    str::{self, FromStr},
 };
+use syn::Ident;
+
+use crate::shell::Shell;
 
 pub(crate) fn locate_project(cwd: &Path) -> anyhow::Result<PathBuf> {
     cwd.ancestors()
@@ -232,6 +239,50 @@ impl cm::Metadata {
                 })
         }
     }
+
+    pub(crate) fn extern_crate_name(
+        &self,
+        from: &cm::PackageId,
+        to: &cm::PackageId,
+    ) -> Option<String> {
+        let from = &self[from];
+        let to = &self[to];
+
+        let explicit_names = from
+            .dependencies
+            .iter()
+            .flat_map(|cm::Dependency { rename, .. }| rename)
+            .collect::<HashSet<_>>();
+
+        let cm::NodeDep { name, .. } = self
+            .resolve
+            .as_ref()?
+            .nodes
+            .iter()
+            .find(|cm::Node { id, .. }| *id == from.id)?
+            .deps
+            .iter()
+            .find(|cm::NodeDep { pkg, dep_kinds, .. }| {
+                *pkg == to.id
+                    && (dep_kinds.is_empty()
+                        || matches!(
+                            &**dep_kinds,
+                            [cm::DepKindInfo {
+                                kind: cm::DependencyKind::Normal,
+                                ..
+                            }]
+                        ))
+            })?;
+
+        if explicit_names.contains(name) {
+            Some(name.clone())
+        } else {
+            to.targets
+                .iter()
+                .find(|cm::Target { kind, .. }| *kind == ["lib"])
+                .map(|cm::Target { name, .. }| name.replace('-', "_"))
+        }
+    }
 }
 
 fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &cm::Package)> {
@@ -245,34 +296,109 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 
 #[ext(PackageExt)]
 impl cm::Package {
-    pub(crate) fn parse_lib_metadata(&self) -> anyhow::Result<LibPackageMetadata> {
+    pub(crate) fn parse_metadata(
+        &self,
+        shell: &mut Shell,
+    ) -> anyhow::Result<PackageMetadataCargoEquip> {
         #[derive(Deserialize)]
         #[serde(rename_all = "kebab-case")]
         struct PackageMetadata {
-            cargo_equip_lib: Option<LibPackageMetadata>,
+            cargo_equip: Option<PackageMetadataCargoEquip>,
         }
 
-        let PackageMetadata { cargo_equip_lib } = serde_json::from_value(self.metadata.clone())
-            .with_context(|| {
-                format!(
-                    "could not parse `package.metadata.cargo-equip-lib` at `{}`",
-                    self.manifest_path.display(),
-                )
-            })?;
-
-        if let Some(cargo_equip_lib) = cargo_equip_lib {
-            Ok(cargo_equip_lib)
+        let cargo_equip = if self.metadata.is_null() {
+            None
         } else {
-            bail!(
-                "missing `package.metadata.cargo-equip-lib` in `{}`",
+            let PackageMetadata { cargo_equip } = serde_json::from_value(self.metadata.clone())
+                .with_context(|| {
+                    format!(
+                        "could not parse `package.metadata.cargo-equip` at `{}`",
+                        self.manifest_path.display(),
+                    )
+                })?;
+            cargo_equip
+        };
+
+        if let Some(cargo_equip) = cargo_equip {
+            Ok(cargo_equip)
+        } else {
+            shell.warn(format!(
+                "missing `package.metadata.cargo-equip` in `{}`. including all of the modules",
                 self.manifest_path.display(),
-            );
+            ))?;
+            Ok(PackageMetadataCargoEquip::default())
         }
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Default, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) struct LibPackageMetadata {
-    pub(crate) mod_dependencies: HashMap<String, BTreeSet<String>>,
+pub(crate) struct PackageMetadataCargoEquip {
+    pub(crate) module_dependencies: HashMap<PseudoModulePath, BTreeSet<PseudoModulePath>>,
+}
+
+#[derive(Debug, Clone, Ord, Eq, PartialOrd, PartialEq, Hash)]
+pub(crate) struct PseudoModulePath {
+    pub(crate) extern_crate_name: String,
+    pub(crate) module_name: String,
+}
+
+impl PseudoModulePath {
+    pub(crate) fn new(extern_crate_name: &Ident, module_name: &Ident) -> Self {
+        Self {
+            extern_crate_name: extern_crate_name.to_string(),
+            module_name: module_name.to_string(),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for PseudoModulePath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(D::Error::custom)
+    }
+}
+
+impl FromStr for PseudoModulePath {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        static REGEX: Lazy<Regex> =
+            Lazy::new(|| Regex::new(r"\A::([a-zA-Z0-9_]+)::([a-zA-Z0-9_]+)\z").unwrap());
+
+        if let Some(caps) = REGEX.captures(s) {
+            Ok(Self {
+                extern_crate_name: caps[1].to_owned(),
+                module_name: caps[2].to_owned(),
+            })
+        } else {
+            Err(format!("expected `{}`", REGEX.as_str()))
+        }
+    }
+}
+
+impl fmt::Display for PseudoModulePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\"::{}::{}\"", self.extern_crate_name, self.module_name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::workspace::PseudoModulePath;
+
+    #[test]
+    fn parse_pseudo_module_path() {
+        fn parse(s: &str) -> Result<(), ()> {
+            s.parse::<PseudoModulePath>().map(|_| ()).map_err(|_| ())
+        }
+
+        assert!(parse("::library::module").is_ok());
+        assert!(parse("::library::module::module").is_err());
+        assert!(parse("library::module").is_err());
+    }
 }
