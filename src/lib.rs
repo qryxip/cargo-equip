@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms)]
+#![recursion_limit = "256"]
 
 mod process;
 mod rust;

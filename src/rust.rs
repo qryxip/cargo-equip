@@ -318,7 +318,7 @@ pub(crate) fn replace_extern_crates(
     convert_extern_crate_name: impl FnMut(&syn::Ident) -> Option<String>,
 ) -> anyhow::Result<String> {
     struct Visitor<'a, F> {
-        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+        replacements: &'a mut anyhow::Result<BTreeMap<(LineColumn, LineColumn), String>>,
         convert_extern_crate_name: F,
     };
 
@@ -333,16 +333,25 @@ pub(crate) fn replace_extern_crates(
                 ..
             } = item_use;
 
-            if let Some(to) = (self.convert_extern_crate_name)(ident) {
+            if contains_attr(&attrs, &parse_quote!(use_another_lib)) {
+                let to = if let Some(to) = (self.convert_extern_crate_name)(ident) {
+                    to
+                } else {
+                    *self.replacements = Err(anyhow!("`{}` is not on the list", ident));
+                    return;
+                };
                 let to = Ident::new(&to, Span::call_site());
-                self.replacements.insert(
-                    (item_use.span().start(), semi_token.span().end()),
-                    if let Some((_, rename)) = rename {
-                        quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
-                    } else {
-                        quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
-                    },
-                );
+                self.replacements
+                    .as_mut()
+                    .unwrap_or_else(|_| unreachable!())
+                    .insert(
+                        (item_use.span().start(), semi_token.span().end()),
+                        if let Some((_, rename)) = rename {
+                            quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
+                        } else {
+                            quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
+                        },
+                    );
             }
         }
     }
@@ -351,13 +360,15 @@ pub(crate) fn replace_extern_crates(
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
 
-    let mut replacements = btreemap!();
+    let mut replacements = Ok(btreemap!());
 
     Visitor {
         replacements: &mut replacements,
         convert_extern_crate_name,
     }
     .visit_file(&file);
+
+    let replacements = replacements?;
 
     Ok(replace_ranges(code, replacements))
 }
@@ -385,7 +396,7 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
         }
     };
 
-    fn remove_crate_macros(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
+    fn exclude_crate_macros(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
         for tts in token_stream
             .clone()
             .into_iter()
@@ -408,7 +419,7 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
 
         for tt in token_stream.clone() {
             if let proc_macro2::TokenTree::Group(group) = tt {
-                remove_crate_macros(group.stream(), acc);
+                exclude_crate_macros(group.stream(), acc);
             }
         }
     }
@@ -421,12 +432,15 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
 
     for item in items {
         if let Item::Macro(ItemMacro {
+            attrs,
             mac: Macro { tokens, .. },
             ..
         }) = item
         {
-            find_dollar_crates(tokens.clone(), &mut dollar_crates);
-            remove_crate_macros(tokens, &mut dollar_crates);
+            if contains_attr(&attrs, &parse_quote!(translate_dollar_crates)) {
+                find_dollar_crates(tokens.clone(), &mut dollar_crates);
+                exclude_crate_macros(tokens, &mut dollar_crates);
+            }
         }
     }
 
@@ -437,6 +451,35 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
             .map(|p| ((p, p), format!("::{}", extern_crate_name)))
             .collect(),
     ))
+}
+
+fn contains_attr(attrs: &[Attribute], target: &Ident) -> bool {
+    for attr in attrs {
+        if_chain! {
+            if let Ok(meta) = attr.parse_meta();
+            if let Meta::List(MetaList { path, nested, .. }) = &meta;
+            if matches!(path.get_ident(), Some(i) if i == "cfg_attr");
+            if let [expr, attrs @ ..] = &*nested.iter().collect::<Vec<_>>();
+            let expr = expr.to_token_stream().to_string();
+            if let Ok(expr) = cfg_expr::Expression::parse(&expr);
+            if expr.eval(|pred| *pred == cfg_expr::Predicate::Flag("cargo_equip"));
+            then {
+                for attr in attrs {
+                    if_chain! {
+                        if let NestedMeta::Meta(attr) = attr;
+                        if let [seg1, seg2] = *attr.path().segments.iter().collect::<Vec<_>>();
+                        if matches!(seg1, PathSegment { ident, .. } if ident == "cargo_equip");
+                        if let PathSegment { ident, .. } = seg2;
+                        if ident == target;
+                        then {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), String>) -> String {
@@ -791,39 +834,37 @@ mod tests {
         }
 
         test(
-            r#"
+            r#"#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
 #[macro_export]
 macro_rules! hello {
-    ($n:expr $(,)?) => {
+    (1 $(,)?) => {
+        $crate::hello::hello();
         $crate::__hello_inner!($n)
     };
+    (0 $(,)?) => {};
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __hello_inner {
-    ($n:expr $(,)?) => {
-        for _ in 0..$n {
-            $crate::hello::hello();
-        }
+macro_rules! _without_attr {
+    () => {
+        let _ = $crate::hello;
+        $crate::hello!(0);
     };
 }
 "#,
-            r#"
+            r#"#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
 #[macro_export]
 macro_rules! hello {
-    ($n:expr $(,)?) => {
+    (1 $(,)?) => {
+        $crate::lib::hello::hello();
         $crate::__hello_inner!($n)
     };
+    (0 $(,)?) => {};
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __hello_inner {
-    ($n:expr $(,)?) => {
-        for _ in 0..$n {
-            $crate::lib::hello::hello();
-        }
+macro_rules! _without_attr {
+    () => {
+        let _ = $crate::hello;
+        $crate::hello!(0);
     };
 }
 "#,
