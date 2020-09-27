@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.0] - 2020-09-27Z
 
 ### Added
 
-- Now cargo-equip supports libraries that depend on each other.
+- Now cargo-equip supports libraries that depend on each other. ([#23](https://github.com/qryxip/cargo-equip/pull/23))
 
     Statements like this will be converted to `use crate::..;`.
 
@@ -15,7 +15,7 @@
 
 ### Changed
 
-- Each library will be expanded in `mod`.
+- Each library will be expanded in `mod`. ([#23](https://github.com/qryxip/cargo-equip/pull/23))
 
     More constraints were introduced. See [README-ja](https://github.com/qryxip/cargo-equip/blob/master/README-ja.md) for more details.
 
@@ -28,7 +28,7 @@
     }
     ```
 
-- cargo-equip will use `[package.metadata.cargo-equip.module-dependencies]` in the main crate.
+- cargo-equip will use `[package.metadata.cargo-equip.module-dependencies]` in the main crate. ([#23](https://github.com/qryxip/cargo-equip/pull/23))
 
     Package metadata in libraries is no longer read.
 
@@ -52,7 +52,7 @@
     "::__atcoder::twosat" = ["::__atcoder::internal_scc"]
     ```
 
-- Renamed `--oneline` option to `--minify`. `--oneline` remains as an alias for `--minify`.
+- Renamed `--oneline` option to `--minify`. `--oneline` remains as an alias for `--minify`. ([#21](https://github.com/qryxip/cargo-equip/pull/21))
 
     With `--minify` option, cargo-equip removes spaces as much as possible.
 
