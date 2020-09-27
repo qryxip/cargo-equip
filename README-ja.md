@@ -12,58 +12,64 @@
 
 ## 例
 
-[Point Add Range Sum - Library-Cheker](https://judge.yosupo.jp/problem/point_add_range_sum)
-
-`lib`側
+[Sqrt Mod - Library-Cheker](https://judge.yosupo.jp/problem/sqrt_mod)
 
 ```toml
-[package.metadata.cargo-equip-lib.mod-dependencies]
-"algebraic" = []
-"fenwick" = ["algebraic"]
-"input" = []
-"output" = []
-```
+[package]
+name = "bin"
+version = "0.0.0"
+authors = ["Ryo Yamashita <qryxip@gmail.com>"]
+edition = "2018"
+publish = false
 
-`bin`側
+[package.metadata.cargo-equip.module-dependencies]
+"::__atcoder::convolution" = ["::__atcoder::internal_bit", "::__atcoder::modint"]
+"::__atcoder::internal_bit" = []
+"::__atcoder::internal_math" = []
+"::__atcoder::internal_queue" = []
+"::__atcoder::internal_scc" = []
+"::__atcoder::internal_type_traits" = []
+"::__atcoder::lazysegtree" = ["::__atcoder::internal_bit", "::__atcoder::segtree"]
+"::__atcoder::math" = ["::__atcoder::internal_math"]
+"::__atcoder::maxflow" = ["::__atcoder::internal_type_traits", "::__atcoder::internal_queue"]
+"::__atcoder::mincostflow" = ["::__atcoder::internal_type_traits"]
+"::__atcoder::modint" = ["::__atcoder::internal_math"]
+"::__atcoder::scc" = ["::__atcoder::internal_scc"]
+"::__atcoder::segtree" = ["::__atcoder::internal_bit", "::__atcoder::internal_type_traits"]
+"::__atcoder::twosat" = ["::__atcoder::internal_scc"]
+"::__lib::input" = []
+"::__lib::output" = []
+"::__lib::tonelli_shanks" = ["::__lib::xorshift"]
+"::__lib::xorshift" = []
+# ..
 
-```toml
 [dependencies]
+__atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
 __lib = { package = "lib", path = "/path/to/lib" }
 ```
 
 ```rust
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__lib::{fenwick::AdditiveFenwickTree, input, output};
+use ::{
+    __atcoder::modint::ModInt,
+    __lib::{input, output, tonelli_shanks::ModIntBaseExt as _},
+};
 
 use std::io::Write as _;
 
 fn main() {
     input! {
-        n: usize,
-        q: usize,
-        r#as: [i64; n],
-    }
-
-    let mut fenwick = AdditiveFenwickTree::new(n);
-
-    for (i, a) in r#as.into_iter().enumerate() {
-        fenwick.plus(i, &a);
+        yps: [(u32, u32)],
     }
 
     output::buf_print(|out| {
         macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
-        for _ in 0..q {
-            input!(kind: u32);
-            match kind {
-                0 => {
-                    input!(p: usize, x: i64);
-                    fenwick.plus(p, &x);
-                }
-                1 => {
-                    input!(l: usize, r: usize);
-                    println!("{}", fenwick.query(l..r));
-                }
-                _ => unreachable!(),
+        for (y, p) in yps {
+            ModInt::set_modulus(p);
+            if let Some(sqrt) = ModInt::new(y).sqrt() {
+                println!("{}", sqrt);
+            } else {
+                println!("-1");
             }
         }
     });
@@ -73,13 +79,14 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --minify mods --rustfmt --check -o ./bundled.rs
+$ cargo equip --remove docs test-items --minify mods --rustfmt --check -o ./bundled.rs
     Bundling code
-    Checking cargo-equip-check-output-dsznj7zzfki6wfpq v0.1.0 (/tmp/cargo-equip-check-output-dsznj7zzfki6wfpq)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.19s
+warning: could not minify the code. inserting spaces: `internal_math`
+    Checking cargo-equip-check-output-rml3nu3kghlx3ar4 v0.1.0 (/tmp/cargo-equip-check-output-rml3nu3kghlx3ar4)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.30s
 ```
 
-<https://judge.yosupo.jp/submission/23733>
+[Submit Info #24741 - Library-Checker](https://judge.yosupo.jp/submission/24741)
 
 ## インストール
 
@@ -101,17 +108,76 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
 
 ## 使い方
 
-`cargo-equip`で展開できるライブラリには以下5つの制限があります。
+`cargo-equip`で展開できるライブラリには以下の制限があります。
 
-1. 非inline module (`mod $name;`)は深さ1まで
-2. 深さ2以上のモジュールはすべてinline module (`mod $name { .. }`)
-3. crate root直下には`mod`以外の`pub`なアイテムが置かれていない (置いてもいいですが使わないでください)
-4. `#[macro_export] macro_rules! name { .. }`は`mod name`の中に置かれている (それ以外の場所に置いていいですがその場合`#[macro_use]`で使ってください)
-5. `#[macro_export]`には組み込み以外のアトリビュート(e.g. `#[rustfmt::skip]`)を使用しない (原理的に展開すると壊れる)
+1. 絶対パスを使わない。クレート内のアイテムはすべて相対パスで書く。
 
-1.と2.はそのうち対応しようと思います。
+    Rustのパス解決をシミュレートするのは非常に困難であるため、cargo-equipはパスの置き換えを行いません。
+    `crate::`は`self::`と`super::`で書き直してください。
+
+    ```diff
+    -use crate::foo::Foo;
+    +use super::foo::Foo;
+    ```
+
+2. 共に展開する予定のクレートを使う場合、各モジュールに`#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]`を付けた`extern crate`を宣言してマウントし、そこを相対パスで参照する。
+
+    cargo-equipはこのアトリビュートの付いた`extern crate`を`use crate::extern_crate_name_in_main_crate;`に置き換えます。
+
+    誤って直接使わないように対象の名前は[リネーム](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml)しておくことを強く推奨します。
+
+    ```rust
+    #[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]
+    extern crate __another_lib as another_lib;
+    ```
+
+    注意点として、バンドル後のコードが2015 editionで実行される場合(yukicoder, Library-Checker)、相対パスで参照するときは`self::`を付けてください。
+
+    ```diff
+    -use another_lib::Foo;
+    +use self::another_lib::Foo;
+    ```
+
+3. `#[macro_export] macro_rules! name { .. }`は`mod name`の中に置かれている
+
+    cargo-equipはmain source file内でどのマクロが使われているのかを調べません。
+    この制約を守れば`#[macro_export]`したマクロは展開前も展開後も自然に動作します。
+
+    ```rust
+    #[cfg_attr(cargo_equip, cargo_equip::equip)]
+    use ::__my_lib::input;
+    ```
+
+4. マクロにおいて`$crate::`でアイテムのパスを指定している場合、`#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]`を付ける
+
+    cargo-equipはこのアトリビュートが付いた`macro_rules!`内にあるすべての`$crate`を、`::identifier!`と続く場合のみを除いて`$crate::extern_crate_name`と置き換えます。
+    アトリビュートが無い場合、またはアトリビュートをtypoしている場合は一切操作しません。
+    4.の制約を守っているなら無くても動く場合があります。
+
+    ```rust
+    #[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
+    #[macro_export]
+    macro_rules! input {
+        () => {
+            // ..
+        };
+    }
+    ```
+
+5. 非inline module (`mod $name;`)は深さ1まで
+
+6. 深さ2以上のモジュールはすべてinline module (`mod $name { .. }`)
+
+7. crate root直下には`mod`以外の`pub`なアイテムが置かれていない
+
+    置いてもいいですが使わないでください。
+    現在cargo-equipは`lib.rs`直下の`mod`以外のアイテムをすべて無視します。
+
+
+5.と6.と7.はそのうち対応しようと思います。
 
 このように薄く広く作ってください。
+ディレクトリに分けたくなったらクレートを分割してください。
 
 ```
 src
@@ -128,42 +194,41 @@ pub mod b;
 pub mod c;
 ```
 
-この制限に合うようなライブラリを書いたら、その`Cargo.toml`の`package.metadata`にモジュールの依存関係を手で書いてください。
-直接`use`したモジュールと、その連結成分だけを展開します。
-欠けている場合はwarningと共にすべてのモジュールを展開します。
-
-[使う側で指定できるようにすることも考えています](https://github.com/qryxip/cargo-equip/issues/2)。
-
-```toml
-[package.metadata.cargo-equip-lib.mod-dependencies]
-"a" = []
-"b" = ["a"]
-"c" = ["a"]
-```
-
-そして`bin`側の準備として、バンドルしたいライブラリを`dependencies`に加えてください。
+そして`bin`側の準備として、バンドルしたいライブラリを`Cargo.toml`の`dependencies`に加えてください。
 コンテスト毎にツールでパッケージを自動生成しているならそれのテンプレートに加えてください。
 
-ただしこの際、ライブラリは誤って直接使わないようにリネームしておくことを強く推奨します。
+ただしこの際、ライブラリは誤って直接使わないように[リネーム](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml)しておくことを強く推奨します。
 直接使った場合`cargo-equip`はそれについて何も操作しません。
 
 ```toml
 [dependencies]
+__atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
 __my_lib = { package = "my_lib", path = "/path/to/my_lib" }
+```
+
+この制限に合うようなライブラリを書いたら、その`Cargo.toml`の`package.metadata`にモジュールの依存関係を手で書いてください。
+直接`use`したモジュールと、その連結成分だけを展開します。
+書いていない場合や欠けている場合はwarningと共にすべてのモジュールを展開します。
+
+```toml
+[package.metadata.cargo-equip.module-dependencies]
+"::__my_lib::a" = ["::__my_lib::c"]
+"::__my_lib::b" = []
+"::__my_lib::c" = []
 ```
 
 準備ができたらこのようにattribute付きでライブラリを`use`します。
 
 ```rust
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{b::B, c::C};
+use ::__my_lib::{a::A, b::B};
 
 // or
 //
 //#[cfg_attr(cargo_equip, cargo_equip::equip)]
 //use ::{
-//    __my_lib1::{b::B, c::C},
-//    __my_lib2::{d::D, e::E},
+//    __my_lib1::{a::A, b::B},
+//    __my_lib2::{c::C, c::C},
 //};
 ```
 
@@ -171,7 +236,7 @@ use ::__my_lib::{b::B, c::C};
 
 ```
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{b::B, c::C};
+use ::__my_lib::{a::A, b::B};
     ^^
 ```
 
@@ -180,24 +245,24 @@ leading colonを必須としているのはこのためです。
 
 ```
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{b::B, c::C};
+use ::__my_lib::{a::A, b::B};
       ^^^^^^^^
 ```
 
 先述したライブラリの制約より、パスの第二セグメントはモジュールとみなします。
-これらのモジュールと、先程書いた`mod-dependencies`で繋がっているモジュールが展開されます。
+これらのモジュールと、先程書いた`module-dependencies`で繋がっているモジュールが展開されます。
 
 ```
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{b::B, c::C};
+use ::__my_lib::{a::A, b::B};
                  ^     ^
 ```
 
-第三セグメント以降は`use self::$name::{..}`と展開されます。
+第三セグメント以降は`use self::$extern_crate_name::$module_name::{..}`と展開されます。
 
 ```
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{b::B, c::C};
+use ::__my_lib::{a::A, b::B};
                     ^     ^
 ```
 
@@ -219,12 +284,12 @@ $ cargo equip --bin "$name"
 //!
 //! ### Modules
 //!
-//! - `::__my_lib::a` → `$crate::a`
-//! - `::__my_lib::b` → `$crate::b`
-//! - `::__my_lib::c` → `$crate::c`
+//! - `::__my_lib::a`
+//! - `::__my_lib::b`
+//! - `::__my_lib::c`
 
 /*#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{b::B, c::C};*/
+use ::__my_lib::{a::A, b::B};*/
 
 fn main() {
     todo!();
@@ -232,44 +297,40 @@ fn main() {
 
 // The following code was expanded by `cargo-equip`.
 
-use self::b::B;
-use self::c::C;
+use self::__my_lib::a::A;
+use self::__my_lib::b::B;
 
-// `b`と`c`で使われていると`mod-dependencies`に記述されているため、展開される
-mod a {
-    // ..
-}
+#[allow(dead_code)]
+pub mod __my_lib {
+    mod a {
+        // ..
+    }
 
-mod b {
-    // ..
-}
+    mod b {
+        // ..
+    }
 
-mod c {
-    // ..
-}
-```
-
-モジュールの階層が変わらないため、各ファイルの中身を手を加えずにそのまま展開します。
-そのため壊れにくくなっているはずです。
-多分。
-
-またライブラリ内の`#[macro_export]`しているマクロですが、マクロ名と同名のモジュールに入れておくと自然な形で使えると思います。
-
-```rust
-// input.rs
-
-#[macro_export]
-macro_rules! input {
-    ($($tt:tt)*) => {
-        compile_error!("TODO")
-    };
+    // `a`で使われていると`mod-dependencies`に記述されているため、展開される
+    mod c {
+        // ..
+    }
 }
 ```
 
-```rust
-#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::input;
-```
+cargo-equipがやる操作は以下の通りです。これ以外は何も行いません。
+
+- `bin`側
+    - `cargo_equip::equip`が付いた`use`をコメントアウト
+    - doc commentを上部に追加
+    - 展開した`lib`を下部に追加
+- `lib`側
+    - 各モジュールの中身をインデントする。ただし複数行にまたがるリテラルが無い場合はそのまま
+    - `#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]`が付いた`extern crate`を操作
+    - `#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]`が付いた`macro_rules!`を操作
+    - `--remove <REMOVE>...`オプションを付けた場合対象を操作
+- 両方
+    - `--minify all`オプションを付けた場合コード全体を最小化する
+    - `--rustfmt`オプションを付けた場合Rustfmtでフォーマットする
 
 ## オプション
 
@@ -282,6 +343,7 @@ use ::__my_lib::input;
 除去することができます。
 
 ```rust
+#[allow(dead_code)]
 pub mod a {
     //! A.
 
@@ -301,6 +363,7 @@ pub mod a {
 ↓
 
 ```rust
+#[allow(dead_code)]
 pub mod a {
     pub struct A;
 }

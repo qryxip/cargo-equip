@@ -12,58 +12,64 @@ A Cargo subcommand to bundle your code into one `.rs` file for competitive progr
 
 ## Example
 
-[Point Add Range Sum - Library-Cheker](https://judge.yosupo.jp/problem/point_add_range_sum)
-
-`lib`
+[Sqrt Mod - Library-Cheker](https://judge.yosupo.jp/problem/sqrt_mod)
 
 ```toml
-[package.metadata.cargo-equip-lib.mod-dependencies]
-"algebraic" = []
-"fenwick" = ["algebraic"]
-"input" = []
-"output" = []
-```
+[package]
+name = "bin"
+version = "0.0.0"
+authors = ["Ryo Yamashita <qryxip@gmail.com>"]
+edition = "2018"
+publish = false
 
-`bin`
+[package.metadata.cargo-equip.module-dependencies]
+"::__atcoder::convolution" = ["::__atcoder::internal_bit", "::__atcoder::modint"]
+"::__atcoder::internal_bit" = []
+"::__atcoder::internal_math" = []
+"::__atcoder::internal_queue" = []
+"::__atcoder::internal_scc" = []
+"::__atcoder::internal_type_traits" = []
+"::__atcoder::lazysegtree" = ["::__atcoder::internal_bit", "::__atcoder::segtree"]
+"::__atcoder::math" = ["::__atcoder::internal_math"]
+"::__atcoder::maxflow" = ["::__atcoder::internal_type_traits", "::__atcoder::internal_queue"]
+"::__atcoder::mincostflow" = ["::__atcoder::internal_type_traits"]
+"::__atcoder::modint" = ["::__atcoder::internal_math"]
+"::__atcoder::scc" = ["::__atcoder::internal_scc"]
+"::__atcoder::segtree" = ["::__atcoder::internal_bit", "::__atcoder::internal_type_traits"]
+"::__atcoder::twosat" = ["::__atcoder::internal_scc"]
+"::__lib::input" = []
+"::__lib::output" = []
+"::__lib::tonelli_shanks" = ["::__lib::xorshift"]
+"::__lib::xorshift" = []
+# ..
 
-```toml
 [dependencies]
+__atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
 __lib = { package = "lib", path = "/path/to/lib" }
 ```
 
 ```rust
 #[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__lib::{fenwick::AdditiveFenwickTree, input, output};
+use ::{
+    __atcoder::modint::ModInt,
+    __lib::{input, output, tonelli_shanks::ModIntBaseExt as _},
+};
 
 use std::io::Write as _;
 
 fn main() {
     input! {
-        n: usize,
-        q: usize,
-        r#as: [i64; n],
-    }
-
-    let mut fenwick = AdditiveFenwickTree::new(n);
-
-    for (i, a) in r#as.into_iter().enumerate() {
-        fenwick.plus(i, &a);
+        yps: [(u32, u32)],
     }
 
     output::buf_print(|out| {
         macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
-        for _ in 0..q {
-            input!(kind: u32);
-            match kind {
-                0 => {
-                    input!(p: usize, x: i64);
-                    fenwick.plus(p, &x);
-                }
-                1 => {
-                    input!(l: usize, r: usize);
-                    println!("{}", fenwick.query(l..r));
-                }
-                _ => unreachable!(),
+        for (y, p) in yps {
+            ModInt::set_modulus(p);
+            if let Some(sqrt) = ModInt::new(y).sqrt() {
+                println!("{}", sqrt);
+            } else {
+                println!("-1");
             }
         }
     });
@@ -73,13 +79,36 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --minify mods --rustfmt --check -o ./bundled.rs
+$ cargo equip --remove docs test-items --minify mods --rustfmt --check -o ./bundled.rs
     Bundling code
-    Checking cargo-equip-check-output-dsznj7zzfki6wfpq v0.1.0 (/tmp/cargo-equip-check-output-dsznj7zzfki6wfpq)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.19s
+warning: could not minify the code. inserting spaces: `internal_math`
+    Checking cargo-equip-check-output-rml3nu3kghlx3ar4 v0.1.0 (/tmp/cargo-equip-check-output-rml3nu3kghlx3ar4)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.30s
 ```
 
-<https://judge.yosupo.jp/submission/23733>
+[Submit Info #24741 - Library-Checker](https://judge.yosupo.jp/submission/24741)
+
+## Installation
+
+### Crates.io
+
+```console
+$ cargo install cargo-equip
+```
+
+### `master`
+
+```console
+$ cargo install --git https://github.com/qryxip/cargo-equip
+```
+
+### GitHub Releases
+
+[Releases](https://github.com/qryxip/cargo-equip/releases)
+
+## Usage
+
+TODO ([Japanese](https://github.com/qryxip/cargo-equip/blob/master/README-ja.md#使い方))
 
 ## License
 

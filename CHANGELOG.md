@@ -2,7 +2,55 @@
 
 ## [Unreleased]
 
+### Added
+
+- Now cargo-equip supports libraries that depend on each other.
+
+    Statements like this will be converted to `use crate::..;`.
+
+    ```
+    #[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]
+    extern crate __another_lib as another_lib;
+    ```
+
 ### Changed
+
+- Each library will be expanded in `mod`.
+
+    More constraints were introduced. See [README-ja](https://github.com/qryxip/cargo-equip/blob/master/README-ja.md) for more details.
+
+    ```rust
+    #[allow(dead_code)]
+    pub mod __lib {
+        pub mod a {}
+        pub mod b {}
+        pub mod c {}
+    }
+    ```
+
+- cargo-equip will use `[package.metadata.cargo-equip.module-dependencies]` in the main crate.
+
+    Package metadata in libraries is no longer read.
+
+    And the format was also changed.
+
+    ```toml
+    [package.metadata.cargo-equip.module-dependencies]
+    "::__atcoder::convolution" = ["::__atcoder::internal_bit", "::__atcoder::modint"]
+    "::__atcoder::internal_bit" = []
+    "::__atcoder::internal_math" = []
+    "::__atcoder::internal_queue" = []
+    "::__atcoder::internal_scc" = []
+    "::__atcoder::internal_type_traits" = []
+    "::__atcoder::lazysegtree" = ["::__atcoder::internal_bit", "::__atcoder::segtree"]
+    "::__atcoder::math" = ["::__atcoder::internal_math"]
+    "::__atcoder::maxflow" = ["::__atcoder::internal_type_traits", "::__atcoder::internal_queue"]
+    "::__atcoder::mincostflow" = ["::__atcoder::internal_type_traits"]
+    "::__atcoder::modint" = ["::__atcoder::internal_math"]
+    "::__atcoder::scc" = ["::__atcoder::internal_scc"]
+    "::__atcoder::segtree" = ["::__atcoder::internal_bit", "::__atcoder::internal_type_traits"]
+    "::__atcoder::twosat" = ["::__atcoder::internal_scc"]
+    ```
 
 - Renamed `--oneline` option to `--minify`. `--oneline` remains as an alias for `--minify`.
 
