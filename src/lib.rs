@@ -347,7 +347,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     if minify == Minify::Mods {
         for ((_, extern_crate_name), mod_contents) in contents {
-            code += "\npub mod ";
+            code += "\n#[allow(dead_code)]\npub mod ";
             code += &extern_crate_name.to_string();
             code += " {\n";
             for (mod_name, mod_content) in mod_contents {
@@ -364,7 +364,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         }
     } else {
         for ((_, extern_crate_name), mod_contents) in contents {
-            code += "\npub mod ";
+            code += "\n#[allow(dead_code)]\npub mod ";
             code += &extern_crate_name.to_string();
             code += " {";
             for (mod_name, mod_content) in mod_contents {
