@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.1] - 2020-09-28Z
 
 ### Added
 
-- Enabled writing `package.metadata.cargo-equip.module-dependencies` also in libraries.
+- Enabled writing `package.metadata.cargo-equip.module-dependencies` also in libraries. ([#25](https://github.com/qryxip/cargo-equip/pull/25))
 
     They are merged into one graph.
 
