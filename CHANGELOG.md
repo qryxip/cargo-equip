@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Enabled writing `package.metadata.cargo-equip.module-dependencies` also in libraries.
+
+    They are merged into one graph.
+
+    ```toml
+    [package.metadata.cargo-equip.module-dependencies]
+    "crate::a" = []
+    "crate::b" = ["crate::b"]
+    "crate::c" = ["::__another_lib::d"]
+    "::__another_lib::d" = ["::__another_lib::e"]
+    ```
+
 ## [0.4.0] - 2020-09-27Z
 
 ### Added

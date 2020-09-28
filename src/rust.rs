@@ -22,17 +22,17 @@ use syn::{
 };
 
 #[derive(Default)]
-pub(crate) struct Equipments {
+pub(crate) struct Equipments<'cm> {
     pub(crate) span: Option<Span>,
     pub(crate) uses: Vec<ItemUse>,
-    pub(crate) directly_used_mods: BTreeMap<Ident, BTreeSet<Ident>>,
+    pub(crate) directly_used_mods: BTreeMap<&'cm cm::PackageId, BTreeSet<Ident>>,
     pub(crate) contents: BTreeMap<(cm::PackageId, Ident), BTreeMap<Ident, Option<String>>>,
 }
 
-pub(crate) fn equipments(
+pub(crate) fn equipments<'cm>(
     file: &syn::File,
-    mut lib_info: impl FnMut(&Ident) -> anyhow::Result<(cm::PackageId, PathBuf)>,
-) -> anyhow::Result<Equipments> {
+    mut lib_info: impl FnMut(&Ident) -> anyhow::Result<(&'cm cm::PackageId, PathBuf)>,
+) -> anyhow::Result<Equipments<'cm>> {
     // TODO: find the matched attributes in inline/external `mod`s and raise an error
 
     let mut uses = vec![];
@@ -167,10 +167,10 @@ pub(crate) fn equipments(
         equipments.uses.extend(uses);
         equipments
             .directly_used_mods
-            .insert(extern_crate_name.clone(), directly_used_mods);
+            .insert(lib_pkg, directly_used_mods);
         equipments
             .contents
-            .entry((lib_pkg, extern_crate_name))
+            .entry((lib_pkg.clone(), extern_crate_name))
             .or_default()
             .extend(contents.into_iter().map(|(e, c)| (e, Some(c))));
     }

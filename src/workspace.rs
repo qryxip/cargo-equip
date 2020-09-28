@@ -1,21 +1,15 @@
+use crate::mod_dep::ModulePath;
 use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
 use itertools::Itertools as _;
-use once_cell::sync::Lazy;
 use rand::Rng as _;
-use regex::Regex;
-use serde::{de::Error as _, Deserialize, Deserializer};
-use std::collections::HashSet;
+use serde::Deserialize;
 use std::{
-    collections::{BTreeSet, HashMap},
-    fmt,
+    collections::{BTreeMap, BTreeSet, HashSet},
     path::{Path, PathBuf},
-    str::{self, FromStr},
+    str,
 };
-use syn::Ident;
-
-use crate::shell::Shell;
 
 pub(crate) fn locate_project(cwd: &Path) -> anyhow::Result<PathBuf> {
     cwd.ancestors()
@@ -296,18 +290,15 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 
 #[ext(PackageExt)]
 impl cm::Package {
-    pub(crate) fn parse_metadata(
-        &self,
-        shell: &mut Shell,
-    ) -> anyhow::Result<PackageMetadataCargoEquip> {
+    pub(crate) fn parse_metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
         #[derive(Deserialize)]
         #[serde(rename_all = "kebab-case")]
         struct PackageMetadata {
             cargo_equip: Option<PackageMetadataCargoEquip>,
         }
 
-        let cargo_equip = if self.metadata.is_null() {
-            None
+        if self.metadata.is_null() {
+            Ok(PackageMetadataCargoEquip::default())
         } else {
             let PackageMetadata { cargo_equip } = serde_json::from_value(self.metadata.clone())
                 .with_context(|| {
@@ -316,17 +307,7 @@ impl cm::Package {
                         self.manifest_path.display(),
                     )
                 })?;
-            cargo_equip
-        };
-
-        if let Some(cargo_equip) = cargo_equip {
-            Ok(cargo_equip)
-        } else {
-            shell.warn(format!(
-                "missing `package.metadata.cargo-equip` in `{}`. including all of the modules",
-                self.manifest_path.display(),
-            ))?;
-            Ok(PackageMetadataCargoEquip::default())
+            Ok(cargo_equip.unwrap_or_default())
         }
     }
 }
@@ -334,71 +315,5 @@ impl cm::Package {
 #[derive(Default, Deserialize, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) struct PackageMetadataCargoEquip {
-    pub(crate) module_dependencies: HashMap<PseudoModulePath, BTreeSet<PseudoModulePath>>,
-}
-
-#[derive(Debug, Clone, Ord, Eq, PartialOrd, PartialEq, Hash)]
-pub(crate) struct PseudoModulePath {
-    pub(crate) extern_crate_name: String,
-    pub(crate) module_name: String,
-}
-
-impl PseudoModulePath {
-    pub(crate) fn new(extern_crate_name: &Ident, module_name: &Ident) -> Self {
-        Self {
-            extern_crate_name: extern_crate_name.to_string(),
-            module_name: module_name.to_string(),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for PseudoModulePath {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(D::Error::custom)
-    }
-}
-
-impl FromStr for PseudoModulePath {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, String> {
-        static REGEX: Lazy<Regex> =
-            Lazy::new(|| Regex::new(r"\A::([a-zA-Z0-9_]+)::([a-zA-Z0-9_]+)\z").unwrap());
-
-        if let Some(caps) = REGEX.captures(s) {
-            Ok(Self {
-                extern_crate_name: caps[1].to_owned(),
-                module_name: caps[2].to_owned(),
-            })
-        } else {
-            Err(format!("expected `{}`", REGEX.as_str()))
-        }
-    }
-}
-
-impl fmt::Display for PseudoModulePath {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\"::{}::{}\"", self.extern_crate_name, self.module_name)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::workspace::PseudoModulePath;
-
-    #[test]
-    fn parse_pseudo_module_path() {
-        fn parse(s: &str) -> Result<(), ()> {
-            s.parse::<PseudoModulePath>().map(|_| ()).map_err(|_| ())
-        }
-
-        assert!(parse("::library::module").is_ok());
-        assert!(parse("::library::module::module").is_err());
-        assert!(parse("library::module").is_err());
-    }
+    pub(crate) module_dependencies: Option<BTreeMap<ModulePath, BTreeSet<ModulePath>>>,
 }
