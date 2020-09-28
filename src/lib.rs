@@ -2,6 +2,7 @@
 #![warn(rust_2018_idioms)]
 #![recursion_limit = "256"]
 
+mod mod_dep;
 mod process;
 mod rust;
 mod rustfmt;
@@ -11,18 +12,15 @@ mod workspace;
 use crate::{
     rust::Equipments,
     shell::Shell,
-    workspace::{MetadataExt as _, PackageExt as _, PseudoModulePath},
+    workspace::{MetadataExt as _, PackageExt as _},
 };
 use anyhow::Context as _;
+use maplit::btreemap;
 use quote::ToTokens as _;
-use std::collections::HashMap;
-use std::{
-    collections::{BTreeSet, VecDeque},
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{collections::HashMap, iter, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
 use url::Url;
+use workspace::PackageMetadataCargoEquip;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -178,7 +176,6 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     } else {
         metadata.exactly_one_bin_target()
     }?;
-    let package_metadata = bin_package.parse_metadata(shell)?;
 
     shell.status("Bundling", "code")?;
 
@@ -196,50 +193,53 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     } = rust::equipments(&syn::parse_file(&code)?, |extern_crate_name| {
         let (lib, lib_package) = metadata
             .dep_lib_by_extern_crate_name(&bin_package.id, &extern_crate_name.to_string())?;
-        Ok((lib_package.id.clone(), lib.src_path.clone()))
+        Ok((&lib_package.id, lib.src_path.clone()))
     })?;
 
-    let used_mods = {
-        let mut used_mods = directly_used_mods
-            .into_iter()
-            .flat_map(|(extern_crate_name, module_names)| {
-                module_names
-                    .into_iter()
-                    .map(move |module_name| PseudoModulePath::new(&extern_crate_name, &module_name))
-            })
-            .collect::<BTreeSet<_>>();
-        let mut queue = used_mods.iter().cloned().collect::<VecDeque<_>>();
-        loop {
-            if let Some(from) = queue.pop_front() {
-                if let Some(to) = package_metadata.module_dependencies.get(&from) {
-                    for to in to {
-                        if used_mods.insert(to.clone()) {
-                            queue.push_back(to.clone());
-                        }
-                    }
-                } else {
-                    shell.warn(format!(
-                        "missing `package.metadata.cargo-equip.module-dependencies.{}`. \
-                         including all of the modules",
-                        from,
-                    ))?;
-                    break None;
-                }
-            } else {
-                break Some(used_mods);
+    let used_mods = (|| {
+        let mut graph = btreemap!();
+
+        for package_id in directly_used_mods
+            .keys()
+            .copied()
+            .chain(iter::once(&bin_package.id))
+        {
+            if let PackageMetadataCargoEquip {
+                module_dependencies: Some(module_dependencies),
+            } = metadata[package_id].parse_metadata()?
+            {
+                graph.extend(mod_dep::assign_packages(
+                    &module_dependencies,
+                    package_id,
+                    |extern_crate_name| {
+                        let (_, to) = metadata.dep_lib_by_extern_crate_name(
+                            package_id,
+                            &extern_crate_name.to_string(),
+                        )?;
+                        Ok(&to.id)
+                    },
+                )?);
             }
         }
-    };
+
+        let used_mods = mod_dep::connect(&graph, &directly_used_mods);
+        Ok::<_, anyhow::Error>(used_mods)
+    })()?;
 
     if let Some(used_mods) = used_mods {
         for (key, contents) in &mut contents {
-            let (_, extern_crate_name) = key;
+            let (package_id, _) = key;
             for (mod_name, content) in contents {
-                if !used_mods.contains(&PseudoModulePath::new(extern_crate_name, mod_name)) {
+                if !used_mods.contains(&(package_id, mod_name.to_string())) {
                     *content = None;
                 }
             }
         }
+    } else {
+        shell.warn(
+            "missing some nodes in `package.metadata.cargo-equip.module-dependencies`. including \
+             all of the modules",
+        )?;
     }
 
     let extern_crate_names_by_package_id = contents

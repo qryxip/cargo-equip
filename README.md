@@ -16,13 +16,16 @@ A Cargo subcommand to bundle your code into one `.rs` file for competitive progr
 
 ```toml
 [package]
-name = "bin"
+name = "lib"
 version = "0.0.0"
-authors = ["Ryo Yamashita <qryxip@gmail.com>"]
 edition = "2018"
-publish = false
 
 [package.metadata.cargo-equip.module-dependencies]
+"crate::input" = []
+"crate::output" = []
+"crate::tonelli_shanks" = ["crate::xorshift", "::__atcoder::modint"]
+"crate::xorshift" = []
+# ..
 "::__atcoder::convolution" = ["::__atcoder::internal_bit", "::__atcoder::modint"]
 "::__atcoder::internal_bit" = []
 "::__atcoder::internal_math" = []
@@ -37,11 +40,16 @@ publish = false
 "::__atcoder::scc" = ["::__atcoder::internal_scc"]
 "::__atcoder::segtree" = ["::__atcoder::internal_bit", "::__atcoder::internal_type_traits"]
 "::__atcoder::twosat" = ["::__atcoder::internal_scc"]
-"::__lib::input" = []
-"::__lib::output" = []
-"::__lib::tonelli_shanks" = ["::__lib::xorshift"]
-"::__lib::xorshift" = []
-# ..
+
+[dependencies]
+__atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
+```
+
+```toml
+[package]
+name = "bin"
+version = "0.0.0"
+edition = "2018"
 
 [dependencies]
 __atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
