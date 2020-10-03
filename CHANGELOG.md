@@ -1,14 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] - 2020-10-03Z
 
 ### Changed
 
-- Changed the process of bundling.
+- Changed the process of bundling. ([#27](https://github.com/qryxip/cargo-equip/pull/27))
 
     Now cargo-equip "expands" each `mod`s in `lib.rs`, remove unused ones, then minify the code by `lib`.
 
-- `#[cfg_attr(cargo_equip, cargo_equip::equip)]` now targets root modules instead of `use` statements.
+- `#[cfg_attr(cargo_equip, cargo_equip::equip)]` now targets root modules instead of `use` statements. ([#27](https://github.com/qryxip/cargo-equip/pull/27))
 
     All of the `use` statements in the crate root that start with `::` are expanded.
 
@@ -19,7 +19,7 @@
     use ::__bar::{c::C, d::D};
     ```
 
-- Renamed `--minify mods` to `--minify libs`.
+- Renamed `--minify mods` to `--minify libs`. ([#27](https://github.com/qryxip/cargo-equip/pull/27))
 
 ## [0.4.1] - 2020-09-28Z
 
