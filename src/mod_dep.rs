@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt,
@@ -43,11 +44,11 @@ pub(crate) fn assign_packages<'cm>(
 
 pub(crate) fn connect<'cm>(
     graph: &BTreeMap<PackageModulePath<'cm>, BTreeSet<PackageModulePath<'cm>>>,
-    start: &BTreeMap<&'cm cm::PackageId, BTreeSet<syn::Ident>>,
+    start: &BTreeMap<&'cm cm::PackageId, HashSet<String>>,
 ) -> Option<BTreeSet<PackageModulePath<'cm>>> {
     let mut ret = start
         .iter()
-        .flat_map(|(k, v)| v.iter().map(move |v| (*k, v.to_string())))
+        .flat_map(|(k, v)| v.iter().map(move |v| (*k, v.clone())))
         .collect::<BTreeSet<_>>();
     let mut queue = ret.iter().cloned().collect::<VecDeque<_>>();
     loop {

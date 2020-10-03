@@ -238,6 +238,7 @@ impl cm::Metadata {
         &self,
         from: &cm::PackageId,
         to: &cm::PackageId,
+        to_target: &cm::Target,
     ) -> Option<String> {
         let from = &self[from];
         let to = &self[to];
@@ -271,10 +272,7 @@ impl cm::Metadata {
         if explicit_names.contains(name) {
             Some(name.clone())
         } else {
-            to.targets
-                .iter()
-                .find(|cm::Target { kind, .. }| *kind == ["lib"])
-                .map(|cm::Target { name, .. }| name.replace('-', "_"))
+            Some(to_target.name.replace('-', "_"))
         }
     }
 }

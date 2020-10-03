@@ -87,14 +87,14 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --remove docs test-items --minify mods --rustfmt --check -o ./bundled.rs
-    Bundling code
-warning: could not minify the code. inserting spaces: `internal_math`
-    Checking cargo-equip-check-output-rml3nu3kghlx3ar4 v0.1.0 (/tmp/cargo-equip-check-output-rml3nu3kghlx3ar4)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.30s
+$ cargo equip --remove docs test-items --minify libs --rustfmt --check -o bundled.rs
+    Bundling the code
+warning: could not minify the code. inserting spaces: `crate::__atcoder`
+    Checking cargo-equip-check-output-d2y79wjwradhzmc5 v0.1.0 (/tmp/cargo-equip-check-output-d2y79wjwradhzmc5)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.36s
 ```
 
-[Submit Info #24741 - Library-Checker](https://judge.yosupo.jp/submission/24741)
+[Submit Info #25574 - Library-Checker](https://judge.yosupo.jp/submission/25574)
 
 ## Installation
 
