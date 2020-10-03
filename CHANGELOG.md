@@ -1,5 +1,26 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Changed the process of bundling.
+
+    Now cargo-equip "expands" each `mod`s in `lib.rs`, remove unused ones, then minify the code by `lib`.
+
+- `#[cfg_attr(cargo_equip, cargo_equip::equip)]` now targets root modules instead of `use` statements.
+
+    All of the `use` statements in the crate root that start with `::` are expanded.
+
+    ```rust
+    #![cfg_attr(cargo_equip, cargo_equip::equip)]
+
+    use ::__foo::{a::A, b::B};
+    use ::__bar::{c::C, d::D};
+    ```
+
+- Renamed `--minify mods` to `--minify libs`.
+
 ## [0.4.1] - 2020-09-28Z
 
 ### Added

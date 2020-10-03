@@ -87,14 +87,14 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --remove docs test-items --minify mods --rustfmt --check -o ./bundled.rs
-    Bundling code
-warning: could not minify the code. inserting spaces: `internal_math`
-    Checking cargo-equip-check-output-rml3nu3kghlx3ar4 v0.1.0 (/tmp/cargo-equip-check-output-rml3nu3kghlx3ar4)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.30s
+$ cargo equip --remove docs test-items --minify libs --rustfmt --check -o bundled.rs
+    Bundling the code
+warning: could not minify the code. inserting spaces: `crate::__atcoder`
+    Checking cargo-equip-check-output-d2y79wjwradhzmc5 v0.1.0 (/tmp/cargo-equip-check-output-d2y79wjwradhzmc5)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.36s
 ```
 
-[Submit Info #24741 - Library-Checker](https://judge.yosupo.jp/submission/24741)
+[Submit Info #25574 - Library-Checker](https://judge.yosupo.jp/submission/25574)
 
 ## インストール
 
@@ -184,17 +184,17 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
      }
     ```
 
-5. 非inline module (`mod $name;`)は深さ1まで
+5. 可能な限りinline module (`mod $name;`)は深さ1まで
 
-6. 深さ2以上のモジュールはすべてinline module (`mod $name { .. }`)
+    後述する`package.metadata`でのモジュール依存関係の記述は今のところトップモジュール単位です。
 
-7. crate root直下には`mod`以外の`pub`なアイテムが置かれていない
+6. crate root直下には`mod`以外の`pub`なアイテムが置かれていない
 
     置いてもいいですが使わないでください。
-    現在cargo-equipは`lib.rs`直下の`mod`以外のアイテムをすべて無視します。
+    現在cargo-equipは`lib.rs`直下の`mod`以外のアイテムを、読みますがすべて消し飛ばします。
 
 
-5.と6.と7.はそのうち対応しようと思います。
+5.と6.はそのうち対応しようと思います。
 
 このように薄く広く作ってください。
 
@@ -257,29 +257,23 @@ pub mod c;
 ```toml
 [dependencies]
 __atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
-__my_lib = { package = "my_lib", path = "/path/to/my_lib" }
+__my_lib1 = { package = "my_lib1", path = "/path/to/my_lib1" }
+__my_lib2 = { package = "my_lib2", path = "/path/to/my_lib2" }
 ```
 
 準備ができたらこのようにattribute付きでライブラリを`use`します。
 
 ```rust
-#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{a::A, b::B};
+#![cfg_attr(cargo_equip, cargo_equip::equip)]
 
-// or
-//
-//#[cfg_attr(cargo_equip, cargo_equip::equip)]
-//use ::{
-//    __my_lib1::{a::A, b::B},
-//    __my_lib2::{c::C, c::C},
-//};
+use ::__my_lib1::{a::A, b::B};
+use ::__my_lib1::{c::C, d::D};
 ```
 
-`use`のパスにはleading colon (`::`)を付けてください。
+leading colon (`::`)が付いた`use`だけ展開されます。
 
 ```
-#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{a::A, b::B};
+use ::__my_lib1::{a::A, b::B};
     ^^
 ```
 
@@ -287,8 +281,7 @@ use ::__my_lib::{a::A, b::B};
 leading colonを必須としているのはこのためです。
 
 ```
-#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{a::A, b::B};
+use ::__my_lib1::{a::A, b::B};
       ^^^^^^^^
 ```
 
@@ -296,16 +289,14 @@ use ::__my_lib::{a::A, b::B};
 これらのモジュールと、先程書いた`module-dependencies`で繋がっているモジュールが展開されます。
 
 ```
-#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{a::A, b::B};
+use ::__my_lib1::{a::A, b::B};
                  ^     ^
 ```
 
 第三セグメント以降は`use self::$extern_crate_name::$module_name::{..}`と展開されます。
 
 ```
-#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{a::A, b::B};
+use ::__my_lib1::{a::A, b::B};
                     ^     ^
 ```
 
@@ -323,16 +314,24 @@ $ cargo equip --bin "$name"
 ```rust
 //! # Bundled libraries
 //!
-//! ## [`my_lib`]({ a link to Crates.io or the repository })
+//! ## [`my_lib1`]({ a link to Crates.io or the repository })
 //!
 //! ### Modules
 //!
-//! - `::__my_lib::a`
-//! - `::__my_lib::b`
-//! - `::__my_lib::c`
+//! - `::__my_lib1::a`
+//! - `::__my_lib1::b`
+//!
+//! ## [`my_lib2`]({ a link to Crates.io or the repository })
+//!
+//! ### Modules
+//!
+//! - `::__my_lib2::c`
+//! - `::__my_lib2::d`
 
-/*#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::__my_lib::{a::A, b::B};*/
+/*#![cfg_attr(cargo_equip, cargo_equip::equip)]*/
+
+/*use ::__my_lib1::{a::A, b::B};*/
+/*use ::__my_lib2::{c::C, d::D};*/
 
 fn main() {
     todo!();
@@ -340,8 +339,8 @@ fn main() {
 
 // The following code was expanded by `cargo-equip`.
 
-use self::__my_lib::a::A;
-use self::__my_lib::b::B;
+use self::__my_lib1::{a::A, b::B};
+use self::__my_lib2::{c::C, d::D};
 
 #[allow(dead_code)]
 pub mod __my_lib {
@@ -353,8 +352,19 @@ pub mod __my_lib {
         // ..
     }
 
-    // `a`で使われていると`mod-dependencies`に記述されているため、展開される
+    // `module-dependencies`で連結されているモジュールも共に展開される
+    mod b_dep {
+        // ..
+    }
+}
+
+#[allow(dead_code)]
+pub mod __my_lib {
     mod c {
+        // ..
+    }
+
+    mod d {
         // ..
     }
 }
@@ -363,11 +373,13 @@ pub mod __my_lib {
 cargo-equipがやる操作は以下の通りです。これ以外は何も行いません。
 
 - `bin`側
-    - `#[cfg_attr(cargo_equip, cargo_equip::equip)]`が付いた`use`をコメントアウト
+    - `#![cfg_attr(cargo_equip, cargo_equip::equip)]`を検知し、コメントアウト
+    - `::`で始まる`use`を検知し、コメントアウト
     - doc commentを上部に追加
     - 展開した`lib`を下部に追加
 - `lib`側
-    - 各モジュールの中身をインデントする。ただし複数行にまたがるリテラルが無い場合はそのまま
+    - `lib.rs`内の`mod`をすべて再帰的に展開する。このとき各モジュールをインデントする。ただし複数行にまたがるリテラルが無い場合はインデントしない
+    - `mod`を展開後、`mod`と`extern crate`以外のすべてのトップレベルのアイテムを消去する
     - `#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]`が付いた`extern crate`を操作
     - `#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]`が付いた`macro_rules!`を操作
     - `--remove <REMOVE>...`オプションを付けた場合対象を操作
@@ -414,7 +426,7 @@ pub mod a {
 
 ### `--minify <MINIFY>`
 
-`--minify mods`で展開後の各モジュールをそれぞれ一行に折り畳みます。
+`--minify lib`で展開後のライブラリをそれぞれ一行に折り畳みます。
 `--minify all`でコード全体を最小化します。
 
 ただ現段階では実装が適当なのでいくつか余計なスペースが挟まる場合があります。
