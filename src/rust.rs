@@ -20,7 +20,7 @@ use syn::{
     Attribute, Ident, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl,
     ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType,
     ItemUnion, ItemUse, Lit, Macro, Meta, MetaList, MetaNameValue, NestedMeta, PathSegment,
-    UseGroup, UseName, UsePath, UseRename, UseTree,
+    UseGroup, UseName, UsePath, UseRename, UseTree, VisRestricted,
 };
 
 pub(crate) fn find_uses(code: &str) -> anyhow::Result<Option<(String, Vec<ItemUse>)>> {
@@ -270,6 +270,95 @@ pub(crate) fn remove_toplevel_items_except_mods_and_extern_crates(
     }
 
     Ok(replace_ranges(code, replacements))
+}
+
+pub(crate) fn replace_crate_paths(
+    code: &str,
+    extern_crate_name: &str,
+    shell: &mut Shell,
+) -> anyhow::Result<String> {
+    struct Visitor<'a> {
+        extern_crate_name: &'a str,
+        replacements: BTreeMap<(LineColumn, LineColumn), String>,
+    }
+
+    impl Visitor<'_> {
+        fn insert(&mut self, crate_token: &Ident) {
+            let pos = crate_token.span().end();
+            self.replacements
+                .insert((pos, pos), format!("::{}", self.extern_crate_name));
+        }
+    }
+
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_path(&mut self, path: &'_ syn::Path) {
+            if let (None, Some(first)) = (path.leading_colon, path.segments.first()) {
+                if first.ident == "crate" && first.arguments.is_empty() {
+                    self.insert(&first.ident);
+                }
+            }
+        }
+
+        fn visit_item_use(&mut self, item_use: &'_ ItemUse) {
+            if item_use.leading_colon.is_none() {
+                self.visit_use_tree(&item_use.tree);
+            }
+        }
+
+        fn visit_use_tree(&mut self, use_tree: &UseTree) {
+            match &use_tree {
+                UseTree::Path(UsePath { ident, .. })
+                | UseTree::Name(UseName { ident })
+                | UseTree::Rename(UseRename { ident, .. })
+                    if ident == "crate" =>
+                {
+                    self.insert(ident);
+                }
+                UseTree::Group(UseGroup { items, .. }) => {
+                    for item in items {
+                        self.visit_use_tree(item);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        fn visit_vis_restricted(&mut self, vis_restricted: &VisRestricted) {
+            if vis_restricted.in_token.is_some() {
+                self.visit_path(&vis_restricted.path);
+            } else if let Some(ident) = vis_restricted.path.get_ident() {
+                if ident == "crate" {
+                    let pos = vis_restricted.path.span().start();
+                    self.replacements.insert((pos, pos), "in ".to_owned());
+
+                    self.insert(ident);
+                }
+            }
+        }
+    }
+
+    let file = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut visitor = Visitor {
+        extern_crate_name,
+        replacements: btreemap!(),
+    };
+
+    visitor.visit_file(&file);
+
+    let Visitor { replacements, .. } = visitor;
+
+    if replacements.is_empty() {
+        Ok(code.to_owned())
+    } else {
+        shell.warn(format!(
+            "found `crate` paths. replacing them with `crate::{}`",
+            extern_crate_name,
+        ))?;
+        Ok(replace_ranges(code, replacements))
+    }
 }
 
 pub(crate) fn list_mod_names(code: &str) -> anyhow::Result<HashSet<String>> {
