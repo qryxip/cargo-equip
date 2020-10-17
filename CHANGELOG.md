@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.1] - 2020-10-17Z
 
 ### Added
 
-- Now cargo-equip replaces `crate` paths in library code with `crate::extern_crate_name_in_main_crate`.
+- Now cargo-equip replaces `crate` path prefixes in library code with `crate::extern_crate_name_in_main_crate`. ([#29](https://github.com/qryxip/cargo-equip/pull/29))
 
 ## [0.5.0] - 2020-10-03Z
 
