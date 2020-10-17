@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Now cargo-equip replaces `crate` paths in library code with `crate::extern_crate_name_in_main_crate`.
+
 ## [0.5.0] - 2020-10-03Z
 
 ### Changed

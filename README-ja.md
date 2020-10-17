@@ -16,53 +16,51 @@
 
 ```toml
 [package]
-name = "lib"
+name = "my_library"
 version = "0.0.0"
 edition = "2018"
 
 [package.metadata.cargo-equip.module-dependencies]
 "crate::input" = []
 "crate::output" = []
-"crate::tonelli_shanks" = ["crate::xorshift", "::__atcoder::modint"]
+"crate::tonelli_shanks" = ["crate::xorshift", "::__aclrs::modint"]
 "crate::xorshift" = []
 # ..
-"::__atcoder::convolution" = ["::__atcoder::internal_bit", "::__atcoder::modint"]
-"::__atcoder::internal_bit" = []
-"::__atcoder::internal_math" = []
-"::__atcoder::internal_queue" = []
-"::__atcoder::internal_scc" = []
-"::__atcoder::internal_type_traits" = []
-"::__atcoder::lazysegtree" = ["::__atcoder::internal_bit", "::__atcoder::segtree"]
-"::__atcoder::math" = ["::__atcoder::internal_math"]
-"::__atcoder::maxflow" = ["::__atcoder::internal_type_traits", "::__atcoder::internal_queue"]
-"::__atcoder::mincostflow" = ["::__atcoder::internal_type_traits"]
-"::__atcoder::modint" = ["::__atcoder::internal_math"]
-"::__atcoder::scc" = ["::__atcoder::internal_scc"]
-"::__atcoder::segtree" = ["::__atcoder::internal_bit", "::__atcoder::internal_type_traits"]
-"::__atcoder::twosat" = ["::__atcoder::internal_scc"]
+"::__aclrs::convolution" = ["::__aclrs::internal_bit", "::__aclrs::modint"]
+"::__aclrs::internal_bit" = []
+"::__aclrs::internal_math" = []
+"::__aclrs::internal_queue" = []
+"::__aclrs::internal_scc" = []
+"::__aclrs::internal_type_traits" = []
+"::__aclrs::lazysegtree" = ["::__aclrs::internal_bit", "::__aclrs::segtree"]
+"::__aclrs::math" = ["::__aclrs::internal_math"]
+"::__aclrs::maxflow" = ["::__aclrs::internal_type_traits", "::__aclrs::internal_queue"]
+"::__aclrs::mincostflow" = ["::__aclrs::internal_type_traits"]
+"::__aclrs::modint" = ["::__aclrs::internal_math"]
+"::__aclrs::scc" = ["::__aclrs::internal_scc"]
+"::__aclrs::segtree" = ["::__aclrs::internal_bit", "::__aclrs::internal_type_traits"]
+"::__aclrs::twosat" = ["::__aclrs::internal_scc"]
 
 [dependencies]
-__atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
+__aclrs = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
 ```
 
 ```toml
 [package]
-name = "bin"
+name = "solve"
 version = "0.0.0"
 edition = "2018"
 
 [dependencies]
-__atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
-__lib = { package = "lib", path = "/path/to/lib" }
+__aclrs = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
+__my = { package = "my_library", path = "../my_library" }
 ```
 
 ```rust
-#[cfg_attr(cargo_equip, cargo_equip::equip)]
-use ::{
-    __atcoder::modint::ModInt,
-    __lib::{input, output, tonelli_shanks::ModIntBaseExt as _},
-};
+#![cfg_attr(cargo_equip, cargo_equip::equip)]
 
+use ::__aclrs::modint::ModInt;
+use ::__my::{input, output, tonelli_shanks::ModIntBaseExt as _};
 use std::io::Write as _;
 
 fn main() {
@@ -87,14 +85,15 @@ fn main() {
 ↓
 
 ```console
-$ cargo equip --remove docs test-items --minify libs --rustfmt --check -o bundled.rs
+❯ cargo equip --remove docs test-items --minify libs --rustfmt --check -o ./bundled.rs
     Bundling the code
-warning: could not minify the code. inserting spaces: `crate::__atcoder`
-    Checking cargo-equip-check-output-d2y79wjwradhzmc5 v0.1.0 (/tmp/cargo-equip-check-output-d2y79wjwradhzmc5)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.36s
+warning: found `crate` paths. replacing them with `crate::__aclrs`
+warning: could not minify the code. inserting spaces: `crate::__aclrs`
+    Checking cargo-equip-check-output-ea0pb2d6u0yda27w v0.1.0 (/tmp/cargo-equip-check-output-ea0pb2d6u0yda27w)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.32s
 ```
 
-[Submit Info #25574 - Library-Checker](https://judge.yosupo.jp/submission/25574)
+[Submit Info #27189 - Library-Checker](https://judge.yosupo.jp/submission/27189)
 
 ## インストール
 
@@ -118,34 +117,7 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
 
 `cargo-equip`で展開できるライブラリには以下の制約があります。
 
-1. 絶対パスを使わない。クレート内のアイテムはすべて相対パスで書く。
-
-    Rustのパス解決をシミュレートするのは非常に困難であるため、cargo-equipは基本的にパスの置き換えを行いません。
-    `crate::`は`self::`と`super::`で書き直してください。
-
-    ```diff
-    -use crate::foo::Foo;
-    +use super::foo::Foo;
-    ```
-
-2. 共に展開する予定のクレートを使う場合、**各モジュールに**`#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]`を付けた`extern crate`を宣言してマウントし、そこを相対パスで参照する。
-
-    cargo-equipはこのアトリビュートの付いた`extern crate`を`use crate::extern_crate_name_in_main_crate;`に置き換えます。
-
-    誤って直接使わないように対象の名前は[リネーム](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml)しておくことを強く推奨します。
-
-    ```rust
-    #[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]
-    extern crate __another_lib as another_lib;
-    ```
-
-    注意点として、バンドル後のコードが2015 editionで実行される場合(yukicoder, Library-Checker)、相対パスで参照するときは`self::`を付けてください。
-
-    ```rust
-    use self::another_lib::foo::Foo;
-    ```
-
-3. `#[macro_export] macro_rules! name { .. }`は`mod name`の中に置かれている
+1. `#[macro_export] macro_rules! name { .. }`は`mod name`の中に置かれている
 
     cargo-equipはmain source file内でどのマクロが使われているのかを調べません。
     この制約を守れば`#[macro_export]`したマクロは展開前も展開後も自然に動作します。
@@ -165,12 +137,10 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
     }
     ```
 
-4. マクロにおいて`$crate::`でアイテムのパスを指定している場合、`#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]`を付ける
+2. マクロにおいて`$crate::`でアイテムのパスを指定している場合、`#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]`を付ける
 
     cargo-equipはこのアトリビュートが付いた`macro_rules!`内にあるすべての`$crate`を、`::identifier!`と続く場合のみを除いて`$crate::extern_crate_name_in_the_main_crate`と置き換えます。
     アトリビュートが無い場合、またはアトリビュートをtypoしている場合は一切操作しません。
-
-    ただ3.の制約を守っていて、関連するアイテムがすべて同じモジュールにあるなら無くても動く場合があります。
 
     ```diff
      #[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
@@ -182,6 +152,37 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
              $crate::__input_inner!($($tt)*); // as is
          };
      }
+    ```
+
+    ただ1.の制約を守っていて、関連するアイテムがすべて同じモジュールにあるなら無くても動く場合があります。
+
+3. 共に展開する予定のクレートを使う場合、**各モジュールに**`#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]`を付けた`extern crate`を宣言してマウントし、そこを相対パスで参照する。
+
+    cargo-equipはこのアトリビュートの付いた`extern crate`を`use crate::extern_crate_name_in_main_crate;`に置き換えます。
+
+    誤って直接使わないように対象の名前は[リネーム](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml)しておくことを強く推奨します。
+
+    ```rust
+    #[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]
+    extern crate __another_lib as another_lib;
+    ```
+
+    注意点として、バンドル後のコードが2015 editionで実行される場合(yukicoder, Library-Checker)、相対パスで参照するときは`self::`を付けてください。
+
+    ```rust
+    use self::another_lib::foo::Foo;
+    ```
+
+4. 可能な限り絶対パスを使わない。
+
+    cargo-equipはpathの`crate`は`crate::extern_crate_name_in_main_crate`に、`pub(crate)`は`pub(in crate::extern_crate_name_in_main_crate)`に置き換えます。
+
+    ただしこの置き換えは必ず上手くいくかどうかがわかりません。
+    できる限り`crate::`よりも`self::`と`super::`を使ってください。
+
+    ```diff
+    -use crate::foo::Foo;
+    +use super::foo::Foo;
     ```
 
 5. 可能な限りinline module (`mod $name;`)は深さ1まで
@@ -229,22 +230,22 @@ pub mod c;
 [ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs)を使う場合、毎回使用するパッケージに以下のものを加えてください。
 
 ```toml
-# "extern crate name"が`__atcoder`の場合
+# "extern crate name"が`__aclrs`の場合
 [package.metadata.cargo-equip.module-dependencies]
-"::__atcoder::convolution" = ["::__atcoder::internal_bit", "::__atcoder::modint"]
-"::__atcoder::internal_bit" = []
-"::__atcoder::internal_math" = []
-"::__atcoder::internal_queue" = []
-"::__atcoder::internal_scc" = []
-"::__atcoder::internal_type_traits" = []
-"::__atcoder::lazysegtree" = ["::__atcoder::internal_bit", "::__atcoder::segtree"]
-"::__atcoder::math" = ["::__atcoder::internal_math"]
-"::__atcoder::maxflow" = ["::__atcoder::internal_type_traits", "::__atcoder::internal_queue"]
-"::__atcoder::mincostflow" = ["::__atcoder::internal_type_traits"]
-"::__atcoder::modint" = ["::__atcoder::internal_math"]
-"::__atcoder::scc" = ["::__atcoder::internal_scc"]
-"::__atcoder::segtree" = ["::__atcoder::internal_bit", "::__atcoder::internal_type_traits"]
-"::__atcoder::twosat" = ["::__atcoder::internal_scc"]
+"::__aclrs::convolution" = ["::__aclrs::internal_bit", "::__aclrs::modint"]
+"::__aclrs::internal_bit" = []
+"::__aclrs::internal_math" = []
+"::__aclrs::internal_queue" = []
+"::__aclrs::internal_scc" = []
+"::__aclrs::internal_type_traits" = []
+"::__aclrs::lazysegtree" = ["::__aclrs::internal_bit", "::__aclrs::segtree"]
+"::__aclrs::math" = ["::__aclrs::internal_math"]
+"::__aclrs::maxflow" = ["::__aclrs::internal_type_traits", "::__aclrs::internal_queue"]
+"::__aclrs::mincostflow" = ["::__aclrs::internal_type_traits"]
+"::__aclrs::modint" = ["::__aclrs::internal_math"]
+"::__aclrs::scc" = ["::__aclrs::internal_scc"]
+"::__aclrs::segtree" = ["::__aclrs::internal_bit", "::__aclrs::internal_type_traits"]
+"::__aclrs::twosat" = ["::__aclrs::internal_scc"]
 ```
 
 そして`bin`側の準備として、バンドルしたいライブラリを`Cargo.toml`の`dependencies`に加えてください。
@@ -256,7 +257,7 @@ pub mod c;
 
 ```toml
 [dependencies]
-__atcoder = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
+__aclrs = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
 __my_lib1 = { package = "my_lib1", path = "/path/to/my_lib1" }
 __my_lib2 = { package = "my_lib2", path = "/path/to/my_lib2" }
 ```
@@ -267,7 +268,7 @@ __my_lib2 = { package = "my_lib2", path = "/path/to/my_lib2" }
 #![cfg_attr(cargo_equip, cargo_equip::equip)]
 
 use ::__my_lib1::{a::A, b::B};
-use ::__my_lib1::{c::C, d::D};
+use ::__my_lib2::{c::C, d::D};
 ```
 
 leading colon (`::`)が付いた`use`だけ展開されます。
@@ -282,7 +283,7 @@ leading colonを必須としているのはこのためです。
 
 ```
 use ::__my_lib1::{a::A, b::B};
-      ^^^^^^^^
+      ^^^^^^^^^
 ```
 
 先述したライブラリの制約より、パスの第二セグメントはモジュールとみなします。
@@ -290,14 +291,14 @@ use ::__my_lib1::{a::A, b::B};
 
 ```
 use ::__my_lib1::{a::A, b::B};
-                 ^     ^
+                  ^     ^
 ```
 
 第三セグメント以降は`use self::$extern_crate_name::$module_name::{..}`と展開されます。
 
 ```
 use ::__my_lib1::{a::A, b::B};
-                    ^     ^
+                     ^     ^
 ```
 
 コードが書けたら`cargo equip`で展開します。

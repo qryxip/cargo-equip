@@ -192,6 +192,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
                 let content = rust::expand_mods(&target.src_path)?;
                 let content = rust::remove_toplevel_items_except_mods_and_extern_crates(&content)?;
+                let content =
+                    rust::replace_crate_paths(&content, &extern_crate_name.to_string(), shell)?;
                 let content = rust::replace_extern_crates(&content, |dst| {
                     let (dst_target, dst_package) = metadata
                         .dep_lib_by_extern_crate_name(&package.id, &dst.to_string())
