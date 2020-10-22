@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Improved the minification function.
+
 ## [0.5.1] - 2020-10-17Z
 
 ### Added
