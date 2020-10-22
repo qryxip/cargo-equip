@@ -5,7 +5,7 @@ use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
 use itertools::Itertools as _;
 use maplit::{btreemap, btreeset, hashset};
-use proc_macro2::{LineColumn, Span, TokenStream, TokenTree};
+use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens as _};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -887,12 +887,20 @@ fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
 
 pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyhow::Result<String> {
     fn minify(acc: &mut String, token_stream: TokenStream) {
-        let mut space_on_ident = false;
-        let mut space_on_punct = false;
-        let mut space_on_literal = false;
+        #[derive(PartialEq)]
+        enum Prev {
+            None,
+            IdentOrLit,
+            Puncts(String, Spacing),
+        }
+
+        let mut prev = Prev::None;
         for tt in token_stream {
             match tt {
-                proc_macro2::TokenTree::Group(group) => {
+                TokenTree::Group(group) => {
+                    if let Prev::Puncts(puncts, _) = mem::replace(&mut prev, Prev::None) {
+                        *acc += &puncts;
+                    }
                     let (left, right) = match group.delimiter() {
                         proc_macro2::Delimiter::Parenthesis => ('(', ')'),
                         proc_macro2::Delimiter::Brace => ('{', '}'),
@@ -902,38 +910,71 @@ pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyho
                     acc.push(left);
                     minify(acc, group.stream());
                     acc.push(right);
-                    space_on_ident = false;
-                    space_on_punct = false;
-                    space_on_literal = false;
+                    prev = Prev::None;
                 }
-                proc_macro2::TokenTree::Ident(ident) => {
-                    if space_on_ident {
-                        *acc += " ";
+                TokenTree::Ident(ident) => {
+                    match mem::replace(&mut prev, Prev::IdentOrLit) {
+                        Prev::IdentOrLit => *acc += " ",
+                        Prev::Puncts(puncts, _) => *acc += &puncts,
+                        _ => {}
                     }
                     *acc += &ident.to_string();
-                    space_on_ident = true;
-                    space_on_punct = false;
-                    space_on_literal = true;
                 }
-                proc_macro2::TokenTree::Punct(punct) => {
-                    if space_on_punct {
-                        *acc += " ";
-                    }
-                    acc.push(punct.as_char());
-                    space_on_ident = false;
-                    space_on_punct = punct.spacing() == proc_macro2::Spacing::Alone;
-                    space_on_literal = false;
-                }
-                proc_macro2::TokenTree::Literal(literal) => {
-                    if space_on_literal {
-                        *acc += " ";
+                TokenTree::Literal(literal) => {
+                    match mem::replace(&mut prev, Prev::IdentOrLit) {
+                        Prev::IdentOrLit => *acc += " ",
+                        Prev::Puncts(puncts, _) => *acc += &puncts,
+                        _ => {}
                     }
                     *acc += &literal.to_string();
-                    space_on_ident = false;
-                    space_on_punct = false;
-                    space_on_literal = true;
+                }
+                TokenTree::Punct(punct) => {
+                    if let Prev::Puncts(puncts, spacing) = &mut prev {
+                        if *spacing == Spacing::Alone {
+                            *acc += puncts;
+                            if [
+                                ("&", '&'),
+                                ("|", '|'),
+                                ("<", '<'),
+                                (">", '>'),
+                                ("+", '='),
+                                ("-", '='),
+                                ("*", '='),
+                                ("/", '='),
+                                ("%", '='),
+                                ("^", '='),
+                                ("&", '='),
+                                ("|", '='),
+                                ("<<", '='),
+                                (">>", '='),
+                                ("=", '='),
+                                ("!", '='),
+                                (">", '='),
+                                ("<", '='),
+                                (".", '.'),
+                                ("..", '.'),
+                                ("..", '='),
+                                (":", ':'),
+                                ("-", '>'),
+                                ("=", '>'),
+                            ]
+                            .contains(&(&&*puncts, punct.as_char()))
+                            {
+                                *acc += " ";
+                            }
+                            prev = Prev::Puncts(punct.as_char().to_string(), punct.spacing());
+                        } else {
+                            puncts.push(punct.as_char());
+                            *spacing = punct.spacing();
+                        }
+                    } else {
+                        prev = Prev::Puncts(punct.as_char().to_string(), punct.spacing());
+                    }
                 }
             }
+        }
+        if let Prev::Puncts(puncts, _) = prev {
+            *acc += &puncts;
         }
     }
 
@@ -947,7 +988,7 @@ pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyho
     let mut acc = "".to_owned();
     minify(&mut acc, token_stream);
 
-    if matches!(syn::parse_file(&acc), Ok(f) if f.to_token_stream().to_string() == safe) {
+    if syn::parse_file(&acc).is_ok() {
         Ok(acc)
     } else {
         shell.warn(format!(

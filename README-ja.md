@@ -88,12 +88,11 @@ fn main() {
 ❯ cargo equip --remove docs test-items --minify libs --rustfmt --check -o ./bundled.rs
     Bundling the code
 warning: found `crate` paths. replacing them with `crate::__aclrs`
-warning: could not minify the code. inserting spaces: `crate::__aclrs`
-    Checking cargo-equip-check-output-ea0pb2d6u0yda27w v0.1.0 (/tmp/cargo-equip-check-output-ea0pb2d6u0yda27w)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.32s
+    Checking cargo-equip-check-output-miy9hfcb3nxljsw6 v0.1.0 (/tmp/cargo-equip-check-output-miy9hfcb3nxljsw6)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.33s
 ```
 
-[Submit Info #27189 - Library-Checker](https://judge.yosupo.jp/submission/27189)
+[Submit Info #27728 - Library-Checker](https://judge.yosupo.jp/submission/27728)
 
 ## インストール
 
