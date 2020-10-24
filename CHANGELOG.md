@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added `--resolve-cfgs` option.
+
+    This option removes:
+
+    1. `#[cfg(always_true_condition)]` (e.g. `cfg(feature = "enabled-feature")`)
+    2. Items with `#[cfg(always_false_condition)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`)
+
+### Removed
+
+- Removed `--remove test-items` option.
+
+    Use `--resolve-cfgs` instead.
+
 ## [0.5.3] - 2020-10-24Z
 
 ### Fixed

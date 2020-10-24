@@ -383,7 +383,7 @@ cargo-equipがやる操作は以下の通りです。これ以外は何も行い
     - `mod`を展開後、`mod`と`extern crate`以外のすべてのトップレベルのアイテムを消去する
     - `#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]`が付いた`extern crate`を操作
     - `#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]`が付いた`macro_rules!`を操作
-    - `--resolve-cfg`オプションを付けた場合、`#[cfg(常にTRUEっぽい式)]`のアトリビュートと`#[cfg(常にFALSEっぽい式)]`のアトリビュートが付いたアイテムを消去
+    - `--resolve-cfg`オプションを付けた場合、`#[cfg(常にTRUEのように見える式)]`のアトリビュートと`#[cfg(常にFALSEのように見える式)]`のアトリビュートが付いたアイテムを消去
     - `--remove docs`オプションを付けた場合、doc commentを消去
     - `--remove comments`オプションを付けた場合、commentを消去
 - 両方
@@ -394,8 +394,8 @@ cargo-equipがやる操作は以下の通りです。これ以外は何も行い
 
 ### `--resolve-cfgs`
 
-1. `#[cfg(常にTRUEっぽい式)]` (e.g. `cfg(feature = "enabled-feature)"`)のアトリビュートを消去します。
-2. `#[cfg(常にFALSEっぽい式)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature)"`)のアトリビュートが付いたアイテムを消去します。
+1. `#[cfg(常にTRUEのように見える式)]` (e.g. `cfg(feature = "enabled-feature")`)のアトリビュートを消去します。
+2. `#[cfg(常にFALSEのように見える式)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`)のアトリビュートが付いたアイテムを消去します。
 
 ```rust
 #[allow(dead_code)]
