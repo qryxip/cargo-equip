@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.6.0] - 2020-10-24Z
 
 ### Added
 
-- Added `--resolve-cfgs` option.
+- Added `--resolve-cfgs` option. ([#35](https://github.com/qryxip/cargo-equip/pull/35))
 
     This option removes:
 
@@ -13,7 +13,7 @@
 
 ### Removed
 
-- Removed `--remove test-items` option.
+- Removed `--remove test-items` option. ([#35](https://github.com/qryxip/cargo-equip/pull/35))
 
     Use `--resolve-cfgs` instead.
 
