@@ -15,6 +15,7 @@ use crate::{
     workspace::{MetadataExt as _, PackageExt as _},
 };
 use anyhow::Context as _;
+use cargo_metadata as cm;
 use maplit::btreemap;
 use quote::ToTokens as _;
 use std::{iter, path::PathBuf, str::FromStr};
@@ -51,6 +52,10 @@ pub enum Opt {
         /// Path to Cargo.toml
         #[structopt(long, value_name("PATH"))]
         manifest_path: Option<PathBuf>,
+
+        /// Remove `cfg(..)`s as possible
+        #[structopt(long)]
+        resolve_cfgs: bool,
 
         /// Remove some part
         #[structopt(long, value_name("REMOVE"), possible_values(Remove::VARIANTS))]
@@ -90,13 +95,12 @@ pub enum Opt {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Remove {
-    TestItems,
     Docs,
     Comments,
 }
 
 impl Remove {
-    const VARIANTS: &'static [&'static str] = &["test-items", "docs", "comments"];
+    const VARIANTS: &'static [&'static str] = &["docs", "comments"];
 }
 
 impl FromStr for Remove {
@@ -104,10 +108,9 @@ impl FromStr for Remove {
 
     fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "test-items" => Ok(Self::TestItems),
             "docs" => Ok(Self::Docs),
             "comments" => Ok(Self::Comments),
-            _ => Err(r#"expected "test-items", "docs", or "comments""#),
+            _ => Err(r#"expected "docs", or "comments""#),
         }
     }
 }
@@ -146,6 +149,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         src,
         bin,
         manifest_path,
+        resolve_cfgs,
         remove,
         minify,
         oneline,
@@ -190,6 +194,15 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                     &extern_crate_name.to_string(),
                 )?;
 
+                let cm::Node { features, .. } = metadata
+                    .resolve
+                    .as_ref()
+                    .map(|cm::Resolve { nodes, .. }| &nodes[..])
+                    .unwrap_or(&[])
+                    .iter()
+                    .find(|cm::Node { id, .. }| *id == package.id)
+                    .with_context(|| "could not find the data in metadata")?;
+
                 let content = rust::expand_mods(&target.src_path)?;
                 let content = rust::remove_toplevel_items_except_mods_and_extern_crates(&content)?;
                 let content =
@@ -201,8 +214,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                     metadata.extern_crate_name(&bin_package.id, &dst_package.id, dst_target)
                 })?;
                 let mut content = rust::modify_macros(&content, &extern_crate_name.to_string())?;
-                if remove.contains(&Remove::TestItems) {
-                    content = rust::erase_test_items(&content)?;
+                if resolve_cfgs {
+                    content = rust::resolve_cfgs(&content, features)?;
                 }
                 if remove.contains(&Remove::Docs) {
                     content = rust::erase_docs(&content)?;
