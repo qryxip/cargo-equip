@@ -95,13 +95,12 @@ pub enum Opt {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Remove {
-    TestItems,
     Docs,
     Comments,
 }
 
 impl Remove {
-    const VARIANTS: &'static [&'static str] = &["test-items", "docs", "comments"];
+    const VARIANTS: &'static [&'static str] = &["docs", "comments"];
 }
 
 impl FromStr for Remove {
@@ -109,10 +108,9 @@ impl FromStr for Remove {
 
     fn from_str(s: &str) -> Result<Self, &'static str> {
         match s {
-            "test-items" => Ok(Self::TestItems),
             "docs" => Ok(Self::Docs),
             "comments" => Ok(Self::Comments),
-            _ => Err(r#"expected "test-items", "docs", or "comments""#),
+            _ => Err(r#"expected "docs", or "comments""#),
         }
     }
 }
@@ -218,9 +216,6 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                 let mut content = rust::modify_macros(&content, &extern_crate_name.to_string())?;
                 if resolve_cfgs {
                     content = rust::resolve_cfgs(&content, features)?;
-                }
-                if remove.contains(&Remove::TestItems) {
-                    content = rust::erase_test_items(&content)?;
                 }
                 if remove.contains(&Remove::Docs) {
                     content = rust::erase_docs(&content)?;

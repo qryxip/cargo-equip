@@ -908,76 +908,6 @@ pub(crate) fn resolve_cfgs(code: &str, features: &[String]) -> anyhow::Result<St
     Ok(replace_ranges(code, replacements))
 }
 
-pub(crate) fn erase_test_items(code: &str) -> anyhow::Result<String> {
-    fn contains_cfg_test(attrs: &[Attribute]) -> bool {
-        attrs
-            .iter()
-            .flat_map(Attribute::parse_meta)
-            .flat_map(|meta| match meta {
-                Meta::List(MetaList { path, nested, .. }) => Some((path, nested)),
-                _ => None,
-            })
-            .any(|(path, nested)| {
-                matches!(path.get_ident(), Some(i) if i == "cfg")
-                    && matches!(
-                        cfg_expr::Expression::parse(&nested.to_token_stream().to_string()), Ok(expr)
-                        if expr.eval(|pred| *pred == cfg_expr::Predicate::Test)
-                    )
-            })
-    }
-
-    struct Visitor<'a>(&'a mut [FixedBitSet]);
-
-    macro_rules! visit {
-        ($(($method:ident, <$ty:ty>)),* $(,)?) => {
-            $(
-                fn $method(&mut self, item: &'_ $ty) {
-                    if contains_cfg_test(&item.attrs) {
-                        set_span(self.0, item.span(), true);
-                    } else {
-                        visit::$method(self, item);
-                    }
-                }
-            )*
-        }
-    }
-
-    impl Visit<'_> for Visitor<'_> {
-        visit! {
-            (visit_item_const, <ItemConst>),
-            (visit_item_enum, <ItemEnum>),
-            (visit_item_extern_crate, <ItemExternCrate>),
-            (visit_item_fn, <ItemFn>),
-            (visit_item_foreign_mod, <ItemForeignMod>),
-            (visit_item_impl, <ItemImpl>),
-            (visit_item_macro, <ItemMacro>),
-            (visit_item_macro2, <ItemMacro2>),
-            (visit_item_mod, <ItemMod>),
-            (visit_item_static, <ItemStatic>),
-            (visit_item_struct, <ItemStruct>),
-            (visit_item_trait, <ItemTrait>),
-            (visit_item_trait_alias, <ItemTraitAlias>),
-            (visit_item_type, <ItemType>),
-            (visit_item_union, <ItemUnion>),
-            (visit_item_use, <ItemUse>),
-        }
-
-        fn visit_file(&mut self, file: &syn::File) {
-            if contains_cfg_test(&file.attrs) {
-                for mask in &mut *self.0 {
-                    mask.insert_range(..);
-                }
-            } else {
-                visit::visit_file(self, file);
-            }
-        }
-    }
-
-    erase(code, |mask, token_stream| {
-        syn::parse2(token_stream).map(|f| Visitor(mask).visit_file(&f))
-    })
-}
-
 pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
     struct Visitor<'a>(&'a mut [FixedBitSet]);
 
@@ -1286,46 +1216,6 @@ fn main() {
 "#,
         )?;
         Ok(())
-    }
-
-    #[test]
-    fn erase_test_items() -> anyhow::Result<()> {
-        fn test(input: &str, expected: &str) -> anyhow::Result<()> {
-            let actual = super::erase_test_items(input)?;
-            assert_diff!(expected, &actual, "\n", 0);
-            Ok(())
-        }
-
-        test(
-            r#"//
-#[cfg(test)]
-use foo::Foo;
-
-fn hello() -> &'static str {
-    #[cfg(test)]
-    use bar::Bar;
-
-    "Hello!"
-}
-
-#[cfg(test)]
-mod tests {}
-"#,
-            r#"//
-            
-             
-
-fn hello() -> &'static str {
-                
-                 
-
-    "Hello!"
-}
-
-            
-            
-"#,
-        )
     }
 
     #[test]
