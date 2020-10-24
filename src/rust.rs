@@ -932,6 +932,7 @@ pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyho
                     if let Prev::Puncts(puncts, spacing) = &mut prev {
                         if *spacing == Spacing::Alone {
                             *acc += puncts;
+                            // https://docs.rs/syn/1.0.46/syn/token/index.html
                             if [
                                 ("!", '='),
                                 ("%", '='),
@@ -946,6 +947,7 @@ pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyho
                                 ("..", '='),
                                 ("/", '='),
                                 (":", ':'),
+                                ("<", '-'),
                                 ("<", '<'),
                                 ("<", '='),
                                 ("<<", '='),
