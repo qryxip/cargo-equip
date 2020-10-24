@@ -85,14 +85,14 @@ fn main() {
 ↓
 
 ```console
-❯ cargo equip --remove docs test-items --minify libs --rustfmt --check -o ./bundled.rs
+❯ cargo equip --resolve-cfgs --remove docs --minify libs --rustfmt --check -o ./bundled.rs
     Bundling the code
 warning: found `crate` paths. replacing them with `crate::__aclrs`
-    Checking cargo-equip-check-output-miy9hfcb3nxljsw6 v0.1.0 (/tmp/cargo-equip-check-output-miy9hfcb3nxljsw6)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.33s
+    Checking cargo-equip-check-output-nhuj1nqc32ksbrs2 v0.1.0 (/tmp/cargo-equip-check-output-nhuj1nqc32ksbrs2)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.31s
 ```
 
-[Submit Info #27728 - Library-Checker](https://judge.yosupo.jp/submission/27728)
+[Submit Info #27831 - Library-Checker](https://judge.yosupo.jp/submission/27831)
 
 ## インストール
 
@@ -122,7 +122,8 @@ $ cargo install --git https://github.com/qryxip/cargo-equip
     この制約を守れば`#[macro_export]`したマクロは展開前も展開後も自然に動作します。
 
     ```rust
-    #[cfg_attr(cargo_equip, cargo_equip::equip)]
+    #![cfg_attr(cargo_equip, cargo_equip::equip)]
+
     use ::__my_lib::input;
 
     fn main() {
@@ -382,28 +383,24 @@ cargo-equipがやる操作は以下の通りです。これ以外は何も行い
     - `mod`を展開後、`mod`と`extern crate`以外のすべてのトップレベルのアイテムを消去する
     - `#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]`が付いた`extern crate`を操作
     - `#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]`が付いた`macro_rules!`を操作
-    - `--remove <REMOVE>...`オプションを付けた場合対象を操作
+    - `--resolve-cfg`オプションを付けた場合、`#[cfg(常にTRUEっぽい式)]`のアトリビュートと`#[cfg(常にFALSEっぽい式)]`のアトリビュートが付いたアイテムを消去
+    - `--remove docs`オプションを付けた場合、doc commentを消去
+    - `--remove comments`オプションを付けた場合、commentを消去
 - 両方
     - `--minify all`オプションを付けた場合コード全体を最小化する
     - `--rustfmt`オプションを付けた場合Rustfmtでフォーマットする
 
 ## オプション
 
-### `--remove <REMOVE>...`
+### `--resolve-cfgs`
 
-1. `--remove test-items`で`#[cfg(test)]`が付いたアイテムを
-2. `--remove docs`でDoc comment (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`)を
-3. `--remove comments`でコメント (`// ..`, `/* .. */`)を
-
-除去することができます。
+1. `#[cfg(常にTRUEっぽい式)]` (e.g. `cfg(feature = "enabled-feature)"`)のアトリビュートを消去します。
+2. `#[cfg(常にFALSEっぽい式)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature)"`)のアトリビュートが付いたアイテムを消去します。
 
 ```rust
 #[allow(dead_code)]
 pub mod a {
-    //! A.
-
-    /// A.
-    pub struct A; // aaaaa
+    pub struct A;
 
     #[cfg(test)]
     mod tests {
@@ -412,6 +409,32 @@ pub mod a {
             assert_eq!(2 + 2, 4);
         }
     }
+}
+```
+
+↓
+
+```rust
+#[allow(dead_code)]
+pub mod a {
+    pub struct A;
+}
+```
+
+### `--remove <REMOVE>...`
+
+1. `--remove docs`でDoc comment (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`)を
+2. `--remove comments`でコメント (`// ..`, `/* .. */`)を
+
+除去します。
+
+```rust
+#[allow(dead_code)]
+pub mod a {
+    //! A.
+
+    /// A.
+    pub struct A; // aaaaa
 }
 ```
 

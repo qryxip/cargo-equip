@@ -85,14 +85,14 @@ fn main() {
 ↓
 
 ```console
-❯ cargo equip --remove docs test-items --minify libs --rustfmt --check -o ./bundled.rs
+❯ cargo equip --resolve-cfgs --remove docs --minify libs --rustfmt --check -o ./bundled.rs
     Bundling the code
 warning: found `crate` paths. replacing them with `crate::__aclrs`
-    Checking cargo-equip-check-output-miy9hfcb3nxljsw6 v0.1.0 (/tmp/cargo-equip-check-output-miy9hfcb3nxljsw6)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.33s
+    Checking cargo-equip-check-output-nhuj1nqc32ksbrs2 v0.1.0 (/tmp/cargo-equip-check-output-nhuj1nqc32ksbrs2)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.31s
 ```
 
-[Submit Info #27728 - Library-Checker](https://judge.yosupo.jp/submission/27728)
+[Submit Info #27831 - Library-Checker](https://judge.yosupo.jp/submission/27831)
 
 ## Installation
 
