@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.3] - 2020-10-24Z
 
 ### Fixed
 
-- Fixed the minification function.
+- Fixed the minification function. ([#33](https://github.com/qryxip/cargo-equip/pull/33))
 
     Previously, `x < -y` was converted into `x<-y`.
 
