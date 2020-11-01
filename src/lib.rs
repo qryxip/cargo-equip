@@ -2,6 +2,7 @@
 #![warn(rust_2018_idioms)]
 #![recursion_limit = "256"]
 
+mod cargo_udeps;
 mod mod_dep;
 mod process;
 mod rust;
@@ -16,7 +17,7 @@ use crate::{
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
-use maplit::btreemap;
+use maplit::{btreemap, hashset};
 use quote::ToTokens as _;
 use std::{iter, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
@@ -52,6 +53,10 @@ pub enum Opt {
         /// Path to Cargo.toml
         #[structopt(long, value_name("PATH"))]
         manifest_path: Option<PathBuf>,
+
+        /// `nightly` toolchain for `cargo-udeps`
+        #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
+        toolchain: String,
 
         /// Remove `cfg(..)`s as possible
         #[structopt(long)]
@@ -149,6 +154,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         src,
         bin,
         manifest_path,
+        toolchain,
         resolve_cfgs,
         remove,
         minify,
@@ -181,195 +187,111 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         metadata.exactly_one_bin_target()
     }?;
 
+    let unused_deps = match cargo_udeps::cargo_udeps(&bin_package, &bin.name, &toolchain, shell) {
+        Ok(unused_deps) => unused_deps,
+        Err(warning) => {
+            shell.warn(warning)?;
+            hashset!()
+        }
+    };
+
     shell.status("Bundling", "the code")?;
 
     let code = rust::expand_mods(&bin.src_path)?;
 
-    let mut code = if let Some((code, uses)) = rust::find_uses(&code)? {
-        let mut contents = rust::extract_names(&uses)
-            .into_iter()
-            .map(|(extern_crate_name, modules)| {
-                let (target, package) = metadata.dep_lib_by_extern_crate_name(
-                    &bin_package.id,
-                    &extern_crate_name.to_string(),
-                )?;
-
-                let cm::Node { features, .. } = metadata
-                    .resolve
-                    .as_ref()
-                    .map(|cm::Resolve { nodes, .. }| &nodes[..])
-                    .unwrap_or(&[])
-                    .iter()
-                    .find(|cm::Node { id, .. }| *id == package.id)
-                    .with_context(|| "could not find the data in metadata")?;
-
-                let content = rust::expand_mods(&target.src_path)?;
-                let content = rust::remove_toplevel_items_except_mods_and_extern_crates(&content)?;
-                let content =
-                    rust::replace_crate_paths(&content, &extern_crate_name.to_string(), shell)?;
-                let content = rust::replace_extern_crates(&content, |dst| {
-                    let (dst_target, dst_package) = metadata
-                        .dep_lib_by_extern_crate_name(&package.id, &dst.to_string())
-                        .ok()?;
-                    metadata.extern_crate_name(&bin_package.id, &dst_package.id, dst_target)
-                })?;
-                let mut content = rust::modify_macros(&content, &extern_crate_name.to_string())?;
-                if resolve_cfgs {
-                    content = rust::resolve_cfgs(&content, features)?;
-                }
-                if remove.contains(&Remove::Docs) {
-                    content = rust::erase_docs(&content)?;
-                }
-                if remove.contains(&Remove::Comments) {
-                    content = rust::erase_comments(&content)?;
-                }
-
-                let modules = match modules {
-                    ModNames::Scoped(modules) => modules,
-                    ModNames::All => rust::list_mod_names(&content)?,
-                };
-
-                Ok(LibContent {
-                    package_id: &package.id,
-                    extern_crate_name: extern_crate_name.clone(),
-                    content,
-                    modules,
-                })
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let used_mods = (|| {
-            let mut graph = btreemap!();
-
-            for package_id in contents
+    let contents = metadata
+        .normal_deps_except_blacklisted(&bin_package.id)?
+        .into_iter()
+        .filter(|(extern_crate_name, _, _)| !unused_deps.contains(extern_crate_name))
+        .map(|(extern_crate_name, lib_target, lib_package)| {
+            let cm::Node { features, .. } = metadata
+                .resolve
+                .as_ref()
+                .map(|cm::Resolve { nodes, .. }| &nodes[..])
+                .unwrap_or(&[])
                 .iter()
-                .map(|&LibContent { package_id, .. }| package_id)
-                .chain(iter::once(&bin_package.id))
-            {
-                if let PackageMetadataCargoEquip {
-                    module_dependencies: Some(module_dependencies),
-                } = metadata[package_id].parse_metadata()?
-                {
-                    graph.extend(mod_dep::assign_packages(
-                        &module_dependencies,
-                        package_id,
-                        |extern_crate_name| {
-                            let (_, to) = metadata.dep_lib_by_extern_crate_name(
-                                package_id,
-                                &extern_crate_name.to_string(),
-                            )?;
-                            Ok(&to.id)
-                        },
-                    )?);
-                }
+                .find(|cm::Node { id, .. }| *id == lib_package.id)
+                .with_context(|| "could not find the data in metadata")?;
+
+            let content = rust::expand_mods(&lib_target.src_path)?;
+            let content = rust::replace_crate_paths(&content, &extern_crate_name, shell)?;
+            let content = rust::replace_extern_crates(&content, |dst| {
+                let (dst_target, dst_package) =
+                    metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
+                metadata.extern_crate_name(&bin_package.id, &dst_package.id, dst_target)
+            })?;
+            let mut content = rust::modify_macros(&content, &extern_crate_name)?;
+            if resolve_cfgs {
+                content = rust::resolve_cfgs(&content, features)?;
+            }
+            if remove.contains(&Remove::Docs) {
+                content = rust::erase_docs(&content)?;
+            }
+            if remove.contains(&Remove::Comments) {
+                content = rust::erase_comments(&content)?;
             }
 
-            let start = contents
-                .iter()
-                .map(
-                    |LibContent {
-                         package_id,
-                         modules,
-                         ..
-                     }| (*package_id, modules.clone()),
+            Ok((extern_crate_name, lib_target, lib_package, content))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let mut code = rust::prepend_mod_doc(&code, &{
+        let mut doc = " # Bundled libraries".to_owned();
+        for (extern_crate_name, lib_target, lib_package, content) in &contents {
+            doc += "\n\n ## ";
+            let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
+                format!(
+                    "https://crates.io/{}/{}",
+                    lib_package.name, lib_package.version
                 )
-                .collect();
-
-            Ok::<_, anyhow::Error>(mod_dep::connect(&graph, &start))
-        })()?;
-
-        rust::remove_unused_modules(&mut contents, used_mods.as_ref())?;
-
-        let mut code = rust::prepend_mod_doc(&code, &{
-            let mut doc = " # Bundled libraries\n".to_owned();
-            for LibContent {
-                package_id,
-                extern_crate_name,
-                modules,
-                ..
-            } in &contents
-            {
-                let package = &metadata[&package_id];
-                doc += "\n ## ";
-                let link = if matches!(&package.source, Some(s) if s.is_crates_io()) {
-                    format!("https://crates.io/{}/{}", package.name, package.version)
-                        .parse::<Url>()
-                        .ok()
-                } else {
-                    package.repository.as_ref().and_then(|s| s.parse().ok())
-                };
-                if let Some(link) = link {
-                    doc += "[`";
-                    doc += &package.name;
-                    doc += "`](";
-                    doc += link.as_str();
-                    doc += ")";
-                } else {
-                    doc += "`";
-                    doc += &package.name;
-                    doc += "` (private)";
-                }
-                doc += "\n\n ### Modules\n\n";
-                for module in modules {
-                    doc += " - `::";
-                    doc += &extern_crate_name.to_string();
-                    doc += "::";
-                    doc += module;
-                    doc += "`\n";
-                }
-            }
-            doc
-        })?;
-
-        code += "\n";
-        code += "// The following code was expanded by `cargo-equip`.\n";
-        code += "\n";
-
-        for use_stmt in rust::shift_use_statements(&uses) {
-            code += &use_stmt.to_token_stream().to_string();
-            code += "\n";
-        }
-
-        if minify == Minify::Libs {
-            code += "\n";
-
-            for LibContent {
-                extern_crate_name,
-                content,
-                ..
-            } in &contents
-            {
-                code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
-                code += "#[allow(dead_code)]mod ";
-                code += &extern_crate_name.to_string();
-                code += "{";
-                code += &rust::minify(
-                    content,
-                    shell,
-                    Some(&format!("crate::{}", extern_crate_name)),
-                )?;
-                code += "}\n";
-            }
-        } else {
-            for LibContent {
-                extern_crate_name,
-                content,
-                ..
-            } in &contents
-            {
-                code += "\n#[allow(dead_code)]\n mod ";
-                code += &extern_crate_name.to_string();
-                code += " {\n";
-                code += &rust::indent_code(content, 1);
-                code += "}\n";
+                .parse::<Url>()
+                .ok()
+            } else {
+                lib_package.repository.as_ref().and_then(|s| s.parse().ok())
+            };
+            if let Some(link) = link {
+                doc += "[`";
+                doc += &lib_package.name;
+                doc += "`](";
+                doc += link.as_str();
+                doc += ")";
+            } else {
+                doc += "`";
+                doc += &lib_package.name;
+                doc += "` (private)";
             }
         }
+        doc
+    })?;
 
-        code
+    code += "\n";
+    code += "// The following code was expanded by `cargo-equip`.\n";
+    code += "\n";
+
+    if minify == Minify::Libs {
+        code += "\n";
+
+        for (extern_crate_name, _, _, content) in &contents {
+            code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
+            code += "#[allow(dead_code)]mod ";
+            code += &extern_crate_name.to_string();
+            code += "{";
+            code += &rust::minify(
+                content,
+                shell,
+                Some(&format!("crate::{}", extern_crate_name)),
+            )?;
+            code += "}\n";
+        }
     } else {
-        shell.warn("could not find `#![cfg_attr(cargo_equip, equip)]`. skipping expansion")?;
-        code
-    };
+        for (extern_crate_name, _, _, content) in &contents {
+            code += "\n#[allow(dead_code)]\n mod ";
+            code += extern_crate_name;
+            code += " {\n";
+            code += &rust::indent_code(content, 1);
+            code += "}\n";
+        }
+    }
 
     if minify == Minify::All {
         code = rust::minify(&code, shell, None)?;

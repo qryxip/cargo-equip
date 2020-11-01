@@ -176,6 +176,61 @@ impl cm::Metadata {
         }
     }
 
+    pub(crate) fn normal_deps_except_blacklisted<'a>(
+        &'a self,
+        package_id: &cm::PackageId,
+    ) -> anyhow::Result<Vec<(String, &'a cm::Target, &'a cm::Package)>> {
+        let package = &self[package_id];
+
+        let renames = package
+            .dependencies
+            .iter()
+            .flat_map(|cm::Dependency { rename, .. }| rename)
+            .collect::<HashSet<_>>();
+
+        self.resolve
+            .as_ref()
+            .into_iter()
+            .flat_map(|cm::Resolve { nodes, .. }| nodes)
+            .find(|cm::Node { id, .. }| id == package_id)
+            .with_context(|| format!("`{}` not found in the dependency graph", package_id))?
+            .deps
+            .iter()
+            .map(
+                |cm::NodeDep {
+                     name,
+                     pkg,
+                     dep_kinds,
+                     ..
+                 }| {
+                    if dep_kinds.is_empty() {
+                        bail!("`dep_kind` is empty. this tool requires Rust 1.41+");
+                    }
+                    if dep_kinds
+                        .iter()
+                        .any(|cm::DepKindInfo { kind, .. }| *kind == cm::DependencyKind::Normal)
+                    {
+                        let lib_package = &self[pkg];
+                        let lib_target = lib_package
+                            .targets
+                            .iter()
+                            .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])
+                            .with_context(|| format!("`{}` has no `lib` target", pkg))?;
+                        let lib_name = if renames.contains(name) {
+                            name.clone()
+                        } else {
+                            lib_target.name.replace('-', "_")
+                        };
+                        Ok(Some((lib_name, lib_target, lib_package)))
+                    } else {
+                        Ok(None)
+                    }
+                },
+            )
+            .flat_map(Result::transpose)
+            .collect()
+    }
+
     pub(crate) fn dep_lib_by_extern_crate_name<'a>(
         &'a self,
         package_id: &cm::PackageId,
@@ -239,7 +294,7 @@ impl cm::Metadata {
         from: &cm::PackageId,
         to: &cm::PackageId,
         to_target: &cm::Target,
-    ) -> Option<String> {
+    ) -> anyhow::Result<String> {
         let from = &self[from];
         let to = &self[to];
 
@@ -251,10 +306,12 @@ impl cm::Metadata {
 
         let cm::NodeDep { name, .. } = self
             .resolve
-            .as_ref()?
+            .as_ref()
+            .with_context(|| "`resolve` not found")?
             .nodes
             .iter()
-            .find(|cm::Node { id, .. }| *id == from.id)?
+            .find(|cm::Node { id, .. }| *id == from.id)
+            .with_context(|| format!("`{}` not found", from.id))?
             .deps
             .iter()
             .find(|cm::NodeDep { pkg, dep_kinds, .. }| {
@@ -267,12 +324,13 @@ impl cm::Metadata {
                                 ..
                             }]
                         ))
-            })?;
+            })
+            .with_context(|| format!("no \"extern crate name\" for `{}` → `{}`", from.id, to.id))?;
 
         if explicit_names.contains(name) {
-            Some(name.clone())
+            Ok(name.clone())
         } else {
-            Some(to_target.name.replace('-', "_"))
+            Ok(to_target.name.replace('-', "_"))
         }
     }
 }

@@ -1,11 +1,15 @@
-use anyhow::{bail, Context as _};
+use anyhow::{anyhow, bail, Context as _};
 use itertools::Itertools as _;
 use std::{
     env,
     ffi::{OsStr, OsString},
     fmt,
     path::{Path, PathBuf},
+    process::{Output, Stdio},
+    str,
 };
+
+use crate::shell::Shell;
 
 pub(crate) fn process(program: impl AsRef<OsStr>) -> ProcessBuilder<NotPresent> {
     ProcessBuilder {
@@ -51,16 +55,39 @@ impl<C: Presence<PathBuf>> ProcessBuilder<C> {
 }
 
 impl ProcessBuilder<Present> {
-    pub(crate) fn exec(&self) -> anyhow::Result<()> {
-        let status = std::process::Command::new(&self.program)
+    fn output(&self, check: bool, stdout: Stdio, stderr: Stdio) -> anyhow::Result<Output> {
+        let output = std::process::Command::new(&self.program)
             .args(&self.args)
             .current_dir(&self.cwd)
-            .status()?;
-
-        if !status.success() {
-            bail!("{} didn't exit successfully: {}", self, status);
+            .stdout(stdout)
+            .stderr(stderr)
+            .output()?;
+        if check && !output.status.success() {
+            bail!("{} didn't exit successfully: {}", self, output.status);
         }
+        Ok(output)
+    }
+
+    pub(crate) fn exec(&self) -> anyhow::Result<()> {
+        self.output(true, Stdio::inherit(), Stdio::inherit())?;
         Ok(())
+    }
+
+    pub(crate) fn exec_with_status(&self, shell: &mut Shell) -> anyhow::Result<()> {
+        shell.status("Running", self)?;
+        self.exec()
+    }
+
+    pub(crate) fn read_with_status(
+        &self,
+        check: bool,
+        shell: &mut Shell,
+    ) -> anyhow::Result<String> {
+        shell.status("Running", self)?;
+        let Output { stdout, .. } = self.output(check, Stdio::piped(), Stdio::inherit())?;
+        let stdout =
+            str::from_utf8(&stdout).map_err(|_| anyhow!("stream did not contain valid UTF-8"))?;
+        Ok(stdout.trim_end().to_owned())
     }
 }
 

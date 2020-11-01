@@ -449,14 +449,14 @@ pub(crate) fn remove_unused_modules(
 
 pub(crate) fn replace_extern_crates(
     code: &str,
-    convert_extern_crate_name: impl FnMut(&syn::Ident) -> Option<String>,
+    convert_extern_crate_name: impl FnMut(&syn::Ident) -> anyhow::Result<String>,
 ) -> anyhow::Result<String> {
     struct Visitor<'a, F> {
         replacements: &'a mut anyhow::Result<BTreeMap<(LineColumn, LineColumn), String>>,
         convert_extern_crate_name: F,
     };
 
-    impl<F: FnMut(&syn::Ident) -> Option<String>> Visit<'_> for Visitor<'_, F> {
+    impl<F: FnMut(&syn::Ident) -> anyhow::Result<String>> Visit<'_> for Visitor<'_, F> {
         fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
             let ItemExternCrate {
                 attrs,
@@ -468,17 +468,15 @@ pub(crate) fn replace_extern_crates(
             } = item_use;
 
             if contains_attr(&attrs, &parse_quote!(use_another_lib)) {
-                let to = if let Some(to) = (self.convert_extern_crate_name)(ident) {
-                    to
-                } else {
-                    *self.replacements = Err(anyhow!("`{}` is not on the list", ident));
-                    return;
+                let to = match (self.convert_extern_crate_name)(ident) {
+                    Ok(to) => Ident::new(&to, Span::call_site()),
+                    Err(err) => {
+                        *self.replacements = Err(err);
+                        return;
+                    }
                 };
-                let to = Ident::new(&to, Span::call_site());
-                self.replacements
-                    .as_mut()
-                    .unwrap_or_else(|_| unreachable!())
-                    .insert(
+                if let Ok(replacements) = &mut self.replacements {
+                    replacements.insert(
                         (item_use.span().start(), semi_token.span().end()),
                         if let Some((_, rename)) = rename {
                             quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
@@ -486,6 +484,7 @@ pub(crate) fn replace_extern_crates(
                             quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
                         },
                     );
+                }
             }
         }
     }
