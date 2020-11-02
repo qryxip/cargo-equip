@@ -242,9 +242,9 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let mut code = rust::prepend_mod_doc(&code, &{
-        let mut doc = " # Bundled libraries".to_owned();
+        let mut doc = " # Bundled libraries\n".to_owned();
         for (extern_crate_name, lib_target, lib_package, content) in &contents {
-            doc += "\n\n ## ";
+            doc += "\n ## ";
             let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
                 format!(
                     "https://crates.io/{}/{}",
@@ -266,6 +266,9 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                 doc += &lib_package.name;
                 doc += "` (private)";
             }
+            doc += "\n\n ### `extern_crate_name`\n\n `";
+            doc += extern_crate_name;
+            doc += "`\n";
         }
         doc
     })?;
