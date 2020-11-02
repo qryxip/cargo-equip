@@ -563,34 +563,6 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
         }
     };
 
-    fn exclude_crate_macros(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
-        for tts in token_stream
-            .clone()
-            .into_iter()
-            .collect::<Vec<_>>()
-            .windows(6)
-        {
-            if let [proc_macro2::TokenTree::Punct(punct1), proc_macro2::TokenTree::Ident(ident), proc_macro2::TokenTree::Punct(punct2), proc_macro2::TokenTree::Punct(punct3), proc_macro2::TokenTree::Ident(_), proc_macro2::TokenTree::Punct(punct4)] =
-                &*tts
-            {
-                if punct1.as_char() == '$'
-                    && ident == "crate"
-                    && punct2.as_char() == ':'
-                    && punct3.as_char() == ':'
-                    && punct4.as_char() == '!'
-                {
-                    acc.remove(&ident.span().end());
-                }
-            }
-        }
-
-        for tt in token_stream.clone() {
-            if let proc_macro2::TokenTree::Group(group) = tt {
-                exclude_crate_macros(group.stream(), acc);
-            }
-        }
-    }
-
     struct Visitor<'a> {
         public_macros: &'a mut BTreeSet<String>,
         dollar_crates: &'a mut BTreeSet<LineColumn>,
@@ -613,7 +585,6 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
                     self.public_macros.insert(ident.to_string());
                 }
                 find_dollar_crates(tokens.clone(), &mut self.dollar_crates);
-                exclude_crate_macros(tokens.clone(), &mut self.dollar_crates);
             }
         }
     }
