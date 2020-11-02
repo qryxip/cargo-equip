@@ -563,15 +563,12 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
 
     for item in items {
         if let Item::Macro(ItemMacro {
-            attrs,
             mac: Macro { tokens, .. },
             ..
         }) = item
         {
-            if contains_attr(&attrs, &parse_quote!(translate_dollar_crates)) {
-                find_dollar_crates(tokens.clone(), &mut dollar_crates);
-                exclude_crate_macros(tokens, &mut dollar_crates);
-            }
+            find_dollar_crates(tokens.clone(), &mut dollar_crates);
+            exclude_crate_macros(tokens, &mut dollar_crates);
         }
     }
 
@@ -582,35 +579,6 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
             .map(|p| ((p, p), format!("::{}", extern_crate_name)))
             .collect(),
     ))
-}
-
-fn contains_attr(attrs: &[Attribute], target: &Ident) -> bool {
-    for attr in attrs {
-        if_chain! {
-            if let Ok(meta) = attr.parse_meta();
-            if let Meta::List(MetaList { path, nested, .. }) = &meta;
-            if matches!(path.get_ident(), Some(i) if i == "cfg_attr");
-            if let [expr, attrs @ ..] = &*nested.iter().collect::<Vec<_>>();
-            let expr = expr.to_token_stream().to_string();
-            if let Ok(expr) = cfg_expr::Expression::parse(&expr);
-            if expr.eval(|pred| *pred == cfg_expr::Predicate::Flag("cargo_equip"));
-            then {
-                for attr in attrs {
-                    if_chain! {
-                        if let NestedMeta::Meta(attr) = attr;
-                        if let [seg1, seg2] = *attr.path().segments.iter().collect::<Vec<_>>();
-                        if matches!(seg1, PathSegment { ident, .. } if ident == "cargo_equip");
-                        if let PathSegment { ident, .. } = seg2;
-                        if ident == target;
-                        then {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
 }
 
 fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), String>) -> String {
