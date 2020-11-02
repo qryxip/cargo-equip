@@ -591,22 +591,34 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
         }
     }
 
-    let syn::File { items, .. } = syn::parse_file(code)
+    struct Visitor<'a> {
+        dollar_crates: &'a mut BTreeSet<LineColumn>,
+    }
+
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_item_macro(&mut self, i: &ItemMacro) {
+            if let ItemMacro {
+                ident: Some(_),
+                mac: Macro { tokens, .. },
+                ..
+            } = i
+            {
+                find_dollar_crates(tokens.clone(), &mut self.dollar_crates);
+                exclude_crate_macros(tokens.clone(), &mut self.dollar_crates);
+            }
+        }
+    }
+
+    let file = syn::parse_file(code)
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
 
     let mut dollar_crates = btreeset!();
 
-    for item in items {
-        if let Item::Macro(ItemMacro {
-            mac: Macro { tokens, .. },
-            ..
-        }) = item
-        {
-            find_dollar_crates(tokens.clone(), &mut dollar_crates);
-            exclude_crate_macros(tokens, &mut dollar_crates);
-        }
+    Visitor {
+        dollar_crates: &mut dollar_crates,
     }
+    .visit_file(&file);
 
     Ok(replace_ranges(
         code,
