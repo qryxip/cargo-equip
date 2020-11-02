@@ -200,7 +200,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let code = rust::expand_mods(&bin.src_path)?;
 
     let contents = metadata
-        .normal_deps_except_blacklisted(&bin_package.id)?
+        .normal_deps_except_available_on_platforms(&bin_package.id)?
         .into_iter()
         .filter(|(extern_crate_name, _, _)| !unused_deps.contains(extern_crate_name))
         .map(|(extern_crate_name, lib_target, lib_package)| {

@@ -3,6 +3,8 @@ use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
 use itertools::Itertools as _;
+use maplit::hashset;
+use once_cell::sync::Lazy;
 use rand::Rng as _;
 use serde::Deserialize;
 use std::{
@@ -77,13 +79,32 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
 
     temp_manifest["dependencies"] = orig_manifest["dependencies"].clone();
     if let toml_edit::Item::Table(dependencies) = &mut temp_manifest["dependencies"] {
-        let path_deps = dependencies
+        let renames = package
+            .dependencies
             .iter()
-            .filter(|(_, i)| !i["path"].is_none())
-            .map(|(k, _)| k.to_owned())
-            .collect::<Vec<_>>();
-        for path_dep in path_deps {
-            dependencies.remove(&path_dep);
+            .flat_map(|cm::Dependency { rename, .. }| rename.as_ref())
+            .collect::<HashSet<_>>();
+
+        for name_in_toml in metadata
+            .resolve
+            .as_ref()
+            .expect("`resolve` is `null`")
+            .nodes
+            .iter()
+            .find(|cm::Node { id, .. }| *id == package.id)
+            .expect("should contain")
+            .deps
+            .iter()
+            .filter(|cm::NodeDep { pkg, .. }| !metadata[pkg].is_available_on_atcoder_or_codingame())
+            .map(|cm::NodeDep { name, pkg, .. }| {
+                if renames.contains(&name) {
+                    name
+                } else {
+                    &metadata[pkg].name
+                }
+            })
+        {
+            dependencies.remove(name_in_toml);
         }
     }
 
@@ -176,7 +197,7 @@ impl cm::Metadata {
         }
     }
 
-    pub(crate) fn normal_deps_except_blacklisted<'a>(
+    pub(crate) fn normal_deps_except_available_on_platforms<'a>(
         &'a self,
         package_id: &cm::PackageId,
     ) -> anyhow::Result<Vec<(String, &'a cm::Target, &'a cm::Package)>> {
@@ -221,7 +242,11 @@ impl cm::Metadata {
                         } else {
                             lib_target.name.replace('-', "_")
                         };
-                        Ok(Some((lib_name, lib_target, lib_package)))
+                        Ok(if lib_package.is_available_on_atcoder_or_codingame() {
+                            None
+                        } else {
+                            Some((lib_name, lib_target, lib_package))
+                        })
                     } else {
                         Ok(None)
                     }
@@ -346,6 +371,58 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 
 #[ext(PackageExt)]
 impl cm::Package {
+    pub(crate) fn is_available_on_atcoder_or_codingame(&self) -> bool {
+        pub(crate) static NAMES: Lazy<HashSet<&str>> = Lazy::new(|| {
+            hashset!(
+                "alga",
+                "ascii",
+                "bitset-fixed",
+                "chrono",
+                "either",
+                "fixedbitset",
+                "getrandom",
+                "im-rc",
+                "indexmap",
+                "itertools",
+                "itertools-num",
+                "lazy_static",
+                "libc",
+                "libm",
+                "maplit",
+                "nalgebra",
+                "ndarray",
+                "num",
+                "num-bigint",
+                "num-complex",
+                "num-derive",
+                "num-integer",
+                "num-iter",
+                "num-rational",
+                "num-traits",
+                "ordered-float",
+                "permutohedron",
+                "petgraph",
+                "proconio",
+                "rand",
+                "rand_chacha",
+                "rand_core",
+                "rand_distr",
+                "rand_hc",
+                "rand_pcg",
+                "regex",
+                "rustc-hash",
+                "smallvec",
+                "superslice",
+                "text_io",
+                "time",
+                "whiteread",
+            )
+        });
+
+        matches!(&self.source, Some(source) if source.is_crates_io())
+            && NAMES.contains(&&*self.name)
+    }
+
     pub(crate) fn parse_metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
         #[derive(Deserialize)]
         #[serde(rename_all = "kebab-case")]
