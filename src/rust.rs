@@ -467,24 +467,22 @@ pub(crate) fn replace_extern_crates(
                 ..
             } = item_use;
 
-            if contains_attr(&attrs, &parse_quote!(use_another_lib)) {
-                let to = match (self.convert_extern_crate_name)(ident) {
-                    Ok(to) => Ident::new(&to, Span::call_site()),
-                    Err(err) => {
-                        *self.replacements = Err(err);
-                        return;
-                    }
-                };
-                if let Ok(replacements) = &mut self.replacements {
-                    replacements.insert(
-                        (item_use.span().start(), semi_token.span().end()),
-                        if let Some((_, rename)) = rename {
-                            quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
-                        } else {
-                            quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
-                        },
-                    );
+            let to = match (self.convert_extern_crate_name)(ident) {
+                Ok(to) => Ident::new(&to, Span::call_site()),
+                Err(err) => {
+                    *self.replacements = Err(err);
+                    return;
                 }
+            };
+            if let Ok(replacements) = &mut self.replacements {
+                replacements.insert(
+                    (item_use.span().start(), semi_token.span().end()),
+                    if let Some((_, rename)) = rename {
+                        quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
+                    } else {
+                        quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
+                    },
+                );
             }
         }
     }
