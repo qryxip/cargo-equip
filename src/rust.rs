@@ -166,6 +166,42 @@ pub(crate) fn extract_names(uses: &[ItemUse]) -> BTreeMap<&Ident, ModNames> {
     mod_names
 }
 
+pub(crate) fn comment_out_macro_uses(
+    code: &str,
+    mut is_directly_available_crate: impl FnMut(&str) -> bool,
+) -> anyhow::Result<String> {
+    let syn::File { items, .. } = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut replacements = btreemap!();
+
+    for item in items {
+        if let Item::ExternCrate(ItemExternCrate {
+            attrs,
+            ident,
+            rename: Some((_, rename)),
+            ..
+        }) = &item
+        {
+            if attrs
+                .iter()
+                .flat_map(Attribute::parse_meta)
+                .any(|m| matches!(m, Meta::Path(p) if p.is_ident("macro_use")))
+                && rename == "_"
+                && !is_directly_available_crate(&ident.to_string())
+            {
+                let pos = item.span().start();
+                replacements.insert((pos, pos), "/*".to_owned());
+                let pos = item.span().end();
+                replacements.insert((pos, pos), "*/".to_owned());
+            }
+        }
+    }
+
+    Ok(replace_ranges(code, replacements))
+}
+
 pub(crate) fn expand_mods(src_path: &std::path::Path) -> anyhow::Result<String> {
     fn expand_mods(src_path: &std::path::Path, depth: usize) -> anyhow::Result<String> {
         let content = std::fs::read_to_string(src_path)

@@ -198,6 +198,12 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     shell.status("Bundling", "the code")?;
 
     let code = rust::expand_mods(&bin.src_path)?;
+    let code = rust::comment_out_macro_uses(&code, |extern_crate_name| {
+        matches!(
+            metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
+            Ok((_, lib_package)) if lib_package.is_available_on_atcoder_or_codingame()
+        )
+    })?;
 
     let contents = metadata
         .normal_deps_except_available_on_platforms(&bin_package.id)?
