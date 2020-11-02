@@ -592,17 +592,26 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
     }
 
     struct Visitor<'a> {
+        public_macros: &'a mut BTreeSet<String>,
         dollar_crates: &'a mut BTreeSet<LineColumn>,
     }
 
     impl Visit<'_> for Visitor<'_> {
         fn visit_item_macro(&mut self, i: &ItemMacro) {
             if let ItemMacro {
-                ident: Some(_),
+                attrs,
+                ident: Some(ident),
                 mac: Macro { tokens, .. },
                 ..
             } = i
             {
+                if attrs
+                    .iter()
+                    .flat_map(Attribute::parse_meta)
+                    .any(|m| matches!(m, Meta::Path(p) if p.is_ident("macro_export")))
+                {
+                    self.public_macros.insert(ident.to_string());
+                }
                 find_dollar_crates(tokens.clone(), &mut self.dollar_crates);
                 exclude_crate_macros(tokens.clone(), &mut self.dollar_crates);
             }
@@ -613,9 +622,11 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
 
+    let mut public_macros = btreeset!();
     let mut dollar_crates = btreeset!();
 
     Visitor {
+        public_macros: &mut public_macros,
         dollar_crates: &mut dollar_crates,
     }
     .visit_file(&file);
@@ -625,6 +636,17 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
         dollar_crates
             .into_iter()
             .map(|p| ((p, p), format!("::{}", extern_crate_name)))
+            .chain(file.items.first().map(|item| {
+                let pos = item.span().start();
+                (
+                    (pos, pos),
+                    match &*public_macros.into_iter().collect::<Vec<_>>() {
+                        [] => "".to_owned(),
+                        [name] => format!("pub use crate::{};\n", name),
+                        names => format!("pub use crate::{{{}}};\n", names.iter().format(", ")),
+                    },
+                )
+            }))
             .collect(),
     ))
 }
