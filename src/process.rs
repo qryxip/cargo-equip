@@ -73,11 +73,6 @@ impl ProcessBuilder<Present> {
         Ok(())
     }
 
-    pub(crate) fn exec_with_status(&self, shell: &mut Shell) -> anyhow::Result<()> {
-        shell.status("Running", self)?;
-        self.exec()
-    }
-
     pub(crate) fn read_with_status(
         &self,
         check: bool,

@@ -3,7 +3,6 @@
 #![recursion_limit = "256"]
 
 mod cargo_udeps;
-mod mod_dep;
 mod process;
 mod rust;
 mod rustfmt;
@@ -11,18 +10,15 @@ pub mod shell;
 mod workspace;
 
 use crate::{
-    rust::{LibContent, ModNames},
     shell::Shell,
     workspace::{MetadataExt as _, PackageExt as _},
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
-use maplit::{btreemap, hashset};
-use quote::ToTokens as _;
-use std::{iter, path::PathBuf, str::FromStr};
+use maplit::hashset;
+use std::{path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
 use url::Url;
-use workspace::PackageMetadataCargoEquip;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -243,7 +239,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let mut code = rust::prepend_mod_doc(&code, &{
         let mut doc = " # Bundled libraries\n".to_owned();
-        for (extern_crate_name, lib_target, lib_package, content) in &contents {
+        for (extern_crate_name, _, lib_package, _) in &contents {
             doc += "\n ## ";
             let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
                 format!(

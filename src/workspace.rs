@@ -1,4 +1,3 @@
-use crate::mod_dep::ModulePath;
 use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
@@ -6,9 +5,8 @@ use itertools::Itertools as _;
 use maplit::hashset;
 use once_cell::sync::Lazy;
 use rand::Rng as _;
-use serde::Deserialize;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::HashSet,
     path::{Path, PathBuf},
     str,
 };
@@ -422,31 +420,4 @@ impl cm::Package {
         matches!(&self.source, Some(source) if source.is_crates_io())
             && NAMES.contains(&&*self.name)
     }
-
-    pub(crate) fn parse_metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "kebab-case")]
-        struct PackageMetadata {
-            cargo_equip: Option<PackageMetadataCargoEquip>,
-        }
-
-        if self.metadata.is_null() {
-            Ok(PackageMetadataCargoEquip::default())
-        } else {
-            let PackageMetadata { cargo_equip } = serde_json::from_value(self.metadata.clone())
-                .with_context(|| {
-                    format!(
-                        "could not parse `package.metadata.cargo-equip` at `{}`",
-                        self.manifest_path.display(),
-                    )
-                })?;
-            Ok(cargo_equip.unwrap_or_default())
-        }
-    }
-}
-
-#[derive(Default, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct PackageMetadataCargoEquip {
-    pub(crate) module_dependencies: Option<BTreeMap<ModulePath, BTreeSet<ModulePath>>>,
 }
