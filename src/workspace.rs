@@ -1,12 +1,12 @@
-use crate::mod_dep::ModulePath;
 use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
 use itertools::Itertools as _;
+use maplit::hashset;
+use once_cell::sync::Lazy;
 use rand::Rng as _;
-use serde::Deserialize;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::HashSet,
     path::{Path, PathBuf},
     str,
 };
@@ -77,13 +77,32 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
 
     temp_manifest["dependencies"] = orig_manifest["dependencies"].clone();
     if let toml_edit::Item::Table(dependencies) = &mut temp_manifest["dependencies"] {
-        let path_deps = dependencies
+        let renames = package
+            .dependencies
             .iter()
-            .filter(|(_, i)| !i["path"].is_none())
-            .map(|(k, _)| k.to_owned())
-            .collect::<Vec<_>>();
-        for path_dep in path_deps {
-            dependencies.remove(&path_dep);
+            .flat_map(|cm::Dependency { rename, .. }| rename.as_ref())
+            .collect::<HashSet<_>>();
+
+        for name_in_toml in metadata
+            .resolve
+            .as_ref()
+            .expect("`resolve` is `null`")
+            .nodes
+            .iter()
+            .find(|cm::Node { id, .. }| *id == package.id)
+            .expect("should contain")
+            .deps
+            .iter()
+            .filter(|cm::NodeDep { pkg, .. }| !metadata[pkg].is_available_on_atcoder_or_codingame())
+            .map(|cm::NodeDep { name, pkg, .. }| {
+                if renames.contains(&name) {
+                    name
+                } else {
+                    &metadata[pkg].name
+                }
+            })
+        {
+            dependencies.remove(name_in_toml);
         }
     }
 
@@ -176,6 +195,65 @@ impl cm::Metadata {
         }
     }
 
+    pub(crate) fn normal_deps_except_available_on_platforms<'a>(
+        &'a self,
+        package_id: &cm::PackageId,
+    ) -> anyhow::Result<Vec<(String, &'a cm::Target, &'a cm::Package)>> {
+        let package = &self[package_id];
+
+        let renames = package
+            .dependencies
+            .iter()
+            .flat_map(|cm::Dependency { rename, .. }| rename)
+            .collect::<HashSet<_>>();
+
+        self.resolve
+            .as_ref()
+            .into_iter()
+            .flat_map(|cm::Resolve { nodes, .. }| nodes)
+            .find(|cm::Node { id, .. }| id == package_id)
+            .with_context(|| format!("`{}` not found in the dependency graph", package_id))?
+            .deps
+            .iter()
+            .map(
+                |cm::NodeDep {
+                     name,
+                     pkg,
+                     dep_kinds,
+                     ..
+                 }| {
+                    if dep_kinds.is_empty() {
+                        bail!("`dep_kind` is empty. this tool requires Rust 1.41+");
+                    }
+                    if dep_kinds
+                        .iter()
+                        .any(|cm::DepKindInfo { kind, .. }| *kind == cm::DependencyKind::Normal)
+                    {
+                        let lib_package = &self[pkg];
+                        let lib_target = lib_package
+                            .targets
+                            .iter()
+                            .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])
+                            .with_context(|| format!("`{}` has no `lib` target", pkg))?;
+                        let lib_name = if renames.contains(name) {
+                            name.clone()
+                        } else {
+                            lib_target.name.replace('-', "_")
+                        };
+                        Ok(if lib_package.is_available_on_atcoder_or_codingame() {
+                            None
+                        } else {
+                            Some((lib_name, lib_target, lib_package))
+                        })
+                    } else {
+                        Ok(None)
+                    }
+                },
+            )
+            .flat_map(Result::transpose)
+            .collect()
+    }
+
     pub(crate) fn dep_lib_by_extern_crate_name<'a>(
         &'a self,
         package_id: &cm::PackageId,
@@ -239,7 +317,7 @@ impl cm::Metadata {
         from: &cm::PackageId,
         to: &cm::PackageId,
         to_target: &cm::Target,
-    ) -> Option<String> {
+    ) -> anyhow::Result<String> {
         let from = &self[from];
         let to = &self[to];
 
@@ -251,10 +329,12 @@ impl cm::Metadata {
 
         let cm::NodeDep { name, .. } = self
             .resolve
-            .as_ref()?
+            .as_ref()
+            .with_context(|| "`resolve` not found")?
             .nodes
             .iter()
-            .find(|cm::Node { id, .. }| *id == from.id)?
+            .find(|cm::Node { id, .. }| *id == from.id)
+            .with_context(|| format!("`{}` not found", from.id))?
             .deps
             .iter()
             .find(|cm::NodeDep { pkg, dep_kinds, .. }| {
@@ -267,12 +347,13 @@ impl cm::Metadata {
                                 ..
                             }]
                         ))
-            })?;
+            })
+            .with_context(|| format!("no \"extern crate name\" for `{}` → `{}`", from.id, to.id))?;
 
         if explicit_names.contains(name) {
-            Some(name.clone())
+            Ok(name.clone())
         } else {
-            Some(to_target.name.replace('-', "_"))
+            Ok(to_target.name.replace('-', "_"))
         }
     }
 }
@@ -288,30 +369,55 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 
 #[ext(PackageExt)]
 impl cm::Package {
-    pub(crate) fn parse_metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
-        #[derive(Deserialize)]
-        #[serde(rename_all = "kebab-case")]
-        struct PackageMetadata {
-            cargo_equip: Option<PackageMetadataCargoEquip>,
-        }
+    pub(crate) fn is_available_on_atcoder_or_codingame(&self) -> bool {
+        pub(crate) static NAMES: Lazy<HashSet<&str>> = Lazy::new(|| {
+            hashset!(
+                "alga",
+                "ascii",
+                "bitset-fixed",
+                "chrono",
+                "either",
+                "fixedbitset",
+                "getrandom",
+                "im-rc",
+                "indexmap",
+                "itertools",
+                "itertools-num",
+                "lazy_static",
+                "libc",
+                "libm",
+                "maplit",
+                "nalgebra",
+                "ndarray",
+                "num",
+                "num-bigint",
+                "num-complex",
+                "num-derive",
+                "num-integer",
+                "num-iter",
+                "num-rational",
+                "num-traits",
+                "ordered-float",
+                "permutohedron",
+                "petgraph",
+                "proconio",
+                "rand",
+                "rand_chacha",
+                "rand_core",
+                "rand_distr",
+                "rand_hc",
+                "rand_pcg",
+                "regex",
+                "rustc-hash",
+                "smallvec",
+                "superslice",
+                "text_io",
+                "time",
+                "whiteread",
+            )
+        });
 
-        if self.metadata.is_null() {
-            Ok(PackageMetadataCargoEquip::default())
-        } else {
-            let PackageMetadata { cargo_equip } = serde_json::from_value(self.metadata.clone())
-                .with_context(|| {
-                    format!(
-                        "could not parse `package.metadata.cargo-equip` at `{}`",
-                        self.manifest_path.display(),
-                    )
-                })?;
-            Ok(cargo_equip.unwrap_or_default())
-        }
+        matches!(&self.source, Some(source) if source.is_crates_io())
+            && NAMES.contains(&&*self.name)
     }
-}
-
-#[derive(Default, Deserialize, Debug)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) struct PackageMetadataCargoEquip {
-    pub(crate) module_dependencies: Option<BTreeMap<ModulePath, BTreeSet<ModulePath>>>,
 }

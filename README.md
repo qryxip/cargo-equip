@@ -16,52 +16,42 @@ A Cargo subcommand to bundle your code into one `.rs` file for competitive progr
 
 ```toml
 [package]
-name = "my_library"
-version = "0.0.0"
-edition = "2018"
-
-[package.metadata.cargo-equip.module-dependencies]
-"crate::input" = []
-"crate::output" = []
-"crate::tonelli_shanks" = ["crate::xorshift", "::__aclrs::modint"]
-"crate::xorshift" = []
-# ..
-"::__aclrs::convolution" = ["::__aclrs::internal_bit", "::__aclrs::modint"]
-"::__aclrs::internal_bit" = []
-"::__aclrs::internal_math" = []
-"::__aclrs::internal_queue" = []
-"::__aclrs::internal_scc" = []
-"::__aclrs::internal_type_traits" = []
-"::__aclrs::lazysegtree" = ["::__aclrs::internal_bit", "::__aclrs::segtree"]
-"::__aclrs::math" = ["::__aclrs::internal_math"]
-"::__aclrs::maxflow" = ["::__aclrs::internal_type_traits", "::__aclrs::internal_queue"]
-"::__aclrs::mincostflow" = ["::__aclrs::internal_type_traits"]
-"::__aclrs::modint" = ["::__aclrs::internal_math"]
-"::__aclrs::scc" = ["::__aclrs::internal_scc"]
-"::__aclrs::segtree" = ["::__aclrs::internal_bit", "::__aclrs::internal_type_traits"]
-"::__aclrs::twosat" = ["::__aclrs::internal_scc"]
-
-[dependencies]
-__aclrs = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
-```
-
-```toml
-[package]
 name = "solve"
 version = "0.0.0"
 edition = "2018"
 
 [dependencies]
-__aclrs = { package = "ac-library-rs", git = "https://github.com/rust-lang-ja/ac-library-rs", branch = "replace-absolute-paths" }
-__my = { package = "my_library", path = "../my_library" }
+acl_convolution          = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_dsu                  = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_fenwicktree          = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_internal_bit         = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_internal_math        = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_internal_queue       = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_internal_scc         = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_internal_type_traits = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_lazysegtree          = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_math                 = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_maxflow              = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_mincostflow          = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_modint               = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_scc                  = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_segtree              = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_string               = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+acl_twosat               = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
+input                    = { path = "/path/to/input"                                                                }
+output                   = { path = "/path/to/output"                                                               }
+tonelli_shanks           = { path = "/path/to/tonelli_shanks"                                                       }
+xorshift                 = { path = "/path/to/xorshift"                                                             }
+# ...
 ```
 
 ```rust
-#![cfg_attr(cargo_equip, cargo_equip::equip)]
+#[macro_use]
+extern crate input as _;
 
-use ::__aclrs::modint::ModInt;
-use ::__my::{input, output, tonelli_shanks::ModIntBaseExt as _};
+use acl_modint::ModInt;
 use std::io::Write as _;
+use tonelli_shanks::ModIntBaseExt as _;
 
 fn main() {
     input! {
@@ -86,26 +76,39 @@ fn main() {
 
 ```console
 ❯ cargo equip --resolve-cfgs --remove docs --minify libs --rustfmt --check -o ./bundled.rs
+     Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
+    Checking solve v0.0.0 (/home/ryo/src/local/a/solve)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.30s
+info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-4eea33c8603d6001.json"
     Bundling the code
-warning: found `crate` paths. replacing them with `crate::__aclrs`
-    Checking cargo-equip-check-output-nhuj1nqc32ksbrs2 v0.1.0 (/tmp/cargo-equip-check-output-nhuj1nqc32ksbrs2)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.31s
+    Checking cargo-equip-check-output-do7dy7m13pba4nbx v0.1.0 (/tmp/cargo-equip-check-output-do7dy7m13pba4nbx)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.35s
 ```
 
-[Submit Info #27831 - Library-Checker](https://judge.yosupo.jp/submission/27831)
+[Submit Info #28576 - Library-Checker](https://judge.yosupo.jp/submission/28576)
 
 ## Installation
+
+Install a `nightly` toolchain and [cargo-udeps](https://github.com/est31/cargo-udeps) first.
+
+```console
+❯ rustup update nightly
+```
+
+```console
+❯ cargo install --git https://github.com/est31/cargo-udeps # for est31/cargo-udeps#80
+```
 
 ### Crates.io
 
 ```console
-$ cargo install cargo-equip
+❯ cargo install cargo-equip
 ```
 
 ### `master`
 
 ```console
-$ cargo install --git https://github.com/qryxip/cargo-equip
+❯ cargo install --git https://github.com/qryxip/cargo-equip
 ```
 
 ### GitHub Releases

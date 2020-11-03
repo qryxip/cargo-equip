@@ -1,20 +1,16 @@
 use crate::shell::Shell;
 use anyhow::{anyhow, bail, Context as _};
-use cargo_metadata as cm;
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
 use itertools::Itertools as _;
-use maplit::{btreemap, btreeset, hashset};
+use maplit::{btreemap, btreeset};
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
-    mem,
-    ops::{Add, AddAssign},
-    str,
+    collections::{BTreeMap, BTreeSet},
+    mem, str,
 };
 use syn::{
-    parse_quote,
     spanned::Spanned,
     visit::{self, Visit},
     Arm, Attribute, BareFnArg, ConstParam, ExprArray, ExprAssign, ExprAssignOp, ExprAsync,
@@ -26,144 +22,47 @@ use syn::{
     ForeignItemStatic, ForeignItemType, Ident, ImplItemConst, ImplItemMacro, ImplItemMethod,
     ImplItemType, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl,
     ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType,
-    ItemUnion, ItemUse, LifetimeDef, Lit, Local, Macro, Meta, MetaList, MetaNameValue, NestedMeta,
-    PatBox, PatIdent, PatLit, PatMacro, PatOr, PatPath, PatRange, PatReference, PatRest, PatSlice,
-    PatStruct, PatTuple, PatTupleStruct, PatType, PatWild, PathSegment, Receiver, TraitItemConst,
+    ItemUnion, ItemUse, LifetimeDef, Lit, Local, Macro, Meta, MetaList, MetaNameValue, PatBox,
+    PatIdent, PatLit, PatMacro, PatOr, PatPath, PatRange, PatReference, PatRest, PatSlice,
+    PatStruct, PatTuple, PatTupleStruct, PatType, PatWild, Receiver, TraitItemConst,
     TraitItemMacro, TraitItemMethod, TraitItemType, TypeParam, UseGroup, UseName, UsePath,
     UseRename, UseTree, Variadic, Variant, VisRestricted,
 };
 
-pub(crate) fn find_uses(code: &str) -> anyhow::Result<Option<(String, Vec<ItemUse>)>> {
-    let syn::File { attrs, items, .. } = syn::parse_file(code)
+pub(crate) fn comment_out_macro_uses(
+    code: &str,
+    mut is_directly_available_crate: impl FnMut(&str) -> bool,
+) -> anyhow::Result<String> {
+    let syn::File { items, .. } = syn::parse_file(code)
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
 
-    if let Some(span) = attrs.iter().find_map(|attr| {
-        let span = attr.span();
-        if_chain! {
-            if let Ok(meta) = attr.parse_meta();
-            if let Meta::List(MetaList { path, nested, .. }) = &meta;
-            if matches!(path.get_ident(), Some(i) if i == "cfg_attr");
-            if let [expr, attrs @ ..] = &*nested.iter().collect::<Vec<_>>();
-            let expr = expr.to_token_stream().to_string();
-            if let Ok(expr) = cfg_expr::Expression::parse(&expr);
-            if expr.eval(|pred| *pred == cfg_expr::Predicate::Flag("cargo_equip"));
-            then {
-                for attr in attrs {
-                    if_chain! {
-                        if let NestedMeta::Meta(attr) = attr;
-                        if let [seg1, seg2] = *attr.path().segments.iter().collect::<Vec<_>>();
-                        if matches!(seg1, PathSegment { ident, .. } if ident == "cargo_equip");
-                        if let PathSegment { ident, .. } = seg2;
-                        if ident == "equip";
-                        then {
-                            return Some(span);
-                        }
-                    }
-                }
-            }
-        }
-        None
-    }) {
-        let mut replacements = btreemap!();
-        let mut uses = vec![];
+    let mut replacements = btreemap!();
 
-        let mut comment_out = |span: Span| {
-            replacements.insert((span.start(), span.start()), "/*".to_owned());
-            replacements.insert((span.end(), span.end()), "*/".to_owned());
-        };
-
-        comment_out(span);
-
-        for item in items {
-            let span = item.span();
-            if let Item::Use(item_use) = item {
-                if item_use.leading_colon.is_some() {
-                    comment_out(span);
-                    uses.push(item_use);
-                }
-            }
-        }
-
-        Ok(Some((replace_ranges(code, replacements), uses)))
-    } else {
-        Ok(None)
-    }
-}
-
-pub(crate) enum ModNames {
-    Scoped(HashSet<String>),
-    All,
-}
-
-impl ModNames {
-    fn extract_from_depth_2(tree: &UseTree) -> Self {
-        match tree {
-            UseTree::Path(UsePath { ident, .. })
-            | UseTree::Name(UseName { ident })
-            | UseTree::Rename(UseRename { ident, .. }) => Self::Scoped(hashset!(ident.to_string())),
-            UseTree::Group(UseGroup { items, .. }) => items
+    for item in items {
+        if let Item::ExternCrate(ItemExternCrate {
+            attrs,
+            ident,
+            rename: Some((_, rename)),
+            ..
+        }) = &item
+        {
+            if attrs
                 .iter()
-                .map(Self::extract_from_depth_2)
-                .fold(Self::Scoped(hashset!()), Add::add),
-            UseTree::Glob(_) => Self::All,
-        }
-    }
-}
-
-impl Default for ModNames {
-    fn default() -> Self {
-        Self::Scoped(hashset!())
-    }
-}
-
-impl Add for ModNames {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self {
-        match (self, rhs) {
-            (Self::Scoped(l), Self::Scoped(r)) => Self::Scoped(l.into_iter().chain(r).collect()),
-            (Self::All, _) | (_, Self::All) => Self::All,
-        }
-    }
-}
-
-impl AddAssign for ModNames {
-    fn add_assign(&mut self, rhs: Self) {
-        *self = mem::take(self) + rhs;
-    }
-}
-
-pub(crate) fn extract_names(uses: &[ItemUse]) -> BTreeMap<&Ident, ModNames> {
-    let mut mod_names = btreemap!();
-
-    for tree in uses
-        .iter()
-        .filter(|ItemUse { leading_colon, .. }| leading_colon.is_some())
-        .flat_map(|ItemUse { tree, .. }| {
-            fn corrupt_groups(tree: &UseTree) -> Vec<&UseTree> {
-                if let UseTree::Group(UseGroup { items, .. }) = tree {
-                    items.iter().flat_map(corrupt_groups).collect()
-                } else {
-                    vec![tree]
-                }
+                .flat_map(Attribute::parse_meta)
+                .any(|m| matches!(m, Meta::Path(p) if p.is_ident("macro_use")))
+                && rename == "_"
+                && !is_directly_available_crate(&ident.to_string())
+            {
+                let pos = item.span().start();
+                replacements.insert((pos, pos), "/*".to_owned());
+                let pos = item.span().end();
+                replacements.insert((pos, pos), "*/".to_owned());
             }
-            corrupt_groups(tree)
-        })
-    {
-        match tree {
-            UseTree::Path(UsePath { ident, tree, .. }) => {
-                *mod_names.entry(ident).or_default() += ModNames::extract_from_depth_2(tree);
-            }
-            UseTree::Name(UseName { ident }) | UseTree::Rename(UseRename { ident, .. }) => {
-                *mod_names.entry(ident).or_default() = ModNames::All;
-            }
-            UseTree::Glob(_) => todo!("`use ::*;` is not yet supported"),
-            UseTree::Group(_) => unreachable!("should be corrupted here"),
         }
     }
 
-    mod_names
+    Ok(replace_ranges(code, replacements))
 }
 
 pub(crate) fn expand_mods(src_path: &std::path::Path) -> anyhow::Result<String> {
@@ -264,24 +163,6 @@ pub(crate) fn indent_code(code: &str, n: usize) -> String {
     }
 }
 
-pub(crate) fn remove_toplevel_items_except_mods_and_extern_crates(
-    code: &str,
-) -> anyhow::Result<String> {
-    let syn::File { items, .. } = syn::parse_file(code)
-        .map_err(|e| anyhow!("{:?}", e))
-        .with_context(|| "could not parse the code")?;
-
-    let mut replacements = btreemap!();
-
-    for item in items {
-        if !matches!(&item, Item::Mod(_) | Item::ExternCrate(_)) {
-            replacements.insert((item.span().start(), item.span().end()), "".to_owned());
-        }
-    }
-
-    Ok(replace_ranges(code, replacements))
-}
-
 pub(crate) fn replace_crate_paths(
     code: &str,
     extern_crate_name: &str,
@@ -371,92 +252,16 @@ pub(crate) fn replace_crate_paths(
     }
 }
 
-pub(crate) fn list_mod_names(code: &str) -> anyhow::Result<HashSet<String>> {
-    let syn::File { items, .. } = syn::parse_file(code)
-        .map_err(|e| anyhow!("{:?}", e))
-        .with_context(|| "could not parse the code")?;
-
-    Ok(items
-        .into_iter()
-        .flat_map(|item| match item {
-            Item::Mod(ItemMod { ident, .. }) => Some(ident.to_string()),
-            _ => None,
-        })
-        .collect())
-}
-
-pub(crate) struct LibContent<'cm> {
-    pub(crate) package_id: &'cm cm::PackageId,
-    pub(crate) extern_crate_name: Ident,
-    pub(crate) content: String,
-    pub(crate) modules: HashSet<String>,
-}
-
-pub(crate) fn shift_use_statements(uses: &[ItemUse]) -> Vec<ItemUse> {
-    uses.iter()
-        .filter(|ItemUse { leading_colon, .. }| leading_colon.is_some())
-        .flat_map(|ItemUse { tree, .. }| {
-            fn corrupt_groups(tree: &UseTree) -> Vec<&UseTree> {
-                if let UseTree::Group(UseGroup { items, .. }) = tree {
-                    items.iter().flat_map(corrupt_groups).collect()
-                } else {
-                    vec![tree]
-                }
-            }
-            corrupt_groups(tree)
-        })
-        .map(|tree| parse_quote!(use crate::#tree;))
-        .collect()
-}
-
-pub(crate) fn remove_unused_modules(
-    contents: &mut [LibContent<'_>],
-    used: Option<&BTreeSet<(&cm::PackageId, String)>>,
-) -> anyhow::Result<()> {
-    for LibContent {
-        package_id,
-        content,
-        modules,
-        ..
-    } in contents
-    {
-        let syn::File { items, .. } = syn::parse_file(content)
-            .map_err(|e| anyhow!("{:?}", e))
-            .with_context(|| "could not parse the code")?;
-
-        let mut replacements = btreemap!();
-
-        for item in items {
-            if let Item::Mod(ItemMod { ident, .. }) = &item {
-                if_chain! {
-                    if let Some(used) = used;
-                    if !used.contains(&(*package_id, ident.to_string()));
-                    then {
-                        replacements
-                            .insert((item.span().start(), item.span().end()), "".to_owned());
-                    } else {
-                        modules.insert(ident.to_string());
-                    }
-                }
-            }
-        }
-
-        *content = replace_ranges(content, replacements);
-    }
-
-    Ok(())
-}
-
 pub(crate) fn replace_extern_crates(
     code: &str,
-    convert_extern_crate_name: impl FnMut(&syn::Ident) -> Option<String>,
+    convert_extern_crate_name: impl FnMut(&syn::Ident) -> anyhow::Result<String>,
 ) -> anyhow::Result<String> {
     struct Visitor<'a, F> {
         replacements: &'a mut anyhow::Result<BTreeMap<(LineColumn, LineColumn), String>>,
         convert_extern_crate_name: F,
     };
 
-    impl<F: FnMut(&syn::Ident) -> Option<String>> Visit<'_> for Visitor<'_, F> {
+    impl<F: FnMut(&syn::Ident) -> anyhow::Result<String>> Visit<'_> for Visitor<'_, F> {
         fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
             let ItemExternCrate {
                 attrs,
@@ -467,25 +272,22 @@ pub(crate) fn replace_extern_crates(
                 ..
             } = item_use;
 
-            if contains_attr(&attrs, &parse_quote!(use_another_lib)) {
-                let to = if let Some(to) = (self.convert_extern_crate_name)(ident) {
-                    to
-                } else {
-                    *self.replacements = Err(anyhow!("`{}` is not on the list", ident));
+            let to = match (self.convert_extern_crate_name)(ident) {
+                Ok(to) => Ident::new(&to, Span::call_site()),
+                Err(err) => {
+                    *self.replacements = Err(err);
                     return;
-                };
-                let to = Ident::new(&to, Span::call_site());
-                self.replacements
-                    .as_mut()
-                    .unwrap_or_else(|_| unreachable!())
-                    .insert(
-                        (item_use.span().start(), semi_token.span().end()),
-                        if let Some((_, rename)) = rename {
-                            quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
-                        } else {
-                            quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
-                        },
-                    );
+                }
+            };
+            if let Ok(replacements) = &mut self.replacements {
+                replacements.insert(
+                    (item_use.span().start(), semi_token.span().end()),
+                    if let Some((_, rename)) = rename {
+                        quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
+                    } else {
+                        quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
+                    },
+                );
             }
         }
     }
@@ -530,90 +332,63 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
         }
     };
 
-    fn exclude_crate_macros(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
-        for tts in token_stream
-            .clone()
-            .into_iter()
-            .collect::<Vec<_>>()
-            .windows(6)
-        {
-            if let [proc_macro2::TokenTree::Punct(punct1), proc_macro2::TokenTree::Ident(ident), proc_macro2::TokenTree::Punct(punct2), proc_macro2::TokenTree::Punct(punct3), proc_macro2::TokenTree::Ident(_), proc_macro2::TokenTree::Punct(punct4)] =
-                &*tts
-            {
-                if punct1.as_char() == '$'
-                    && ident == "crate"
-                    && punct2.as_char() == ':'
-                    && punct3.as_char() == ':'
-                    && punct4.as_char() == '!'
-                {
-                    acc.remove(&ident.span().end());
-                }
-            }
-        }
+    struct Visitor<'a> {
+        public_macros: &'a mut BTreeSet<String>,
+        dollar_crates: &'a mut BTreeSet<LineColumn>,
+    }
 
-        for tt in token_stream.clone() {
-            if let proc_macro2::TokenTree::Group(group) = tt {
-                exclude_crate_macros(group.stream(), acc);
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_item_macro(&mut self, i: &ItemMacro) {
+            if let ItemMacro {
+                attrs,
+                ident: Some(ident),
+                mac: Macro { tokens, .. },
+                ..
+            } = i
+            {
+                if attrs
+                    .iter()
+                    .flat_map(Attribute::parse_meta)
+                    .any(|m| matches!(m, Meta::Path(p) if p.is_ident("macro_export")))
+                {
+                    self.public_macros.insert(ident.to_string());
+                }
+                find_dollar_crates(tokens.clone(), &mut self.dollar_crates);
             }
         }
     }
 
-    let syn::File { items, .. } = syn::parse_file(code)
+    let file = syn::parse_file(code)
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
 
+    let mut public_macros = btreeset!();
     let mut dollar_crates = btreeset!();
 
-    for item in items {
-        if let Item::Macro(ItemMacro {
-            attrs,
-            mac: Macro { tokens, .. },
-            ..
-        }) = item
-        {
-            if contains_attr(&attrs, &parse_quote!(translate_dollar_crates)) {
-                find_dollar_crates(tokens.clone(), &mut dollar_crates);
-                exclude_crate_macros(tokens, &mut dollar_crates);
-            }
-        }
+    Visitor {
+        public_macros: &mut public_macros,
+        dollar_crates: &mut dollar_crates,
     }
+    .visit_file(&file);
 
     Ok(replace_ranges(
         code,
         dollar_crates
             .into_iter()
             .map(|p| ((p, p), format!("::{}", extern_crate_name)))
+            .chain(file.items.first().map(|item| {
+                let pos = item.span().start();
+                (
+                    (pos, pos),
+                    match &*public_macros.into_iter().collect::<Vec<_>>() {
+                        [] => "".to_owned(),
+                        [name] => format!("pub use crate::{};\n", name),
+                        names => format!("pub use crate::{{{}}};\n", names.iter().format(", ")),
+                    },
+                )
+            }))
             .collect(),
     ))
-}
-
-fn contains_attr(attrs: &[Attribute], target: &Ident) -> bool {
-    for attr in attrs {
-        if_chain! {
-            if let Ok(meta) = attr.parse_meta();
-            if let Meta::List(MetaList { path, nested, .. }) = &meta;
-            if matches!(path.get_ident(), Some(i) if i == "cfg_attr");
-            if let [expr, attrs @ ..] = &*nested.iter().collect::<Vec<_>>();
-            let expr = expr.to_token_stream().to_string();
-            if let Ok(expr) = cfg_expr::Expression::parse(&expr);
-            if expr.eval(|pred| *pred == cfg_expr::Predicate::Flag("cargo_equip"));
-            then {
-                for attr in attrs {
-                    if_chain! {
-                        if let NestedMeta::Meta(attr) = attr;
-                        if let [seg1, seg2] = *attr.path().segments.iter().collect::<Vec<_>>();
-                        if matches!(seg1, PathSegment { ident, .. } if ident == "cargo_equip");
-                        if let PathSegment { ident, .. } = seg2;
-                        if ident == target;
-                        then {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
 }
 
 fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), String>) -> String {
@@ -1134,37 +909,36 @@ mod tests {
         }
 
         test(
-            r#"#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
-#[macro_export]
+            r#"#[macro_export]
 macro_rules! hello {
-    (1 $(,)?) => {
-        $crate::hello::hello();
-        $crate::__hello_inner!($n)
+    () => {
+        $crate::__hello_inner!()
     };
     (0 $(,)?) => {};
 }
 
-macro_rules! _without_attr {
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __hello_inner {
     () => {
-        let _ = $crate::hello;
-        $crate::hello!(0);
+        $crate::hello()
     };
 }
 "#,
-            r#"#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
+            r#"pub use crate::{__hello_inner, hello};
 #[macro_export]
 macro_rules! hello {
-    (1 $(,)?) => {
-        $crate::lib::hello::hello();
-        $crate::__hello_inner!($n)
+    () => {
+        $crate::lib::__hello_inner!()
     };
     (0 $(,)?) => {};
 }
 
-macro_rules! _without_attr {
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __hello_inner {
     () => {
-        let _ = $crate::hello;
-        $crate::hello!(0);
+        $crate::lib::hello()
     };
 }
 "#,
