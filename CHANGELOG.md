@@ -1,5 +1,71 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- cargo-equip no longer consider modules.
+
+    Split your library into separate small crates.
+
+    ```console
+    .
+    ├── input
+    │   ├── Cargo.lock
+    │   ├── Cargo.toml
+    │   └── src
+    │       └── lib.rs
+    ├── output
+    │   ├── Cargo.lock
+    │   ├── Cargo.toml
+    │   └── src
+    │       └── lib.rs
+    ⋮
+    ```
+
+- Stopped erasing non `mod` items just below each `lib` crates.
+
+- Now cargo-equip inserts `pub use crate::{ exported_macros }` just below each `mod lib_name`.
+
+- Stopped excluding `$ crate :: ident !` parts in `macro_rules!`.
+
+- Now processes `#[macro_use] extern crate $name as _;` in `bin`s.
+
+    ```rust
+    // in main source code
+    #[macro_use]
+    extern crate input as _;
+    ```
+
+    ↓
+
+    ```rust
+    // in main source code
+    /*#[macro_use]
+    extern crate input as _;*/
+    ```
+
+- `#![cfg_attr(cargo_equip, cargo_equip::equip)]` no longer requried.
+
+    ```diff
+    -#![cfg_attr(cargo_equip, cargo_equip::equip)]
+    ```
+
+- `#![cfg_attr(cargo_equip, cargo_equip::use_another_lib)]` no longer requried.
+
+    ```diff
+    -#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]
+     extern crate __another_lib as another_lib;
+    ```
+
+- `#![cfg_attr(cargo_equip, cargo_equip::translate_dolalr_crates)]` no longer requried.
+
+    ```diff
+    -#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
+     #[macro_export]
+     macro_rules! foo { .. }
+    ```
+
 ## [0.6.0] - 2020-10-24Z
 
 ### Added
