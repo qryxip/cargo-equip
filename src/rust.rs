@@ -909,37 +909,36 @@ mod tests {
         }
 
         test(
-            r#"#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
-#[macro_export]
+            r#"#[macro_export]
 macro_rules! hello {
-    (1 $(,)?) => {
-        $crate::hello::hello();
-        $crate::__hello_inner!($n)
+    () => {
+        $crate::__hello_inner!()
     };
     (0 $(,)?) => {};
 }
 
-macro_rules! _without_attr {
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __hello_inner {
     () => {
-        let _ = $crate::hello;
-        $crate::hello!(0);
+        $crate::hello()
     };
 }
 "#,
-            r#"#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
+            r#"pub use crate::{__hello_inner, hello};
 #[macro_export]
 macro_rules! hello {
-    (1 $(,)?) => {
-        $crate::lib::hello::hello();
-        $crate::__hello_inner!($n)
+    () => {
+        $crate::lib::__hello_inner!()
     };
     (0 $(,)?) => {};
 }
 
-macro_rules! _without_attr {
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __hello_inner {
     () => {
-        let _ = $crate::hello;
-        $crate::hello!(0);
+        $crate::lib::hello()
     };
 }
 "#,
