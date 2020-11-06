@@ -126,16 +126,18 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
 
     ```rust
     // in main source code
+
     #[macro_use]
     extern crate input as _;
     ```
 
-    展開時にはコメントアウトします。
+    展開時にはコメントアウトされます。
 
     ```rust
     // in main source code
+
     /*#[macro_use]
-    extern crate input as _;*/
+    extern crate input as _;*/ // `as _`でなければ`use crate::$name;`が挿入される
     ```
 
 2. 共に展開する予定のクレートを使う場合、`extern crate`を宣言してそれを適当な場所にマウントし、そこを相対パスで参照する。
@@ -216,8 +218,14 @@ acl_string               = { git = "https://github.com/qryxip/ac-library-rs", br
 acl_twosat               = { git = "https://github.com/qryxip/ac-library-rs", branch = "split-into-separate-crates" }
 ```
 
-準備ができたら通常のRustコーディングのようにコードを書いてください。
-ただしマクロは`#[macro_use]`で使ってください。
+準備ができたらコードを書いてください。
+`bin`側の制約は以下の2つです。
+
+1. マクロは`use`しない。qualified pathで使うか`#[macro_use]`で使う。
+
+2. 展開されうるクレートはすべて`[dependencies]`に加えることで`extern_crate_name`を与える。
+
+    `__inner_lib_z04kve2dww`のような仮の名前を与えることは考えてますがまだ実装していません。
 
 ```rust
 #[macro_use]
@@ -312,7 +320,7 @@ cargo-equipがやる操作は以下の通りです。
 
 - `bin`側
     - (もしあるのなら)`mod $name;`をすべて再帰的に展開する。このとき各モジュールをインデントする。ただし複数行にまたがるリテラルが無い場合はインデントしない
-    - `#[macro_use] extern crate $name as _;`をコメントアウト
+    - `extern crate`を処理
     - doc commentを上部に追加
     - 展開した`lib`を下部に追加
 - `lib`側
