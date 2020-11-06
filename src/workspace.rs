@@ -6,7 +6,7 @@ use maplit::hashset;
 use once_cell::sync::Lazy;
 use rand::Rng as _;
 use std::{
-    collections::HashSet,
+    collections::{BTreeMap, HashSet},
     path::{Path, PathBuf},
     str,
 };
@@ -195,10 +195,11 @@ impl cm::Metadata {
         }
     }
 
-    pub(crate) fn normal_deps_except_available_on_platforms<'a>(
+    pub(crate) fn deps_to_bundle<'a>(
         &'a self,
         package_id: &cm::PackageId,
-    ) -> anyhow::Result<Vec<(String, &'a cm::Target, &'a cm::Package)>> {
+        cargo_udeps_outcome: &HashSet<String>,
+    ) -> anyhow::Result<BTreeMap<&'a cm::PackageId, (&'a cm::Target, String)>> {
         let package = &self[package_id];
 
         let renames = package
@@ -207,10 +208,13 @@ impl cm::Metadata {
             .flat_map(|cm::Dependency { rename, .. }| rename)
             .collect::<HashSet<_>>();
 
-        self.resolve
+        let cm::Resolve { nodes, .. } = self
+            .resolve
             .as_ref()
-            .into_iter()
-            .flat_map(|cm::Resolve { nodes, .. }| nodes)
+            .with_context(|| "`resolve` is `null`")?;
+
+        let mut deps = nodes
+            .iter()
             .find(|cm::Node { id, .. }| id == package_id)
             .with_context(|| format!("`{}` not found in the dependency graph", package_id))?
             .deps
@@ -235,30 +239,86 @@ impl cm::Metadata {
                             .iter()
                             .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])
                             .with_context(|| format!("`{}` has no `lib` target", pkg))?;
-                        let lib_name = if renames.contains(name) {
-                            name.clone()
+                        let (lib_extern_crate_name, lib_name_in_toml) = if renames.contains(name) {
+                            (name.clone(), name)
                         } else {
-                            lib_target.name.replace('-', "_")
+                            (lib_target.name.replace('-', "_"), &lib_package.name)
                         };
-                        Ok(if lib_package.is_available_on_atcoder_or_codingame() {
-                            None
-                        } else {
-                            Some((lib_name, lib_target, lib_package))
-                        })
+                        Ok(
+                            if cargo_udeps_outcome.contains(lib_name_in_toml)
+                                || lib_package.is_available_on_atcoder_or_codingame()
+                            {
+                                None
+                            } else {
+                                Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
+                            },
+                        )
                     } else {
                         Ok(None)
                     }
                 },
             )
             .flat_map(Result::transpose)
-            .collect()
+            .collect::<Result<BTreeMap<_, _>, _>>()?;
+
+        let all_package_ids = &mut deps.keys().copied().collect::<HashSet<_>>();
+        let all_extern_crate_names = &mut deps
+            .values()
+            .map(|(_, s)| s.clone())
+            .collect::<HashSet<_>>();
+
+        while {
+            let next = deps
+                .keys()
+                .flat_map(|package_id| {
+                    nodes
+                        .iter()
+                        .filter(move |cm::Node { id, .. }| id == *package_id)
+                })
+                .flat_map(|cm::Node { deps, .. }| deps)
+                .filter(|cm::NodeDep { pkg, dep_kinds, .. }| {
+                    matches!(
+                        &**dep_kinds,
+                        [cm::DepKindInfo {
+                            kind: cm::DependencyKind::Normal,
+                            ..
+                        }]
+                    ) && !self[pkg].is_available_on_atcoder_or_codingame()
+                        && all_package_ids.insert(pkg)
+                })
+                .flat_map(|cm::NodeDep { pkg, .. }| {
+                    let package = &self[pkg];
+                    let target = package
+                        .targets
+                        .iter()
+                        .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])?;
+                    let mut extern_crate_name = format!(
+                        "__{}_{}",
+                        package.name.replace('-', "_"),
+                        package
+                            .version
+                            .to_string()
+                            .replace(|c| !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9'), "_"),
+                    );
+                    while !all_extern_crate_names.insert(extern_crate_name.clone()) {
+                        extern_crate_name += "_";
+                    }
+                    Some((&package.id, (target, extern_crate_name)))
+                })
+                .collect::<Vec<_>>();
+            let next_is_empty = next.is_empty();
+            deps.extend(next);
+            !next_is_empty
+        } {}
+
+        Ok(deps)
     }
 
     pub(crate) fn dep_lib_by_extern_crate_name<'a>(
         &'a self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
-    ) -> anyhow::Result<(&cm::Target, &cm::Package)> {
+    ) -> anyhow::Result<&cm::Package> {
         // https://docs.rs/cargo/0.47.0/src/cargo/core/resolver/resolve.rs.html#323-352
 
         let package = &self[package_id];
@@ -278,82 +338,25 @@ impl cm::Metadata {
             .any(|rename| rename == extern_crate_name);
 
         if found_explicitly_renamed_one {
-            let package = &self[&node
+            Ok(&self[&node
                 .deps
                 .iter()
                 .find(|cm::NodeDep { name, .. }| name == extern_crate_name)
                 .expect("found the dep in `dependencies`, not in `resolve.deps`")
-                .pkg];
-
-            let lib = package
-                .targets
-                .iter()
-                .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])
-                .with_context(|| {
-                    format!(
-                        "`{}` is resolved as `{}` but it has no `lib` target",
-                        extern_crate_name, package.name,
-                    )
-                })?;
-
-            Ok((lib, package))
+                .pkg])
         } else {
             node.dependencies
                 .iter()
                 .map(|dep_id| &self[dep_id])
                 .flat_map(|p| p.targets.iter().map(move |t| (t, p)))
                 .find(|(t, _)| t.name == extern_crate_name && *t.kind == ["lib".to_owned()])
+                .map(|(_, p)| p)
                 .with_context(|| {
                     format!(
                         "no external library found which `extern_crate_name` is `{}`",
                         extern_crate_name,
                     )
                 })
-        }
-    }
-
-    pub(crate) fn extern_crate_name(
-        &self,
-        from: &cm::PackageId,
-        to: &cm::PackageId,
-        to_target: &cm::Target,
-    ) -> anyhow::Result<String> {
-        let from = &self[from];
-        let to = &self[to];
-
-        let explicit_names = from
-            .dependencies
-            .iter()
-            .flat_map(|cm::Dependency { rename, .. }| rename)
-            .collect::<HashSet<_>>();
-
-        let cm::NodeDep { name, .. } = self
-            .resolve
-            .as_ref()
-            .with_context(|| "`resolve` not found")?
-            .nodes
-            .iter()
-            .find(|cm::Node { id, .. }| *id == from.id)
-            .with_context(|| format!("`{}` not found", from.id))?
-            .deps
-            .iter()
-            .find(|cm::NodeDep { pkg, dep_kinds, .. }| {
-                *pkg == to.id
-                    && (dep_kinds.is_empty()
-                        || matches!(
-                            &**dep_kinds,
-                            [cm::DepKindInfo {
-                                kind: cm::DependencyKind::Normal,
-                                ..
-                            }]
-                        ))
-            })
-            .with_context(|| format!("no \"extern crate name\" for `{}` → `{}`", from.id, to.id))?;
-
-        if explicit_names.contains(name) {
-            Ok(name.clone())
-        } else {
-            Ok(to_target.name.replace('-', "_"))
         }
     }
 }

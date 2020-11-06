@@ -320,7 +320,7 @@ pub(crate) fn process_extern_crates_in_lib(
     Ok(replace_ranges(code, replacements))
 }
 
-pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Result<String> {
+pub(crate) fn modify_macros(code: &str, pseudo_extern_crate_name: &str) -> anyhow::Result<String> {
     fn find_dollar_crates(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
         for (i, (tt1, tt2)) in token_stream.into_iter().tuple_windows().enumerate() {
             if i == 0 {
@@ -386,7 +386,7 @@ pub(crate) fn modify_macros(code: &str, extern_crate_name: &str) -> anyhow::Resu
         code,
         dollar_crates
             .into_iter()
-            .map(|p| ((p, p), format!("::{}", extern_crate_name)))
+            .map(|p| ((p, p), format!("::{}", pseudo_extern_crate_name)))
             .chain(file.items.first().map(|item| {
                 let pos = item.span().start();
                 (
