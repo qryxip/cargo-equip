@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Now it gives pseudo `extern_crate_name`s like `"__internal_lib_0_1_0"` to dependencies of dependencies.
+
+    You no longer need to include all of the libraries in `[dependencies]`.
+
 ### Changed
 
 - Supports `extern crate $name as $rename` in `bin`s.

@@ -197,15 +197,17 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
-            Ok((_, lib_package)) if lib_package.is_available_on_atcoder_or_codingame()
+            Ok(lib_package) if lib_package.is_available_on_atcoder_or_codingame()
         )
     })?;
 
-    let contents = metadata
-        .normal_deps_except_available_on_platforms(&bin_package.id)?
-        .into_iter()
-        .filter(|(extern_crate_name, _, _)| !unused_deps.contains(extern_crate_name))
-        .map(|(extern_crate_name, lib_target, lib_package)| {
+    let deps_to_bundle = metadata.deps_to_bundle(&bin_package.id, &unused_deps)?;
+
+    let contents = deps_to_bundle
+        .iter()
+        .map(|(lib_package, (lib_target, pseudo_extern_crate_name))| {
+            let lib_package = &metadata[lib_package];
+
             let cm::Node { features, .. } = metadata
                 .resolve
                 .as_ref()
@@ -216,13 +218,21 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                 .with_context(|| "could not find the data in metadata")?;
 
             let content = rust::expand_mods(&lib_target.src_path)?;
-            let content = rust::replace_crate_paths(&content, &extern_crate_name, shell)?;
+            let content = rust::replace_crate_paths(&content, &pseudo_extern_crate_name, shell)?;
             let content = rust::process_extern_crates_in_lib(&content, |dst| {
-                let (dst_target, dst_package) =
+                let dst_package =
                     metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
-                metadata.extern_crate_name(&bin_package.id, &dst_package.id, dst_target)
+                let (_, dst_pseudo_extern_crate_name) =
+                    deps_to_bundle.get(&dst_package.id).with_context(|| {
+                        format!(
+                            "missing `extern_crate_name` for `{}`. generated one should be given \
+                             beforehead. this is a bug",
+                            dst_package.id,
+                        )
+                    })?;
+                Ok(dst_pseudo_extern_crate_name.clone())
             })?;
-            let mut content = rust::modify_macros(&content, &extern_crate_name)?;
+            let mut content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
             if resolve_cfgs {
                 content = rust::resolve_cfgs(&content, features)?;
             }
@@ -233,13 +243,13 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                 content = rust::erase_comments(&content)?;
             }
 
-            Ok((extern_crate_name, lib_target, lib_package, content))
+            Ok((pseudo_extern_crate_name, lib_target, lib_package, content))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let mut code = rust::prepend_mod_doc(&code, &{
         let mut doc = " # Bundled libraries\n".to_owned();
-        for (extern_crate_name, _, lib_package, _) in &contents {
+        for (pseudo_extern_crate_name, _, lib_package, _) in &contents {
             doc += "\n ## ";
             let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
                 format!(
@@ -262,9 +272,9 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                 doc += &lib_package.name;
                 doc += "` (private)";
             }
-            doc += "\n\n ### `extern_crate_name`\n\n `";
-            doc += extern_crate_name;
-            doc += "`\n";
+            doc += "\n\n Expanded to `crate::";
+            doc += pseudo_extern_crate_name;
+            doc += "`.\n";
         }
         doc
     })?;
@@ -276,22 +286,22 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     if minify == Minify::Libs {
         code += "\n";
 
-        for (extern_crate_name, _, _, content) in &contents {
+        for (pseudo_extern_crate_name, _, _, content) in &contents {
             code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
             code += "#[allow(dead_code)]mod ";
-            code += &extern_crate_name.to_string();
+            code += &pseudo_extern_crate_name.to_string();
             code += "{";
             code += &rust::minify(
                 content,
                 shell,
-                Some(&format!("crate::{}", extern_crate_name)),
+                Some(&format!("crate::{}", pseudo_extern_crate_name)),
             )?;
             code += "}\n";
         }
     } else {
-        for (extern_crate_name, _, _, content) in &contents {
+        for (pseudo_extern_crate_name, _, _, content) in &contents {
             code += "\n#[allow(dead_code)]\n mod ";
-            code += extern_crate_name;
+            code += pseudo_extern_crate_name;
             code += " {\n";
             code += &rust::indent_code(content, 1);
             code += "}\n";
