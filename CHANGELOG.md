@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Supports `extern crate $name as $rename` in `bin`s.
+
+    ```rust
+    extern crate foo as foo_;
+    ```
+
 ## [0.7.0] - 2020-11-03Z
 
 ### Changed

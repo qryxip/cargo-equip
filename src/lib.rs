@@ -194,7 +194,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     shell.status("Bundling", "the code")?;
 
     let code = rust::expand_mods(&bin.src_path)?;
-    let code = rust::comment_out_macro_uses(&code, |extern_crate_name| {
+    let code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
             Ok((_, lib_package)) if lib_package.is_available_on_atcoder_or_codingame()
@@ -217,7 +217,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
             let content = rust::expand_mods(&lib_target.src_path)?;
             let content = rust::replace_crate_paths(&content, &extern_crate_name, shell)?;
-            let content = rust::replace_extern_crates(&content, |dst| {
+            let content = rust::process_extern_crates_in_lib(&content, |dst| {
                 let (dst_target, dst_package) =
                     metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
                 metadata.extern_crate_name(&bin_package.id, &dst_package.id, dst_target)

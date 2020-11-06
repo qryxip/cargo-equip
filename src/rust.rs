@@ -29,38 +29,49 @@ use syn::{
     UseRename, UseTree, Variadic, Variant, VisRestricted,
 };
 
-pub(crate) fn comment_out_macro_uses(
+pub(crate) fn process_extern_crate_in_bin(
     code: &str,
-    mut is_directly_available_crate: impl FnMut(&str) -> bool,
+    is_available_on_atcoder_or_codingame: impl FnMut(&str) -> bool,
 ) -> anyhow::Result<String> {
-    let syn::File { items, .. } = syn::parse_file(code)
+    struct Visitor<'a, F> {
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+        is_available_on_atcoder_or_codingame: F,
+    };
+
+    impl<F: FnMut(&str) -> bool> Visit<'_> for Visitor<'_, F> {
+        fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
+            let ItemExternCrate {
+                vis, ident, rename, ..
+            } = item_use;
+
+            if !(self.is_available_on_atcoder_or_codingame)(&ident.to_string()) {
+                let vis = vis.to_token_stream();
+                let to = match rename {
+                    Some((_, ident)) if ident == "_" => "".to_owned(),
+                    Some((_, rename)) => format!("{} use crate::{} as {};", vis, ident, rename),
+                    None => format!("{} use crate::{};", vis, ident),
+                };
+                let to = to.trim_start();
+
+                let pos = item_use.span().start();
+                self.replacements.insert((pos, pos), "/*".to_owned());
+                let pos = item_use.span().end();
+                self.replacements.insert((pos, pos), "*/".to_owned() + to);
+            }
+        }
+    }
+
+    let file = syn::parse_file(code)
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
 
     let mut replacements = btreemap!();
 
-    for item in items {
-        if let Item::ExternCrate(ItemExternCrate {
-            attrs,
-            ident,
-            rename: Some((_, rename)),
-            ..
-        }) = &item
-        {
-            if attrs
-                .iter()
-                .flat_map(Attribute::parse_meta)
-                .any(|m| matches!(m, Meta::Path(p) if p.is_ident("macro_use")))
-                && rename == "_"
-                && !is_directly_available_crate(&ident.to_string())
-            {
-                let pos = item.span().start();
-                replacements.insert((pos, pos), "/*".to_owned());
-                let pos = item.span().end();
-                replacements.insert((pos, pos), "*/".to_owned());
-            }
-        }
+    Visitor {
+        replacements: &mut replacements,
+        is_available_on_atcoder_or_codingame,
     }
+    .visit_file(&file);
 
     Ok(replace_ranges(code, replacements))
 }
@@ -252,7 +263,7 @@ pub(crate) fn replace_crate_paths(
     }
 }
 
-pub(crate) fn replace_extern_crates(
+pub(crate) fn process_extern_crates_in_lib(
     code: &str,
     convert_extern_crate_name: impl FnMut(&syn::Ident) -> anyhow::Result<String>,
 ) -> anyhow::Result<String> {
