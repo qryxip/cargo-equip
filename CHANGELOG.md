@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Now you can skip the processes except `--check`.
+
+    ```rust
+    #![cfg_attr(cargo_equip, cargo_equip::skip)]
+    ```
+
 ## [0.7.1] - 2020-11-07Z
 
 ### Added

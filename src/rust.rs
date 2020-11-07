@@ -11,6 +11,7 @@ use std::{
     mem, str,
 };
 use syn::{
+    parse_quote,
     spanned::Spanned,
     visit::{self, Visit},
     Arm, Attribute, BareFnArg, ConstParam, ExprArray, ExprAssign, ExprAssignOp, ExprAsync,
@@ -28,6 +29,35 @@ use syn::{
     TraitItemMacro, TraitItemMethod, TraitItemType, TypeParam, UseGroup, UseName, UsePath,
     UseRename, UseTree, Variadic, Variant, VisRestricted,
 };
+
+pub(crate) fn find_skip_attribute(code: &str) -> anyhow::Result<bool> {
+    let syn::File { attrs, .. } = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    Ok(attrs
+        .iter()
+        .flat_map(Attribute::parse_meta)
+        .flat_map(|meta| match meta {
+            Meta::List(meta_list) => Some(meta_list),
+            _ => None,
+        })
+        .filter(|MetaList { path, .. }| path.is_ident("cfg_attr"))
+        .any(|MetaList { nested, .. }| {
+            matches!(
+                *nested.iter().collect::<Vec<_>>(),
+                [pred, attr]
+                if matches!(
+                    cfg_expr::Expression::parse(&pred.to_token_stream().to_string()),
+                    Ok(expr)
+                    if expr.eval(|pred| match pred {
+                        cfg_expr::Predicate::Flag("cargo_equip") => Some(true),
+                        _ => None,
+                    }) == Some(true)
+                ) && *attr == parse_quote!(cargo_equip::skip)
+            )
+        }))
+}
 
 pub(crate) fn process_extern_crate_in_bin(
     code: &str,
