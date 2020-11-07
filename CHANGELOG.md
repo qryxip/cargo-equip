@@ -1,26 +1,30 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.1] - 2020-11-07Z
 
 ### Added
 
-- Now it gives pseudo `extern_crate_name`s like `"__internal_lib_0_1_0"` to dependencies of dependencies.
+- Now it gives pseudo `extern_crate_name`s like `"__internal_lib_0_1_0"` to dependencies of dependencies. ([#43](https://github.com/qryxip/cargo-equip/pull/43))
 
     You no longer need to include all of the libraries in `[dependencies]`.
 
-### Changed
-
-- Supports `extern crate $name as $rename` in `bin`s.
+- Supports `extern crate $name as $rename` in `bin`s. ([#43](https://github.com/qryxip/cargo-equip/pull/43))
 
     ```rust
     extern crate foo as foo_;
     ```
 
+### Fixed
+
+- Now it correctly processes outputs of cargo-udeps. ([#43](https://github.com/qryxip/cargo-equip/pull/43))
+
+    The names are [`name_in_toml`](https://docs.rs/cargo/0.48.0/cargo/core/dependency/struct.Dependency.html#method.name_in_toml)s. Previously they were treated as [`extern_crate_name`](https://docs.rs/cargo/0.48.0/cargo/core/struct.Resolve.html#method.extern_crate_name)s.
+
 ## [0.7.0] - 2020-11-03Z
 
 ### Changed
 
-- cargo-equip no longer consider modules.
+- cargo-equip no longer consider modules. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
     Split your library into separate small crates.
 
@@ -39,13 +43,13 @@
     ⋮
     ```
 
-- Stopped erasing non `mod` items just below each `lib` crates.
+- Stopped erasing non `mod` items just below each `lib` crates. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
 - Now cargo-equip inserts `pub use crate::{ exported_macros }` just below each `mod lib_name`.
 
-- Stopped excluding `$ crate :: ident !` parts in `macro_rules!`.
+- Stopped excluding `$ crate :: ident !` parts in `macro_rules!`. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
-- Now processes `#[macro_use] extern crate $name as _;` in `bin`s.
+- Now processes `#[macro_use] extern crate $name as _;` in `bin`s. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
     ```rust
     // in main source code
@@ -61,20 +65,20 @@
     extern crate input as _;*/
     ```
 
-- `#![cfg_attr(cargo_equip, cargo_equip::equip)]` no longer requried.
+- `#![cfg_attr(cargo_equip, cargo_equip::equip)]` no longer requried. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
     ```diff
     -#![cfg_attr(cargo_equip, cargo_equip::equip)]
     ```
 
-- `#![cfg_attr(cargo_equip, cargo_equip::use_another_lib)]` no longer requried.
+- `#![cfg_attr(cargo_equip, cargo_equip::use_another_lib)]` no longer requried. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
     ```diff
     -#[cfg_attr(cargo_equip, cargo_equip::use_another_lib)]
      extern crate __another_lib as another_lib;
     ```
 
-- `#![cfg_attr(cargo_equip, cargo_equip::translate_dolalr_crates)]` no longer requried.
+- `#![cfg_attr(cargo_equip, cargo_equip::translate_dolalr_crates)]` no longer requried. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
     ```diff
     -#[cfg_attr(cargo_equip, cargo_equip::translate_dollar_crates)]
