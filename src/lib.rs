@@ -183,6 +183,44 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         metadata.exactly_one_bin_target()
     }?;
 
+    let code = bundle(
+        &metadata,
+        &bin_package,
+        &bin,
+        &toolchain,
+        resolve_cfgs,
+        &remove,
+        minify,
+        rustfmt,
+        shell,
+    )?;
+
+    if check {
+        workspace::cargo_check_using_current_lockfile_and_cache(&metadata, &bin_package, &code)?;
+    }
+
+    if let Some(output) = output {
+        let output = cwd.join(output);
+        std::fs::write(&output, code)
+            .with_context(|| format!("could not write `{}`", output.display()))
+    } else {
+        write!(shell.out(), "{}", code)?;
+        Ok(())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn bundle(
+    metadata: &cm::Metadata,
+    bin_package: &cm::Package,
+    bin: &cm::Target,
+    toolchain: &str,
+    resolve_cfgs: bool,
+    remove: &[Remove],
+    minify: Minify,
+    rustfmt: bool,
+    shell: &mut Shell,
+) -> anyhow::Result<String> {
     let unused_deps = match cargo_udeps::cargo_udeps(&bin_package, &bin.name, &toolchain, shell) {
         Ok(unused_deps) => unused_deps,
         Err(warning) => {
@@ -190,6 +228,12 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             hashset!()
         }
     };
+
+    let code = xshell::read_file(&bin.src_path)?;
+    if rust::find_skip_attribute(&code)? {
+        shell.status("Found", "`#![cfg_attr(cargo_equip, cargo_equip::skip)]`")?;
+        return Ok(code);
+    }
 
     shell.status("Bundling", "the code")?;
 
@@ -316,16 +360,5 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         code = rustfmt::rustfmt(&metadata.workspace_root, &code, &bin.edition)?;
     }
 
-    if check {
-        workspace::cargo_check_using_current_lockfile_and_cache(&metadata, &bin_package, &code)?;
-    }
-
-    if let Some(output) = output {
-        let output = cwd.join(output);
-        std::fs::write(&output, code)
-            .with_context(|| format!("could not write `{}`", output.display()))?;
-    } else {
-        write!(shell.out(), "{}", code)?;
-    }
-    Ok(())
+    Ok(code)
 }

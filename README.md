@@ -40,12 +40,17 @@ tonelli_shanks  = { path = "/path/to/tonelli_shanks"                            
 ```
 
 ```rust
+// Uncomment this line if you don't use your libraries. (`--check` still works)
+//#![cfg_attr(cargo_equip, cargo_equip::skip)]
+
 #[macro_use]
 extern crate input as _;
 
 use acl_modint::ModInt;
 use std::io::Write as _;
 use tonelli_shanks::ModIntBaseExt as _;
+
+use permutohedron as _;
 
 fn main() {
     input! {
@@ -72,14 +77,14 @@ fn main() {
 ❯ cargo equip --resolve-cfgs --remove docs --minify libs --rustfmt --check -o ./bundled.rs
      Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
     Checking solve v0.0.0 (/home/ryo/src/local/a/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.13s
-info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-e3698634e08ed722.json"
+    Finished dev [unoptimized + debuginfo] target(s) in 0.12s
+info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-f226dae584a15e07.json"
     Bundling the code
-    Checking cargo-equip-check-output-99qzpt0pl701s8e6 v0.1.0 (/tmp/cargo-equip-check-output-99qzpt0pl701s8e6)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.34s
+    Checking cargo-equip-check-output-oyinvf7zhepdh311 v0.1.0 (/tmp/cargo-equip-check-output-oyinvf7zhepdh311)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.39s
 ```
 
-[Submit Info #29030 - Library-Checker](https://judge.yosupo.jp/submission/29030)
+[Submit Info #29067 - Library-Checker](https://judge.yosupo.jp/submission/29067)
 
 ## Installation
 

@@ -40,12 +40,17 @@ tonelli_shanks  = { path = "/path/to/tonelli_shanks"                            
 ```
 
 ```rust
+// Uncomment this line if you don't use your libraries. (`--check` still works)
+//#![cfg_attr(cargo_equip, cargo_equip::skip)]
+
 #[macro_use]
 extern crate input as _;
 
 use acl_modint::ModInt;
 use std::io::Write as _;
 use tonelli_shanks::ModIntBaseExt as _;
+
+use permutohedron as _;
 
 fn main() {
     input! {
@@ -72,14 +77,14 @@ fn main() {
 ❯ cargo equip --resolve-cfgs --remove docs --minify libs --rustfmt --check -o ./bundled.rs
      Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
     Checking solve v0.0.0 (/home/ryo/src/local/a/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.13s
-info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-e3698634e08ed722.json"
+    Finished dev [unoptimized + debuginfo] target(s) in 0.12s
+info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-f226dae584a15e07.json"
     Bundling the code
-    Checking cargo-equip-check-output-99qzpt0pl701s8e6 v0.1.0 (/tmp/cargo-equip-check-output-99qzpt0pl701s8e6)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.34s
+    Checking cargo-equip-check-output-oyinvf7zhepdh311 v0.1.0 (/tmp/cargo-equip-check-output-oyinvf7zhepdh311)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.39s
 ```
 
-[Submit Info #29030 - Library-Checker](https://judge.yosupo.jp/submission/29030)
+[Submit Info #29067 - Library-Checker](https://judge.yosupo.jp/submission/29067)
 
 ## インストール
 
@@ -214,6 +219,9 @@ acl_twosat      = { git = "https://github.com/qryxip/ac-library-rs", branch = "s
 2. `bin`内に`mod`を作る場合、その中では[Extern Prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から名前を解決しない。
 
 ```rust
+// Uncomment this line if you don't use your libraries. (`--check` still works)
+//#![cfg_attr(cargo_equip, cargo_equip::skip)]
+
 #[macro_use]
 extern crate input as _;
 
@@ -221,17 +229,17 @@ use std::io::Write as _;
 
 fn main() {
     input! {
-        yps: [(u32, u32)],
+        n: usize,
     }
 
     output::buf_print(|out| {
         macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
-        for (y, p) in yps {
-            ModInt::set_modulus(p);
-            if let Some(sqrt) = ModInt::new(y).sqrt() {
-                println!("{}", sqrt);
-            } else {
-                println!("-1");
+        for i in 1..=n {
+            match i % 15 {
+                0 => println!("Fizz Buzz"),
+                3 | 6 | 9 | 12 => println!("Fizz"),
+                5 | 10 => println!("Buzz"),
+                _ => println!("{}", i),
             }
         }
     });
@@ -264,6 +272,9 @@ fn main() {
 +//! ### `extern_crate_name`
 +//!
 +//! `output`
+
+// Uncomment this line if you don't use your libraries. (`--check` still works)
+//#![cfg_attr(cargo_equip, cargo_equip::skip)]
 
 -#[macro_use]
 -extern crate input as _;
@@ -306,6 +317,7 @@ fn main() {
 cargo-equipがやる操作は以下の通りです。
 
 - `bin`側
+    - トップに`#![cfg_attr(cargo_equip, cargo_equip::skip)]`を発見した場合、以下の処理をスキップして`--check`の処理だけ行い出力
     - (もしあるのなら)`mod $name;`をすべて再帰的に展開する。このとき各モジュールをインデントする。ただし複数行にまたがるリテラルが無い場合はインデントしない
     - `extern crate`を処理
     - doc commentを上部に追加
@@ -393,6 +405,8 @@ pub mod a {
 ### `--check`
 
 バンドルしたコードを出力する前にtarget directoryを共有した一時パッケージを作り、それの上で`cargo check`します。
+
+`#![cfg_attr(cargo_equip, cargo_equip::skip)]`でスキップした場合もチェックします。
 
 ```console
 ❯ cargo equip --check -o /dev/null
