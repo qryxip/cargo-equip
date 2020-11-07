@@ -8,13 +8,17 @@ use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    mem, str,
+    env, fs, mem,
+    path::PathBuf,
+    str,
 };
 use syn::{
+    parse::{ParseStream, Parser as _},
     parse_quote,
+    punctuated::Punctuated,
     spanned::Spanned,
     visit::{self, Visit},
-    Arm, Attribute, BareFnArg, ConstParam, ExprArray, ExprAssign, ExprAssignOp, ExprAsync,
+    Arm, Attribute, BareFnArg, ConstParam, Expr, ExprArray, ExprAssign, ExprAssignOp, ExprAsync,
     ExprAwait, ExprBinary, ExprBlock, ExprBox, ExprBreak, ExprCall, ExprCast, ExprClosure,
     ExprContinue, ExprField, ExprForLoop, ExprGroup, ExprIf, ExprIndex, ExprLet, ExprLit, ExprLoop,
     ExprMacro, ExprMatch, ExprMethodCall, ExprParen, ExprPath, ExprRange, ExprReference,
@@ -23,9 +27,9 @@ use syn::{
     ForeignItemStatic, ForeignItemType, Ident, ImplItemConst, ImplItemMacro, ImplItemMethod,
     ImplItemType, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl,
     ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType,
-    ItemUnion, ItemUse, LifetimeDef, Lit, Local, Macro, Meta, MetaList, MetaNameValue, PatBox,
-    PatIdent, PatLit, PatMacro, PatOr, PatPath, PatRange, PatReference, PatRest, PatSlice,
-    PatStruct, PatTuple, PatTupleStruct, PatType, PatWild, Receiver, TraitItemConst,
+    ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro, Meta, MetaList, MetaNameValue,
+    PatBox, PatIdent, PatLit, PatMacro, PatOr, PatPath, PatRange, PatReference, PatRest, PatSlice,
+    PatStruct, PatTuple, PatTupleStruct, PatType, PatWild, Receiver, Token, TraitItemConst,
     TraitItemMacro, TraitItemMethod, TraitItemType, TypeParam, UseGroup, UseName, UsePath,
     UseRename, UseTree, Variadic, Variant, VisRestricted,
 };
@@ -202,6 +206,85 @@ pub(crate) fn indent_code(code: &str, n: usize) -> String {
     } else {
         code.to_owned()
     }
+}
+
+pub(crate) fn expand_includes(code: &str, out_dir: &std::path::Path) -> anyhow::Result<String> {
+    struct Visitor<'a> {
+        out_dir: &'a std::path::Path,
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+    }
+
+    impl Visitor<'_> {
+        fn resolve(&self, expr: &Expr) -> Option<String> {
+            if let Expr::Macro(ExprMacro {
+                mac: Macro { path, tokens, .. },
+                ..
+            }) = expr
+            {
+                if [parse_quote!(::core::concat), parse_quote!(::std::concat)].contains(path) {
+                    (|parse_stream: ParseStream<'_>| {
+                        Punctuated::<Expr, Token![,]>::parse_separated_nonempty(&parse_stream)
+                    })
+                    .parse2(tokens.clone())
+                    .ok()?
+                    .iter()
+                    .map(|expr| self.resolve(expr))
+                    .collect()
+                } else if [parse_quote!(::core::env), parse_quote!(::std::env)].contains(path) {
+                    let name = syn::parse2::<LitStr>(tokens.clone()).ok()?.value();
+                    if name == "OUT_DIR" {
+                        self.out_dir.to_str().map(ToOwned::to_owned)
+                    } else {
+                        env::var(name).ok()
+                    }
+                } else {
+                    None
+                }
+            } else if let Expr::Lit(ExprLit {
+                lit: Lit::Str(lit_str),
+                ..
+            }) = expr
+            {
+                Some(lit_str.value())
+            } else {
+                None
+            }
+        }
+    }
+
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_item_macro(&mut self, i: &ItemMacro) {
+            if i.ident.is_none()
+                && [parse_quote!(::core::include), parse_quote!(::std::include)]
+                    .contains(&i.mac.path)
+            {
+                if let Ok(expr) = syn::parse2(i.mac.tokens.clone()) {
+                    if let Some(path) = self.resolve(&expr) {
+                        let path = PathBuf::from(path);
+                        if path.is_absolute() {
+                            if let Ok(content) = fs::read_to_string(path) {
+                                self.replacements
+                                    .insert((i.span().start(), i.span().end()), content);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let file = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut replacements = btreemap!();
+    Visitor {
+        replacements: &mut replacements,
+        out_dir,
+    }
+    .visit_file(&file);
+
+    Ok(replace_ranges(code, replacements))
 }
 
 pub(crate) fn replace_crate_paths(

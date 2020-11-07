@@ -221,6 +221,7 @@ fn bundle(
     rustfmt: bool,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
+    let out_dirs = workspace::execute_build_scripts(metadata, shell)?;
     let unused_deps = match cargo_udeps::cargo_udeps(&bin_package, &bin.name, &toolchain, shell) {
         Ok(unused_deps) => unused_deps,
         Err(warning) => {
@@ -262,6 +263,10 @@ fn bundle(
                 .with_context(|| "could not find the data in metadata")?;
 
             let content = rust::expand_mods(&lib_target.src_path)?;
+            let content = match out_dirs.get(&lib_package.id) {
+                Some(out_dir) => rust::expand_includes(&content, out_dir)?,
+                None => content,
+            };
             let content = rust::replace_crate_paths(&content, &pseudo_extern_crate_name, shell)?;
             let content = rust::process_extern_crates_in_lib(&content, |dst| {
                 let dst_package =
