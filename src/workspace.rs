@@ -292,8 +292,12 @@ impl cm::Metadata {
                         let lib_target = lib_package
                             .targets
                             .iter()
-                            .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])
-                            .with_context(|| format!("`{}` has no `lib` target", pkg))?;
+                            .find(|cm::Target { kind, .. }| {
+                                *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
+                            })
+                            .with_context(|| {
+                                format!("`{}` has no `lib` or `proc-macro` target", pkg)
+                            })?;
                         let (lib_extern_crate_name, lib_name_in_toml) = if renames.contains(name) {
                             (name.clone(), name)
                         } else {
@@ -343,10 +347,9 @@ impl cm::Metadata {
                 })
                 .flat_map(|cm::NodeDep { pkg, .. }| {
                     let package = &self[pkg];
-                    let target = package
-                        .targets
-                        .iter()
-                        .find(|cm::Target { kind, .. }| *kind == ["lib".to_owned()])?;
+                    let target = package.targets.iter().find(|cm::Target { kind, .. }| {
+                        *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
+                    })?;
                     let mut extern_crate_name = format!(
                         "__{}_{}",
                         package.name.replace('-', "_"),
@@ -404,7 +407,10 @@ impl cm::Metadata {
                 .iter()
                 .map(|dep_id| &self[dep_id])
                 .flat_map(|p| p.targets.iter().map(move |t| (t, p)))
-                .find(|(t, _)| t.name == extern_crate_name && *t.kind == ["lib".to_owned()])
+                .find(|(t, _)| {
+                    t.name == extern_crate_name && *t.kind == ["lib".to_owned()]
+                        || *t.kind == ["proc-macro".to_owned()]
+                })
                 .map(|(_, p)| p)
                 .with_context(|| {
                     format!(

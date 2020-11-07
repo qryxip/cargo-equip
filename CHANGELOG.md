@@ -18,6 +18,10 @@
 
     Now you can use [qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted) with cargo-equip.
 
+### Fixed
+
+- Fixed the problem where cargo-equip did not treat `proc-macro` crate as libraries.
+
 ## [0.7.1] - 2020-11-07Z
 
 ### Added
