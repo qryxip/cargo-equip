@@ -1,16 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.7.2] - 2020-11-07Z
 
 ### Added
 
-- Now you can skip the processes except `--check`.
+- Now you can skip the processes except `--check`. ([#48](https://github.com/qryxip/cargo-equip/pull/48))
 
     ```rust
     #![cfg_attr(cargo_equip, cargo_equip::skip)]
     ```
 
-- Enabled expanding code generated in `custom-build`.
+- Enabled expanding code generated in `custom-build`. ([#49](https://github.com/qryxip/cargo-equip/pull/49))
 
     ```rust
     ::core::include!(::core::concat!(::core::env!("OUT_DIR", "/generated.rs")));
@@ -20,7 +20,7 @@
 
 ### Fixed
 
-- Fixed the problem where cargo-equip did not treat `proc-macro` crate as libraries.
+- Fixed the problem where cargo-equip did not treat `proc-macro` crate as libraries. ([#50](https://github.com/qryxip/cargo-equip/pull/50))
 
 ## [0.7.1] - 2020-11-07Z
 
@@ -30,7 +30,7 @@
 
     You no longer need to include all of the libraries in `[dependencies]`.
 
-- Supports `extern crate $name as $rename` in `bin`s. ([#43](https://github.com/qryxip/cargo-equip/pull/43))
+- Supports `extern crate $name as $rename` in `bin`s. ([#41](https://github.com/qryxip/cargo-equip/pull/41))
 
     ```rust
     extern crate foo as foo_;
