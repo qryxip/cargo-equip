@@ -1,12 +1,14 @@
+use crate::shell::Shell;
 use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
 use easy_ext::ext;
 use itertools::Itertools as _;
-use maplit::hashset;
+use maplit::{btreemap, hashset};
 use once_cell::sync::Lazy;
 use rand::Rng as _;
 use std::{
     collections::{BTreeMap, HashSet},
+    io::Cursor,
     path::{Path, PathBuf},
     str,
 };
@@ -28,6 +30,59 @@ pub(crate) fn cargo_metadata(manifest_path: &Path, cwd: &Path) -> cm::Result<cm:
         .manifest_path(manifest_path)
         .current_dir(cwd)
         .exec()
+}
+
+pub(crate) fn execute_build_scripts<'cm>(
+    metadata: &'cm cm::Metadata,
+    shell: &mut Shell,
+) -> anyhow::Result<BTreeMap<&'cm cm::PackageId, PathBuf>> {
+    let packages = metadata
+        .packages
+        .iter()
+        .filter(|package| {
+            package
+                .targets
+                .iter()
+                .any(|cm::Target { kind, .. }| *kind == ["custom-build".to_owned()])
+        })
+        .collect::<Vec<_>>();
+
+    if packages.is_empty() {
+        return Ok(btreemap!());
+    }
+
+    let cargo_exe = crate::process::cargo_exe()?;
+
+    let messages = crate::process::process(&cargo_exe)
+        .arg("check")
+        .arg("--message-format")
+        .arg("json")
+        .arg("-p")
+        .args(
+            &packages
+                .into_iter()
+                .flat_map(|p| vec!["-p".to_owned(), format!("{}:{}", p.name, p.version)])
+                .collect::<Vec<_>>(),
+        )
+        .cwd(&metadata.workspace_root)
+        .read_with_status(true, shell)?;
+
+    // TODO: check if ≧ 1.41.0
+
+    let messages =
+        cm::Message::parse_stream(Cursor::new(messages)).collect::<Result<Vec<_>, _>>()?;
+
+    Ok(messages
+        .into_iter()
+        .flat_map(|message| match message {
+            cm::Message::BuildScriptExecuted(cm::BuildScript {
+                package_id,
+                out_dir,
+                ..
+            }) => Some((&metadata[&package_id].id, out_dir)),
+            _ => None,
+        })
+        .collect())
 }
 
 pub(crate) fn cargo_check_using_current_lockfile_and_cache(

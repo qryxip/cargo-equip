@@ -10,6 +10,14 @@
     #![cfg_attr(cargo_equip, cargo_equip::skip)]
     ```
 
+- Enabled expanding code generated in `custom-build`.
+
+    ```rust
+    ::core::include!(::core::concat!(::core::env!("OUT_DIR", "/generated.rs")));
+    ```
+
+    Now you can use [qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted) with cargo-equip.
+
 ## [0.7.1] - 2020-11-07Z
 
 ### Added
