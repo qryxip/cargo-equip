@@ -1,10 +1,10 @@
 [package]
 name = "cargo_equip_marker"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Ryo Yamashita <qryxip@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
-description = "Provides a marker attribute for `cargo-equip`."
+description = "[DEPRECATED]"
 repository = "https://github.com/qryxip/cargo-equip"
 keywords = []
 categories = []
