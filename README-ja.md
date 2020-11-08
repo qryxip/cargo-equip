@@ -21,6 +21,7 @@ version = "0.0.0"
 edition = "2018"
 
 [dependencies]
+ac-library-rs-parted             = { git = "https://github.com/qryxip/ac-library-rs-parted" }
 ac-library-rs-parted-convolution = { git = "https://github.com/qryxip/ac-library-rs-parted" }
 ac-library-rs-parted-dsu         = { git = "https://github.com/qryxip/ac-library-rs-parted" }
 ac-library-rs-parted-fenwicktree = { git = "https://github.com/qryxip/ac-library-rs-parted" }
@@ -49,8 +50,6 @@ extern crate input as _;
 use acl_modint::ModInt;
 use std::io::Write as _;
 use tonelli_shanks::ModIntBaseExt as _;
-
-use permutohedron as _;
 
 fn main() {
     input! {
@@ -120,10 +119,10 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
 
 `cargo-equip`で展開できるライブラリには以下の制約があります。
 
-1. 各`lib`には`#[macro_export]`したマクロと同名なアイテムが存在しないようにする。
+1. 各crate rootには`#[macro_export]`したマクロと同名なアイテムが存在しないようにする。
 
-    cargo-equipは`mod lib_name`直下に`pub use crate::{ それらの名前 }`を挿入するため、展開後の`use`で壊れます。
-    マクロは`#[macro_use]`で使ってください。
+    cargo-equipは`mod lib_name`直下に`pub use crate::{ それらの名前 };`を挿入するため、展開後の`use`で壊れます。
+    `bin`ではマクロは`#[macro_use]`で使ってください。
 
     ```rust
     // in main source code
@@ -132,7 +131,7 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
     extern crate input as _;
     ```
 
-    展開時にはコメントアウトされます。
+    `bin`内の`extern crate`はコメントアウトされます。
 
     ```rust
     // in main source code
@@ -141,7 +140,9 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
     extern crate input as _;*/ // `as _`でなければ`use crate::$name;`が挿入される
     ```
 
-2. 共に展開する予定のクレートを使う場合、`extern crate`を宣言してそれを適当な場所にマウントし、そこを相対パスで参照する。
+2. 共に展開する予定のクレートを使う場合、[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から直接名前を解決しない。
+
+    `extern crate`を宣言してそれを適当な場所にマウントし、そこを相対パスで参照してください。
 
     cargo-equipは`itertools`等のAtCoderやCodinGameで使えるクレートを除いて、
     `extern crate`を`use crate::extern_crate_name_in_main_crate;`に置き換えます。
@@ -150,15 +151,16 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
 
     ```rust
     extern crate __another_lib as another_lib;
+
+    use self::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
     ```
 
-    注意点として、バンドル後のコードが2015 editionで実行される場合(AOJ, yukicoder, ~~Library-Checker~~)、相対パスで参照するときは`self::`を付けてください。
+3. マクロ内では`crate`ではなく`$crate`を使う。
 
-    ```rust
-    use self::another_lib::foo::Foo;
-    ```
+    `macro_rules!`内の`$crate`は`$crate::extern_crate_name_in_main_crate`に置き換えられます。
+    `crate`は置き換えられません。
 
-3. 可能な限り絶対パスを使わない。
+4. 3.以外の場合も可能な限り絶対パスを使わない。
 
     cargo-equipはpathの`crate`は`crate::extern_crate_name_in_main_crate`に、`pub(crate)`は`pub(in crate::extern_crate_name_in_main_crate)`に置き換えます。
 
@@ -170,23 +172,18 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
     +use super::foo::Foo;
     ```
 
-    またマクロ内では`$crate`を使ってください。
-    `macro_rules!`内の`$crate`は`$crate::extern_crate_name_in_main_crate`に置き換えられます。
-
-4. 可能な限りライブラリを小さなクレートに分割する。
+5. 可能な限りライブラリを小さなクレートに分割する。
 
     cargo-equipは「クレート内のアイテムの依存関係」を調べることはしません。
-    出力結果を64KiBに収めるためにはできるだけ小さなクレートに分割してください。
+    AtCoder以外に参加する場合は、出力結果を64KiBに収めるためにできるだけ小さなクレートに分割してください。
 
     ```console
     .
     ├── input
-    │   ├── Cargo.lock
     │   ├── Cargo.toml
     │   └── src
     │       └── lib.rs
     ├── output
-    │   ├── Cargo.lock
     │   ├── Cargo.toml
     │   └── src
     │       └── lib.rs
@@ -196,10 +193,14 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
 ライブラリが用意できたら、それらを`bin`側の`Cargo.toml`の`[dependencies]`に加えてください。
 コンテスト毎にツールでパッケージを自動生成しているならそれのテンプレートに加えてください。
 
-[ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs)を使いたい場合、[ac-library-rs-parted](https://github.com/rust-lang-ja/ac-library-rs-parted)を使ってください。
+[rust-lang-ja/ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs)を使いたい場合、[qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted)を使ってください。
+
+`custom-build`内で本物のac-library-rsを`custom-build`内で自動で加工するクレートです。
+`custom-build`部分は[AtCoder環境と同様のCargo.lock](https://github.com/qryxip/cargo-compete/blob/ba8e0e747ed90768d9f50f3061374162dade8450/resources/atcoder-cargo-lock.toml)を壊さないために`syn 1.0.17`と`proc-macro2 1.0.10`で書かれています。
 
 ```toml
 [dependencies]
+ac-library-rs-parted             = { git = "https://github.com/qryxip/ac-library-rs-parted" }
 ac-library-rs-parted-convolution = { git = "https://github.com/qryxip/ac-library-rs-parted" }
 ac-library-rs-parted-dsu         = { git = "https://github.com/qryxip/ac-library-rs-parted" }
 ac-library-rs-parted-fenwicktree = { git = "https://github.com/qryxip/ac-library-rs-parted" }
@@ -218,7 +219,7 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
 `bin`側の制約は以下の2つです。
 
 1. マクロは`use`しない。qualified pathで使うか`#[macro_use]`で使う。
-2. `bin`内に`mod`を作る場合、その中では[Extern Prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から名前を解決しない。
+2. `bin`内に`mod`を作る場合、その中では[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から展開予定のライブラリの名前を解決しない。
 
 ```rust
 // Uncomment this line if you don't use your libraries. (`--check` still works)
@@ -258,7 +259,7 @@ fn main() {
 ```
 
 コードはこのように展開されます。
-`extern_crate_name`が`bin`側から与えられていないクレートは`"__internal_lib_0_1_0" + &"_".repeat(n)`のような名前が与えられます。
+`extern_crate_name`が`bin`側から与えられていないクレートは`__package_name_0_1_0`のような名前が与えられます。
 
 ```diff
 +//! # Bundled libraries
@@ -332,7 +333,7 @@ cargo-equipがやる操作は以下の通りです。
     - `--resolve-cfg`オプションを付けた場合、`#[cfg(常にTRUEのように見える式)]`のアトリビュートと`#[cfg(常にFALSEのように見える式)]`のアトリビュートが付いたアイテムを消去
     - `--remove docs`オプションを付けた場合、doc commentを消去
     - `--remove comments`オプションを付けた場合、commentを消去
-- 両方
+- 全体
     - `--minify all`オプションを付けた場合コード全体を最小化する
     - `--rustfmt`オプションを付けた場合Rustfmtでフォーマットする
 
@@ -340,8 +341,16 @@ cargo-equipがやる操作は以下の通りです。
 
 ### `--resolve-cfgs`
 
-1. `#[cfg(常にTRUEのように見える式)]` (e.g. `cfg(feature = "enabled-feature")`)のアトリビュートを消去します。
-2. `#[cfg(常にFALSEのように見える式)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`)のアトリビュートが付いたアイテムを消去します。
+1. `#[cfg(恒真)]` (e.g. `cfg(feature = "enabled-feature")`)のアトリビュートを消去します。
+2. `#[cfg(恒偽)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`)のアトリビュートが付いたアイテムを消去します。
+
+これは次の基準で判定されます。
+
+- [`test`](https://doc.rust-lang.org/reference/conditional-compilation.html#test): `false`
+- [`proc_macro`](https://doc.rust-lang.org/reference/conditional-compilation.html#proc_macro): `false`
+- `cargo_equip`: `true`
+- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `bin`側から見て有効化されているもののみ`true`
+- それ以外: 不明
 
 ```rust
 #[allow(dead_code)]
@@ -408,7 +417,7 @@ pub mod a {
 
 バンドルしたコードを出力する前にtarget directoryを共有した一時パッケージを作り、それの上で`cargo check`します。
 
-`#![cfg_attr(cargo_equip, cargo_equip::skip)]`でスキップした場合もチェックします。
+`#![cfg_attr(cargo_equip, cargo_equip::skip)]`でスキップした場合も有効です。
 
 ```console
 ❯ cargo equip --check -o /dev/null
