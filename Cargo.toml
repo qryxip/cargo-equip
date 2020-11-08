@@ -1,6 +1,3 @@
-[workspace]
-members = ["cargo_equip_marker"]
-
 [package]
 name = "cargo-equip"
 version = "0.7.2"
