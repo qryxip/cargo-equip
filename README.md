@@ -121,8 +121,8 @@ Follow these constrants when you writing libraries to bundle.
 
 1. Do not put items with the name names of `#[macro_export]`ed macros in each crate root.
 
-    cargo-equip inserts `pub use crate::{ these_names };` in `mod lib_name`.
-    Use `#[macro_use]` to import macros in `bin`.
+    cargo-equip inserts `pub use crate::{ these_names };` just below each `mod lib_name`.
+    Use `#[macro_use]` to import macros in a `bin`.
 
     ```rust
     // in main source code
@@ -142,21 +142,22 @@ Follow these constrants when you writing libraries to bundle.
 
 2. Do not resolve names of crates to bundle directly from [extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude).
 
-    Mount them somewhere with `extern crate` and refer them with relative paths.
+    Mount them somewhere with a `extern crate` item and refer them with relative paths.
 
-    cargo-equip replaces `extern crate` items with `use crate::extern_crate_name_in_main_crate;` except for crates available on AtCoder or CodinGame. (e.g. `itertools`)
+    cargo-equip replaces `extern crate` items with `use crate::extern_crate_name_in_main_crate;` except for crates available on AtCoder or CodinGame (e.g. `itertools`).
     [Rename](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml) the libraries not to use directly.
 
-    ```rust
-    extern crate __another_lib as another_lib;
+    ```diff
+    -extern crate __another_lib as another_lib;
+    +pub use crate::another_lib;
 
-    use self::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
+     use self::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
     ```
 
 3. Use `$crate` instead of `crate` in macros.
 
     cargo-equip replaces `$crate` in `macro_rules!` with `$crate::extern_crate_name_in_main_crate`.
-    `crate`s are not modified.
+    `crate` identifiers in `macro_rules!` are not modified.
 
 4. Do not use absolute path as possible.
 
@@ -189,8 +190,8 @@ Follow these constrants when you writing libraries to bundle.
     ⋮
     ```
 
-When you finish preparing your libraries, add them to `[dependencies]` of the `bin`.
-If you generate packages automatically with a tool, add to its template.
+When you finish preparing your library crates, add them to `[dependencies]` of the `bin`.
+If you generate packages automatically with a tool, add them to its template.
 
 If you want to use [rust-lang-ja/ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs), use [qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted) instead.
 ac-library-rs-parted is a collection of 17 crates that process the real ac-library-rs in a `custom-build`.
@@ -216,7 +217,7 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
 The constraints for `bin`s are:
 
 1. Do not import macros with `use`. Use them with `#[macro_use]` or with qualified paths.
-2. If you create `mod`s, do not resolve names of crates to bundle directly from [extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude).
+2. If you create `mod`s, inside them do not resolve names of crates to bundle directly from [extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude).
 
 ```rust
 // Uncomment this line if you don't use your libraries. (`--check` still works)
@@ -314,22 +315,22 @@ It gives tentative `extern_crate_name`s like `__package_name_0_1_0` to dependenc
 cargo-equip does the following modification.
 
 - `bin`
-    - If a `#![cfg_attr(cargo_equip, cargo_equip::skip)]` was found, skips the remaining processes, does `--check`, and outputs the code as-is.
-    - If any, expands `mod $name;` recursively indenting them except those containing multi-line literals.
-    - Processes `extern crate` items.
+    - If a `#![cfg_attr(cargo_equip, cargo_equip::skip)]` was found, skips the remaining modification, does `cargo check` if `--check` is specified, and outputs the source code as-is.
+    - If any, expands `mod $name;`s recursively indenting them except those containing multi-line literals.
+    - Replaces some of the `extern crate` items.
     - Prepends a doc comment.
     - Appends the expanded libraries.
 - `lib`s
     - Expands `mod $name;` recursively.
-    - Processes `crate` paths.
-    - Processes `extern crate` items.
-    - Processes `macro_rules!`.
-    - Processes `#[cfg(..)]` attributes when `--resolve-cfg` is specified.
-    - Removes doc comments when `--remove docs` is specified.
-    - Removes comments when `--remove comments` is specified.
+    - Replaces some of the `crate` paths.
+    - Replaces some of the `extern crate` items.
+    - Modifies `macro_rules!`.
+    - Removes `#[cfg(..)]` attributes or their targets if `--resolve-cfg` is specified.
+    - Removes doc comments if `--remove docs` is specified.
+    - Removes comments if `--remove comments` is specified.
 - Whole
-    - Minifies the whole output when `--minify all` is specified.
-    - Formats the output when `--rustfmt` is specified.
+    - Minifies the whole output f`--minify all` is specified.
+    - Formats the output if `--rustfmt` is specified.
 
 ## Options
 
@@ -338,12 +339,12 @@ cargo-equip does the following modification.
 1. Removes `#[cfg(always_true_predicate)]` (e.g. `cfg(feature = "enabled-feature")`).
 2. Removes items with `#[cfg(always_false_preducate)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`).
 
-Predicates are evaluated according to:
+Predicates are evaluated according to this rule.
 
 - [`test`](https://doc.rust-lang.org/reference/conditional-compilation.html#test): `false`
 - [`proc_macro`](https://doc.rust-lang.org/reference/conditional-compilation.html#proc_macro): `false`
 - `cargo_equip`: `true`
-- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `true` for those present
+- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `true` for those enabled
 - Otherwise: unknown
 
 ```rust
