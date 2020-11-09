@@ -149,16 +149,17 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
 
     誤って直接使わないように`lib` → `lib`の依存においては対象の名前は[リネーム](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml)しておくことを強く推奨します。
 
-    ```rust
-    extern crate __another_lib as another_lib;
+    ```diff
+    -extern crate __another_lib as another_lib;
+    +pub use crate::another_lib;
 
-    use self::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
+     use self::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
     ```
 
 3. マクロ内では`crate`ではなく`$crate`を使う。
 
     `macro_rules!`内の`$crate`は`$crate::extern_crate_name_in_main_crate`に置き換えられます。
-    `crate`は置き換えられません。
+    `macro_rules!`内の`crate`は置き換えられません。
 
 4. 3.以外の場合も可能な限り絶対パスを使わない。
 
