@@ -268,7 +268,7 @@ fn bundle(
                 None => content,
             };
             let content = rust::replace_crate_paths(&content, &pseudo_extern_crate_name, shell)?;
-            let content = rust::process_extern_crates_in_lib(&content, |dst| {
+            let content = rust::process_extern_crates_in_lib(shell, &content, |dst| {
                 let dst_package =
                     metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
                 let (_, dst_pseudo_extern_crate_name) =
@@ -337,7 +337,7 @@ fn bundle(
 
         for (pseudo_extern_crate_name, _, _, content) in &contents {
             code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
-            code += "#[allow(dead_code)]mod ";
+            code += "#[allow(dead_code)]pub mod ";
             code += &pseudo_extern_crate_name.to_string();
             code += "{";
             code += &rust::minify(
@@ -349,7 +349,7 @@ fn bundle(
         }
     } else {
         for (pseudo_extern_crate_name, _, _, content) in &contents {
-            code += "\n#[allow(dead_code)]\n mod ";
+            code += "\n#[allow(dead_code)]\npub mod ";
             code += pseudo_extern_crate_name;
             code += " {\n";
             code += &rust::indent_code(content, 1);

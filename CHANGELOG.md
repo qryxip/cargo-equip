@@ -1,5 +1,33 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Declaring `extern crate .. as ..` in a root module will produce a warning.
+
+    Create a sub module and declare in it.
+
+    ```rust
+    mod extern_crates {
+        pub(super) extern crate __another_lib as another_lib;
+    }
+
+    use self::extern_crates::another_lib::foo::Foo;
+    ```
+
+### Fixed
+
+- Now libraries are expanded as `pub mod`.
+
+    ```diff
+     #[allow(dead_code)]
+    -mod my_lib {
+    +pub mod my_lib {
+         // ...
+     }
+    ```
+
 ## [0.7.2] - 2020-11-07Z
 
 ### Added
