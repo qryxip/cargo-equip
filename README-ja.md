@@ -41,6 +41,8 @@ tonelli_shanks                   = { path = "/path/to/tonelli_shanks"           
 ```
 
 ```rust
+// verify-helper: PROBLEM https://judge.yosupo.jp/problem/sqrt_mod
+
 // Uncomment this line if you don't use your libraries. (`--check` still works)
 //#![cfg_attr(cargo_equip, cargo_equip::skip)]
 
@@ -74,15 +76,15 @@ fn main() {
 
 ```console
 ❯ cargo equip --resolve-cfgs --remove docs --minify libs --rustfmt --check -o ./bundled.rs
-     Running `/home/ryo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p -p 'ac-library-rs-parted-build:0.1.0' -p 'ac-library-rs-parted-convolution:0.1.0' -p 'ac-library-rs-parted-dsu:0.1.0' -p 'ac-library-rs-parted-fenwicktree:0.1.0' -p 'ac-library-rs-parted-internal-bit:0.1.0' -p 'ac-library-rs-parted-internal-math:0.1.0' -p 'ac-library-rs-parted-internal-queue:0.1.0' -p 'ac-library-rs-parted-internal-scc:0.1.0' -p 'ac-library-rs-parted-internal-type-traits:0.1.0' -p 'ac-library-rs-parted-lazysegtree:0.1.0' -p 'ac-library-rs-parted-math:0.1.0' -p 'ac-library-rs-parted-maxflow:0.1.0' -p 'ac-library-rs-parted-mincostflow:0.1.0' -p 'ac-library-rs-parted-modint:0.1.0' -p 'ac-library-rs-parted-scc:0.1.0' -p 'ac-library-rs-parted-segtree:0.1.0' -p 'ac-library-rs-parted-string:0.1.0' -p 'ac-library-rs-parted-twosat:0.1.0' -p 'anyhow:1.0.34' -p 'byteorder:1.3.4' -p 'num-traits:0.2.14' -p 'proc-macro2:1.0.10' -p 'ryu:1.0.5' -p 'serde:1.0.113' -p 'serde_derive:1.0.113' -p 'serde_json:1.0.59' -p 'syn:1.0.17' -p 'typenum:1.12.0'`
-    Finished dev [unoptimized + debuginfo] target(s) in 0.03s
-     Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
-    Checking solve v0.0.0 (/home/ryo/src/local/a/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.16s
-info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-2970d6e10b9c0877.json"
+     Running `/home/ryo/.rustup/toolchains/1.43.0-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p -p 'serde_derive:1.0.113' -p 'proc-macro2:1.0.10' -p 'serde:1.0.113' -p 'ryu:1.0.5' -p 'syn:1.0.17' -p 'ac-library-rs-parted-internal-math:0.1.0' -p 'num-traits:0.2.14' -p 'typenum:1.12.0' -p 'serde_json:1.0.59' -p 'ac-library-rs-parted-build:0.1.0' -p 'byteorder:1.3.4' -p 'ac-library-rs-parted-modint:0.1.0' -p 'anyhow:1.0.34'`
+    Finished dev [unoptimized + debuginfo] target(s) in 0.02s
+     Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p library-checker --bin sqrt-mod-test`
+    Checking library-checker v0.0.0 (/home/ryo/src/github.com/qryxip/oj-verify-playground/verification/library-checker)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.17s
+info: Loading save analysis from "/home/ryo/src/github.com/qryxip/oj-verify-playground/verification/library-checker/target/debug/deps/save-analysis/sqrt_mod_test-79cb22d236541548.json"
     Bundling the code
-    Checking cargo-equip-check-output-nq4nm7zkj9vtgbd9 v0.1.0 (/tmp/cargo-equip-check-output-nq4nm7zkj9vtgbd9)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.35s
+    Checking cargo-equip-check-output-54zdzn1al70b1izv v0.1.0 (/tmp/cargo-equip-check-output-54zdzn1al70b1izv)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.39s
 ```
 
 [Submit Info #29083 - Library-Checker](https://judge.yosupo.jp/submission/29083)
@@ -142,7 +144,7 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
 
 2. 共に展開する予定のクレートを使う場合、[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から直接名前を解決しない。
 
-    `extern crate`を宣言してそれを適当な場所にマウントし、そこを相対パスで参照してください。
+    **ルートモジュール以外のモジュールで**`extern crate`を宣言してマウントし、そこを相対パスで参照してください。
 
     cargo-equipは`itertools`等のAtCoderやCodinGameで使えるクレートを除いて、
     `extern crate`を`use crate::extern_crate_name_in_main_crate;`に置き換えます。
@@ -150,10 +152,12 @@ info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/
     誤って直接使わないように`lib` → `lib`の依存においては対象の名前は[リネーム](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml)しておくことを強く推奨します。
 
     ```diff
-    -extern crate __another_lib as another_lib;
-    +pub use crate::another_lib;
+     mod extern_crates {
+    -    pub(super) extern crate __another_lib as another_lib;
+    +    pub(super) use crate::another_lib;
+     }
 
-     use self::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
+     use self::extern_crates::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
     ```
 
 3. マクロ内では`crate`ではなく`$crate`を使う。
