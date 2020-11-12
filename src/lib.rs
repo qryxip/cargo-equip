@@ -268,7 +268,7 @@ fn bundle(
                 None => content,
             };
             let content = rust::replace_crate_paths(&content, &pseudo_extern_crate_name, shell)?;
-            let content = rust::process_extern_crates_in_lib(&content, |dst| {
+            let content = rust::process_extern_crates_in_lib(shell, &content, |dst| {
                 let dst_package =
                     metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
                 let (_, dst_pseudo_extern_crate_name) =

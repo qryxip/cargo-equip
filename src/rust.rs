@@ -377,6 +377,7 @@ pub(crate) fn replace_crate_paths(
 }
 
 pub(crate) fn process_extern_crates_in_lib(
+    shell: &mut Shell,
     code: &str,
     convert_extern_crate_name: impl FnMut(&syn::Ident) -> anyhow::Result<String>,
 ) -> anyhow::Result<String> {
@@ -419,6 +420,24 @@ pub(crate) fn process_extern_crates_in_lib(
     let file = syn::parse_file(code)
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
+
+    for item in &file.items {
+        if let Item::ExternCrate(ItemExternCrate {
+            vis,
+            ident,
+            rename: Some((_, rename)),
+            ..
+        }) = item
+        {
+            shell.warn(format!(
+                "declaring `extern crate .. as ..` in a root module is not recommended: \
+                 `{} extern crate {} as {}`",
+                vis.to_token_stream(),
+                ident,
+                rename,
+            ))?;
+        }
+    }
 
     let mut replacements = Ok(btreemap!());
 
