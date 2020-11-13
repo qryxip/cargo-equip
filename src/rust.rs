@@ -7,7 +7,7 @@ use maplit::{btreemap, btreeset};
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     env, fs, mem,
     path::PathBuf,
     str,
@@ -532,6 +532,84 @@ pub(crate) fn modify_macros(code: &str, pseudo_extern_crate_name: &str) -> anyho
             }))
             .collect(),
     ))
+}
+
+pub(crate) fn insert_pseudo_extern_preludes(
+    code: &str,
+    extern_crate_name_translation: &BTreeMap<String, String>,
+) -> anyhow::Result<String> {
+    if extern_crate_name_translation.is_empty() {
+        return Ok(code.to_owned());
+    }
+
+    let syn::File { attrs, items, .. } = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut replacements = btreemap!(
+        {
+            let pos = if let Some(item) = items.first() {
+                item.span().start()
+            } else if let Some(attr) = attrs.last() {
+                attr.span().end()
+            } else {
+                LineColumn { line: 0, column: 0 }
+            };
+            (pos, pos)
+        } => format!(
+            "mod __pseudo_extern_prelude {{\n    pub(super) use crate::{};\n}}\nuse self::__pseudo_extern_prelude::*;\n\n",
+            {
+                let uses = extern_crate_name_translation
+                    .iter()
+                    .map(|(extern_crate_name, pseudo_extern_crate_name)| {
+                        if extern_crate_name == pseudo_extern_crate_name {
+                            extern_crate_name.clone()
+                        } else {
+                            format!("{} as {}", pseudo_extern_crate_name, extern_crate_name)
+                        }
+                    })
+                    .join(", ");
+                if extern_crate_name_translation.len() == 1 {
+                    uses
+                } else {
+                    format!("{{{}}}", uses)
+                }
+            },
+        ),
+    );
+
+    let mut queue = items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Mod(item_mod) => Some((1, item_mod)),
+            _ => None,
+        })
+        .collect::<VecDeque<_>>();
+
+    while let Some((depth, ItemMod { attrs, content, .. })) = queue.pop_front() {
+        let (_, items) = content.as_ref().expect("should be expanded");
+        let pos = if let Some(item) = items.first() {
+            item.span().start()
+        } else if let Some(attr) = attrs.last() {
+            attr.span().end()
+        } else {
+            LineColumn { line: 0, column: 0 }
+        };
+        replacements.insert(
+            (pos, pos),
+            format!(
+                "use {}__pseudo_extern_prelude::*;\n\n",
+                "super::".repeat(depth),
+            ),
+        );
+        for item in items {
+            if let Item::Mod(item_mod) = item {
+                queue.push_back((depth + 1, item_mod));
+            }
+        }
+    }
+
+    Ok(replace_ranges(code, replacements))
 }
 
 fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), String>) -> String {

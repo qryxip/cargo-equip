@@ -217,6 +217,10 @@ pub(crate) trait MetadataExt {
         package_id: &cm::PackageId,
         extern_crate_name: &str,
     ) -> anyhow::Result<&cm::Package>;
+    fn libs_with_extern_crate_names(
+        &self,
+        package_id: &cm::PackageId,
+    ) -> anyhow::Result<BTreeMap<&cm::PackageId, String>>;
 }
 
 impl MetadataExt for cm::Metadata {
@@ -439,6 +443,55 @@ impl MetadataExt for cm::Metadata {
                     )
                 })
         }
+    }
+
+    fn libs_with_extern_crate_names(
+        &self,
+        package_id: &cm::PackageId,
+    ) -> anyhow::Result<BTreeMap<&cm::PackageId, String>> {
+        let package = &self[package_id];
+
+        let renames = package
+            .dependencies
+            .iter()
+            .flat_map(|cm::Dependency { rename, .. }| rename)
+            .collect::<HashSet<_>>();
+
+        let cm::Resolve { nodes, .. } =
+            self.resolve.as_ref().with_context(|| "`resolve` is null")?;
+
+        let cm::Node { deps, .. } = nodes
+            .iter()
+            .find(|cm::Node { id, .. }| id == package_id)
+            .with_context(|| "could not find the node")?;
+
+        Ok(deps
+            .iter()
+            .filter(|cm::NodeDep { pkg, dep_kinds, .. }| {
+                matches!(
+                    &**dep_kinds,
+                    [cm::DepKindInfo {
+                        kind: cm::DependencyKind::Normal,
+                        ..
+                    }]
+                ) && !self[pkg].is_available_on_atcoder_or_codingame()
+            })
+            .flat_map(|cm::NodeDep { name, pkg, .. }| {
+                let extern_crate_name = if renames.contains(name) {
+                    name.clone()
+                } else {
+                    self[pkg]
+                        .targets
+                        .iter()
+                        .find(|cm::Target { kind, .. }| {
+                            *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
+                        })?
+                        .name
+                        .replace('-', "_")
+                };
+                Some((pkg, extern_crate_name))
+            })
+            .collect())
     }
 }
 

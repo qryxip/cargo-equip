@@ -281,7 +281,20 @@ fn bundle(
                     })?;
                 Ok(dst_pseudo_extern_crate_name.clone())
             })?;
-            let mut content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
+            let content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
+            let mut content = rust::insert_pseudo_extern_preludes(&content, &{
+                metadata
+                    .libs_with_extern_crate_names(&lib_package.id)?
+                    .into_iter()
+                    .map(|(package_id, extern_crate_name)| {
+                        let (_, pseudo_extern_crate_name) =
+                            deps_to_bundle.get(package_id).with_context(|| {
+                                "could not translate pseudo extern crate names. this is a bug"
+                            })?;
+                        Ok((extern_crate_name, pseudo_extern_crate_name.clone()))
+                    })
+                    .collect::<anyhow::Result<_>>()?
+            })?;
             if resolve_cfgs {
                 content = rust::resolve_cfgs(&content, features)?;
             }
@@ -337,7 +350,7 @@ fn bundle(
 
         for (pseudo_extern_crate_name, _, _, content) in &contents {
             code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
-            code += "#[allow(dead_code)]pub mod ";
+            code += "#[allow(unused)]pub mod ";
             code += &pseudo_extern_crate_name.to_string();
             code += "{";
             code += &rust::minify(
@@ -349,7 +362,7 @@ fn bundle(
         }
     } else {
         for (pseudo_extern_crate_name, _, _, content) in &contents {
-            code += "\n#[allow(dead_code)]\npub mod ";
+            code += "\n#[allow(unused)]\npub mod ";
             code += pseudo_extern_crate_name;
             code += " {\n";
             code += &rust::indent_code(content, 1);
