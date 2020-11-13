@@ -1,7 +1,6 @@
 use crate::shell::Shell;
 use anyhow::{bail, Context as _};
 use cargo_metadata as cm;
-use easy_ext::ext;
 use itertools::Itertools as _;
 use maplit::{btreemap, hashset};
 use once_cell::sync::Lazy;
@@ -198,9 +197,30 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     Ok(())
 }
 
-#[ext(MetadataExt)]
-impl cm::Metadata {
-    pub(crate) fn exactly_one_bin_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)> {
+pub(crate) trait MetadataExt {
+    fn exactly_one_bin_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)>;
+    fn bin_target_by_name<'a>(
+        &'a self,
+        name: &str,
+    ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
+    fn bin_target_by_src_path<'a>(
+        &'a self,
+        src_path: &Path,
+    ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
+    fn deps_to_bundle<'a>(
+        &'a self,
+        package_id: &cm::PackageId,
+        cargo_udeps_outcome: &HashSet<String>,
+    ) -> anyhow::Result<BTreeMap<&'a cm::PackageId, (&'a cm::Target, String)>>;
+    fn dep_lib_by_extern_crate_name<'a>(
+        &'a self,
+        package_id: &cm::PackageId,
+        extern_crate_name: &str,
+    ) -> anyhow::Result<&cm::Package>;
+}
+
+impl MetadataExt for cm::Metadata {
+    fn exactly_one_bin_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)> {
         match &*bin_targets(self).collect::<Vec<_>>() {
             [] => bail!("no bin target in this workspace"),
             [bin] => Ok(*bin),
@@ -216,7 +236,7 @@ impl cm::Metadata {
         }
     }
 
-    pub(crate) fn bin_target_by_name<'a>(
+    fn bin_target_by_name<'a>(
         &'a self,
         name: &str,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)> {
@@ -230,7 +250,7 @@ impl cm::Metadata {
         }
     }
 
-    pub(crate) fn bin_target_by_src_path<'a>(
+    fn bin_target_by_src_path<'a>(
         &'a self,
         src_path: &Path,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)> {
@@ -250,7 +270,7 @@ impl cm::Metadata {
         }
     }
 
-    pub(crate) fn deps_to_bundle<'a>(
+    fn deps_to_bundle<'a>(
         &'a self,
         package_id: &cm::PackageId,
         cargo_udeps_outcome: &HashSet<String>,
@@ -372,7 +392,7 @@ impl cm::Metadata {
         Ok(deps)
     }
 
-    pub(crate) fn dep_lib_by_extern_crate_name<'a>(
+    fn dep_lib_by_extern_crate_name<'a>(
         &'a self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
@@ -431,10 +451,13 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
         .filter(|(cm::Target { kind, .. }, _)| *kind == ["bin".to_owned()])
 }
 
-#[ext(PackageExt)]
-impl cm::Package {
-    pub(crate) fn is_available_on_atcoder_or_codingame(&self) -> bool {
-        pub(crate) static NAMES: Lazy<HashSet<&str>> = Lazy::new(|| {
+pub(crate) trait PackageExt {
+    fn is_available_on_atcoder_or_codingame(&self) -> bool;
+}
+
+impl PackageExt for cm::Package {
+    fn is_available_on_atcoder_or_codingame(&self) -> bool {
+        static NAMES: Lazy<HashSet<&str>> = Lazy::new(|| {
             hashset!(
                 "alga",
                 "ascii",
