@@ -142,7 +142,7 @@ Follow these constrants when you writing libraries to bundle.
     extern crate input as _;*/ // `use crate::$name;` is inserted if the rename is not `_`
     ```
 
-2. Do not resolve names of crates to bundle directly from [extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude).
+2. **To make compatible with Rust 2015**, do not resolve names of crates to bundle directly from [extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude).
 
     Mount them in some module **except the root one** with a `extern crate` item and refer them with relative paths.
 
@@ -156,6 +156,20 @@ Follow these constrants when you writing libraries to bundle.
      }
 
      use self::extern_crates::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
+    ```
+
+    If you don't use website where Rust 2018 is unavailable (e.g. AIZU ONLINE JUDGE, yukicoder), you don't have to do this.
+    `mod __pseudo_extern_prelude` like this is created in each library as a substitute for extern prelude.
+    This `mod __pseudo_extern_prelude` itself is valid in Rust 2015 but unfortunately Rust 2015 cannot resolve the `use another_lib::A;`.
+
+    ```diff
+    +mod __pseudo_extern_prelude {
+    +    pub(super) use crate::{another_lib1, another_lib2};
+    +}
+    +use self::__pseudo_extern_prelude::*;
+    +
+     use another_lib1::A;
+     use another_lib2::B;
     ```
 
 3. Use `$crate` instead of `crate` in macros.
@@ -329,6 +343,7 @@ cargo-equip does the following modification.
     - Replaces some of the `crate` paths.
     - Replaces some of the `extern crate` items.
     - Modifies `macro_rules!`.
+    - Inserts `mod __pseudo_extern_prelude { .. }` and `use (self::|$(super::)*)__pseudo_extern_prelude::*;`.
     - Removes `#[cfg(..)]` attributes or their targets if `--resolve-cfg` is specified.
     - Removes doc comments if `--remove docs` is specified.
     - Removes comments if `--remove comments` is specified.

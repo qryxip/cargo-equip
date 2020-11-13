@@ -4,9 +4,23 @@
 
 ### Changed
 
+- cargo-equip now creates "pseudo extern prelude" in each library.
+
+    **Unless you use AIZU ONLINE JUDGE or yukicoder**, you no longer need to declare `extern crate` in libraries.
+
+    ```diff
+    +mod __pseudo_extern_prelude {
+    +    pub(super) use crate::{another_lib1, another_lib2};
+    +}
+    +use self::__pseudo_extern_prelude::*;
+    +
+     use another_lib1::A;
+     use another_lib2::B;
+    ```
+
 - Declaring `extern crate .. as ..` in a root module will produce a warning.
 
-    Create a sub module and declare in it.
+    To make your libraries compatible with Rust 2015, create a sub module and declare in it.
 
     ```rust
     mod extern_crates {
@@ -16,12 +30,24 @@
     use self::extern_crates::another_lib::foo::Foo;
     ```
 
+- Changed `#[allow(dead_code)]` to `#[allow(unused)]`.
+
+    [`unused`](https://doc.rust-lang.org/rustc/lints/groups.html) is a group of `dead-code`, `unused-imports`, and so on.
+
+    ```diff
+    -#[allow(dead_code)]
+    +#[allow(unused)]
+     mod my_lib {
+         // ...
+     }
+    ```
+
 ### Fixed
 
 - Now libraries are expanded as `pub mod`.
 
     ```diff
-     #[allow(dead_code)]
+     #[allow(unused)]
     -mod my_lib {
     +pub mod my_lib {
          // ...

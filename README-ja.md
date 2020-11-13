@@ -142,7 +142,7 @@ info: Loading save analysis from "/home/ryo/src/github.com/qryxip/oj-verify-play
     extern crate input as _;*/ // `as _`でなければ`use crate::$name;`が挿入される
     ```
 
-2. 共に展開する予定のクレートを使う場合、[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から直接名前を解決しない。
+2. **Rust 2015に展開する場合のみ**、共に展開する予定のクレートを使うときに[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から直接名前を解決しない。
 
     **ルートモジュール以外のモジュールで**`extern crate`を宣言してマウントし、そこを相対パスで参照してください。
 
@@ -158,6 +158,20 @@ info: Loading save analysis from "/home/ryo/src/github.com/qryxip/oj-verify-play
      }
 
      use self::extern_crates::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
+    ```
+
+    AOJやyukicoder等のRustが2018が利用できないサイトにこのツールを使用しないなら不要です。
+    各ライブラリにこのような`mod __pseudo_extern_prelude`を作り、extern preludeの代用にします。
+    この`mod __pseudo_extern_prelude`自体はRust 2015でもコンパイルできますが、Rust 2015は`use another_lib::A;`を解決できません。
+
+    ```diff
+    +mod __pseudo_extern_prelude {
+    +    pub(super) use crate::{another_lib1, another_lib2};
+    +}
+    +use self::__pseudo_extern_prelude::*;
+    +
+     use another_lib1::A;
+     use another_lib2::B;
     ```
 
 3. マクロ内では`crate`ではなく`$crate`を使う。
@@ -335,6 +349,7 @@ cargo-equipがやる操作は以下の通りです。
     - 各パスの`crate`を処理
     - `extern crate`を処理
     - `macro_rules!`を処理
+    - `mod __pseudo_extern_prelude { .. }`と`use (self::|$(super::)*)__pseudo_extern_prelude::*;`を挿入
     - `--resolve-cfg`オプションを付けた場合、`#[cfg(常にTRUEのように見える式)]`のアトリビュートと`#[cfg(常にFALSEのように見える式)]`のアトリビュートが付いたアイテムを消去
     - `--remove docs`オプションを付けた場合、doc commentを消去
     - `--remove comments`オプションを付けた場合、commentを消去
