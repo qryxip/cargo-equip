@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.8.0] - 2020-11-13Z
 
 ### Changed
 
-- cargo-equip now creates "pseudo extern prelude" in each library.
+- cargo-equip now creates "pseudo extern prelude" in each library. ([#60](https://github.com/qryxip/cargo-equip/pull/60))
 
     **Unless you use AIZU ONLINE JUDGE or yukicoder**, you no longer need to declare `extern crate` in libraries.
 
@@ -18,7 +18,7 @@
      use another_lib2::B;
     ```
 
-- Declaring `extern crate .. as ..` in a root module will produce a warning.
+- Declaring `extern crate .. as ..` in a root module will produce a warning. ([#58](https://github.com/qryxip/cargo-equip/pull/58))
 
     To make your libraries compatible with Rust 2015, create a sub module and declare in it.
 
@@ -30,7 +30,7 @@
     use self::extern_crates::another_lib::foo::Foo;
     ```
 
-- Changed `#[allow(dead_code)]` to `#[allow(unused)]`.
+- Changed `#[allow(dead_code)]` to `#[allow(unused)]`. ([#60](https://github.com/qryxip/cargo-equip/pull/60))
 
     [`unused`](https://doc.rust-lang.org/rustc/lints/groups.html) is a group of `dead-code`, `unused-imports`, and so on.
 
@@ -44,7 +44,7 @@
 
 ### Fixed
 
-- Now libraries are expanded as `pub mod`.
+- Now libraries are expanded as `pub mod`. ([#58](https://github.com/qryxip/cargo-equip/pull/58))
 
     ```diff
      #[allow(unused)]
