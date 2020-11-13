@@ -350,7 +350,7 @@ fn bundle(
 
         for (pseudo_extern_crate_name, _, _, content) in &contents {
             code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
-            code += "#[allow(dead_code)]pub mod ";
+            code += "#[allow(unused)]pub mod ";
             code += &pseudo_extern_crate_name.to_string();
             code += "{";
             code += &rust::minify(
@@ -362,7 +362,7 @@ fn bundle(
         }
     } else {
         for (pseudo_extern_crate_name, _, _, content) in &contents {
-            code += "\n#[allow(dead_code)]\npub mod ";
+            code += "\n#[allow(unused)]\npub mod ";
             code += pseudo_extern_crate_name;
             code += " {\n";
             code += &rust::indent_code(content, 1);
