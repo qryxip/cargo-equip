@@ -281,7 +281,20 @@ fn bundle(
                     })?;
                 Ok(dst_pseudo_extern_crate_name.clone())
             })?;
-            let mut content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
+            let content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
+            let mut content = rust::insert_pseudo_extern_preludes(&content, &{
+                metadata
+                    .libs_with_extern_crate_names(&lib_package.id)?
+                    .into_iter()
+                    .map(|(package_id, extern_crate_name)| {
+                        let (_, pseudo_extern_crate_name) =
+                            deps_to_bundle.get(package_id).with_context(|| {
+                                "could not translate pseudo extern crate names. this is a bug"
+                            })?;
+                        Ok((extern_crate_name, pseudo_extern_crate_name.clone()))
+                    })
+                    .collect::<anyhow::Result<_>>()?
+            })?;
             if resolve_cfgs {
                 content = rust::resolve_cfgs(&content, features)?;
             }
