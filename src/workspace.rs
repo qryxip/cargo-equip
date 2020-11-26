@@ -360,45 +360,39 @@ impl MetadataExt for cm::Metadata {
                 })
         };
 
+        if nodes[package_id]
+            .deps
+            .iter()
+            .any(|cm::NodeDep { dep_kinds, .. }| dep_kinds.is_empty())
+        {
+            bail!("this tool requires Rust 1.41+ for calculating dependencies");
+        }
+
         let mut deps = nodes[package_id]
             .deps
             .iter()
-            .map(|node_dep| {
-                if node_dep.dep_kinds.is_empty() {
-                    bail!("`dep_kind` is empty. this tool requires Rust 1.41+");
-                }
-                if satisfies(node_dep) {
-                    let lib_package = &self[&node_dep.pkg];
-                    let lib_target = lib_package
-                        .targets
-                        .iter()
-                        .find(|cm::Target { kind, .. }| {
-                            *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
-                        })
-                        .with_context(|| {
-                            format!("`{}` has no `lib` or `proc-macro` target", node_dep.pkg)
-                        })?;
-                    let (lib_extern_crate_name, lib_name_in_toml) =
-                        if renames.contains(&node_dep.name) {
-                            (node_dep.name.clone(), &node_dep.name)
-                        } else {
-                            (lib_target.name.replace('-', "_"), &lib_package.name)
-                        };
-                    Ok(
-                        if cargo_udeps_outcome.contains(lib_name_in_toml)
-                            || lib_package.is_available_on_atcoder_or_codingame()
-                        {
-                            None
-                        } else {
-                            Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
-                        },
-                    )
+            .filter(|node_dep| satisfies(node_dep))
+            .flat_map(|node_dep| {
+                let lib_package = &self[&node_dep.pkg];
+                let lib_target =
+                    lib_package.targets.iter().find(|cm::Target { kind, .. }| {
+                        *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
+                    })?;
+                let (lib_extern_crate_name, lib_name_in_toml) = if renames.contains(&node_dep.name)
+                {
+                    (node_dep.name.clone(), &node_dep.name)
                 } else {
-                    Ok(None)
+                    (lib_target.name.replace('-', "_"), &lib_package.name)
+                };
+                if cargo_udeps_outcome.contains(lib_name_in_toml)
+                    || lib_package.is_available_on_atcoder_or_codingame()
+                {
+                    None
+                } else {
+                    Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
                 }
             })
-            .flat_map(Result::transpose)
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
+            .collect::<BTreeMap<_, _>>();
 
         let all_package_ids = &mut deps.keys().copied().collect::<HashSet<_>>();
         let all_extern_crate_names = &mut deps
