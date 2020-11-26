@@ -7,7 +7,8 @@ use once_cell::sync::Lazy;
 use rand::Rng as _;
 use serde::Deserialize;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
+    env,
     io::Cursor,
     path::{Path, PathBuf},
     str,
@@ -315,60 +316,87 @@ impl MetadataExt for cm::Metadata {
             .flat_map(|cm::Dependency { rename, .. }| rename)
             .collect::<HashSet<_>>();
 
+        let preds = {
+            let rustc_exe = crate::process::cargo_exe()?
+                .with_file_name("rustc")
+                .with_extension(env::consts::EXE_EXTENSION);
+
+            let preds = crate::process::process(rustc_exe)
+                .args(&["--print", "cfg"])
+                .cwd(package.manifest_path.with_file_name(""))
+                .read(true)?;
+            cfg_expr::Expression::parse(&format!("all({})", preds.lines().format(",")))?
+        };
+        let preds = preds.predicates().collect::<Vec<_>>();
+
         let cm::Resolve { nodes, .. } = self
             .resolve
             .as_ref()
             .with_context(|| "`resolve` is `null`")?;
+        let nodes = nodes.iter().map(|n| (&n.id, n)).collect::<HashMap<_, _>>();
 
-        let mut deps = nodes
-            .iter()
-            .find(|cm::Node { id, .. }| id == package_id)
-            .with_context(|| format!("`{}` not found in the dependency graph", package_id))?
+        let satisfies = |node_dep: &cm::NodeDep| -> _ {
+            let cm::Node { features, .. } = &nodes[&node_dep.pkg];
+            let features = features.iter().map(|s| &**s).collect::<HashSet<_>>();
+
+            node_dep
+                .dep_kinds
+                .iter()
+                .any(|cm::DepKindInfo { kind, target, .. }| {
+                    *kind == cm::DependencyKind::Normal
+                        && target
+                            .as_ref()
+                            .and_then(|target| {
+                                cfg_expr::Expression::parse(&target.to_string()).ok()
+                            })
+                            .map_or(true, |target| {
+                                target.eval(|pred| match pred {
+                                    cfg_expr::Predicate::Feature(feature) => {
+                                        features.contains(feature)
+                                    }
+                                    pred => preds.contains(pred),
+                                })
+                            })
+                })
+        };
+
+        let mut deps = nodes[package_id]
             .deps
             .iter()
-            .map(
-                |cm::NodeDep {
-                     name,
-                     pkg,
-                     dep_kinds,
-                     ..
-                 }| {
-                    if dep_kinds.is_empty() {
-                        bail!("`dep_kind` is empty. this tool requires Rust 1.41+");
-                    }
-                    if dep_kinds
+            .map(|node_dep| {
+                if node_dep.dep_kinds.is_empty() {
+                    bail!("`dep_kind` is empty. this tool requires Rust 1.41+");
+                }
+                if satisfies(node_dep) {
+                    let lib_package = &self[&node_dep.pkg];
+                    let lib_target = lib_package
+                        .targets
                         .iter()
-                        .any(|cm::DepKindInfo { kind, .. }| *kind == cm::DependencyKind::Normal)
-                    {
-                        let lib_package = &self[pkg];
-                        let lib_target = lib_package
-                            .targets
-                            .iter()
-                            .find(|cm::Target { kind, .. }| {
-                                *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
-                            })
-                            .with_context(|| {
-                                format!("`{}` has no `lib` or `proc-macro` target", pkg)
-                            })?;
-                        let (lib_extern_crate_name, lib_name_in_toml) = if renames.contains(name) {
-                            (name.clone(), name)
+                        .find(|cm::Target { kind, .. }| {
+                            *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
+                        })
+                        .with_context(|| {
+                            format!("`{}` has no `lib` or `proc-macro` target", node_dep.pkg)
+                        })?;
+                    let (lib_extern_crate_name, lib_name_in_toml) =
+                        if renames.contains(&node_dep.name) {
+                            (node_dep.name.clone(), &node_dep.name)
                         } else {
                             (lib_target.name.replace('-', "_"), &lib_package.name)
                         };
-                        Ok(
-                            if cargo_udeps_outcome.contains(lib_name_in_toml)
-                                || lib_package.is_available_on_atcoder_or_codingame()
-                            {
-                                None
-                            } else {
-                                Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
-                            },
-                        )
-                    } else {
-                        Ok(None)
-                    }
-                },
-            )
+                    Ok(
+                        if cargo_udeps_outcome.contains(lib_name_in_toml)
+                            || lib_package.is_available_on_atcoder_or_codingame()
+                        {
+                            None
+                        } else {
+                            Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
+                        },
+                    )
+                } else {
+                    Ok(None)
+                }
+            })
             .flat_map(Result::transpose)
             .collect::<Result<BTreeMap<_, _>, _>>()?;
 
@@ -381,21 +409,12 @@ impl MetadataExt for cm::Metadata {
         while {
             let next = deps
                 .keys()
-                .flat_map(|package_id| {
-                    nodes
-                        .iter()
-                        .filter(move |cm::Node { id, .. }| id == *package_id)
-                })
+                .map(|package_id| nodes[package_id])
                 .flat_map(|cm::Node { deps, .. }| deps)
-                .filter(|cm::NodeDep { pkg, dep_kinds, .. }| {
-                    matches!(
-                        &**dep_kinds,
-                        [cm::DepKindInfo {
-                            kind: cm::DependencyKind::Normal,
-                            ..
-                        }]
-                    ) && !self[pkg].is_available_on_atcoder_or_codingame()
-                        && all_package_ids.insert(pkg)
+                .filter(|node_dep| {
+                    satisfies(node_dep)
+                        && !self[&node_dep.pkg].is_available_on_atcoder_or_codingame()
+                        && all_package_ids.insert(&node_dep.pkg)
                 })
                 .flat_map(|cm::NodeDep { pkg, .. }| {
                     let package = &self[pkg];
