@@ -63,6 +63,8 @@
 
     Previously, cargo-equip tried to `check` all of the packages with `custom-build` and failed.
 
+- `extern crate {core, alloc, std};` will be just ignored.
+
 ## [0.8.0] - 2020-11-13Z
 
 ### Changed

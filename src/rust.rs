@@ -397,6 +397,10 @@ pub(crate) fn process_extern_crates_in_lib(
                 ..
             } = item_use;
 
+            if ["core", "alloc", "std"].contains(&&*ident.to_string()) {
+                return;
+            }
+
             let to = match (self.convert_extern_crate_name)(ident) {
                 Ok(to) => Ident::new(&to, Span::call_site()),
                 Err(err) => {
