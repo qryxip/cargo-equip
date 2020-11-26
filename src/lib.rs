@@ -220,7 +220,6 @@ fn bundle(
     rustfmt: bool,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
-    let out_dirs = workspace::execute_build_scripts(metadata, shell)?;
     let unused_deps = match cargo_udeps::cargo_udeps(&bin_package, &bin.name, &toolchain, shell) {
         Ok(unused_deps) => unused_deps,
         Err(warning) => {
@@ -229,7 +228,13 @@ fn bundle(
         }
     };
 
+    let deps_to_bundle = metadata.deps_to_bundle(&bin_package.id, &unused_deps)?;
+
+    let out_dirs =
+        workspace::execute_build_scripts(metadata, deps_to_bundle.keys().copied(), shell)?;
+
     let code = xshell::read_file(&bin.src_path)?;
+
     if rust::find_skip_attribute(&code)? {
         shell.status("Found", "`#![cfg_attr(cargo_equip, cargo_equip::skip)]`")?;
         return Ok(code);
@@ -244,8 +249,6 @@ fn bundle(
             Ok(lib_package) if lib_package.is_available_on_atcoder_or_codingame()
         )
     })?;
-
-    let deps_to_bundle = metadata.deps_to_bundle(&bin_package.id, &unused_deps)?;
 
     let contents = deps_to_bundle
         .iter()

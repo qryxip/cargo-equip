@@ -55,6 +55,12 @@
 
     Currently, only `CC0-1.0`, `Unlicense`, `MIT` and `Apache-2.0` are supported.
 
+### Fixed
+
+- Only runs `cargo check` on crates to bundle to get `$OUT_DIR`s.
+
+    Previously, cargo-equip tried to `check` all of the packages with `custom-build` and failed.
+
 ## [0.8.0] - 2020-11-13Z
 
 ### Changed
