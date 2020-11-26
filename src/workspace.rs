@@ -34,11 +34,12 @@ pub(crate) fn cargo_metadata(manifest_path: &Path, cwd: &Path) -> cm::Result<cm:
 
 pub(crate) fn execute_build_scripts<'cm>(
     metadata: &'cm cm::Metadata,
+    packages_to_bundle: impl IntoIterator<Item = &'cm cm::PackageId>,
     shell: &mut Shell,
 ) -> anyhow::Result<BTreeMap<&'cm cm::PackageId, PathBuf>> {
-    let packages = metadata
-        .packages
-        .iter()
+    let packages_to_bundle = packages_to_bundle
+        .into_iter()
+        .map(|id| &metadata[id])
         .filter(|package| {
             package
                 .targets
@@ -47,7 +48,7 @@ pub(crate) fn execute_build_scripts<'cm>(
         })
         .collect::<Vec<_>>();
 
-    if packages.is_empty() {
+    if packages_to_bundle.is_empty() {
         return Ok(btreemap!());
     }
 
@@ -59,7 +60,7 @@ pub(crate) fn execute_build_scripts<'cm>(
         .arg("json")
         .arg("-p")
         .args(
-            &packages
+            &packages_to_bundle
                 .into_iter()
                 .flat_map(|p| vec!["-p".to_owned(), format!("{}:{}", p.name, p.version)])
                 .collect::<Vec<_>>(),
