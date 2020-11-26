@@ -1,10 +1,11 @@
 use crate::shell::Shell;
-use anyhow::{bail, Context as _};
+use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
 use itertools::Itertools as _;
 use maplit::{btreemap, hashset};
 use once_cell::sync::Lazy;
 use rand::Rng as _;
+use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashSet},
     io::Cursor,
@@ -82,6 +83,32 @@ pub(crate) fn execute_build_scripts<'cm>(
             _ => None,
         })
         .collect())
+}
+
+pub(crate) fn get_author(workspace_root: &Path) -> anyhow::Result<String> {
+    #[derive(Deserialize)]
+    struct Manifest {
+        package: ManifestPackage,
+    }
+
+    #[derive(Deserialize)]
+    struct ManifestPackage {
+        authors: [String; 1],
+    }
+
+    let tempdir = tempfile::Builder::new()
+        .prefix("cargo-equip-get-author-")
+        .tempdir()?;
+
+    crate::process::process(crate::process::cargo_exe()?)
+        .args(&["new", "-q", "--vcs", "none"])
+        .arg(tempdir.path().join("a"))
+        .cwd(workspace_root)
+        .exec()?;
+
+    let manifest = xshell::read_file(tempdir.path().join("a").join("Cargo.toml"))?;
+    let author = toml::from_str::<Manifest>(&manifest)?.package.authors[0].clone();
+    Ok(author)
 }
 
 pub(crate) fn cargo_check_using_current_lockfile_and_cache(
@@ -506,6 +533,7 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 
 pub(crate) trait PackageExt {
     fn is_available_on_atcoder_or_codingame(&self) -> bool;
+    fn read_license_text(&self) -> anyhow::Result<Option<String>>;
 }
 
 impl PackageExt for cm::Package {
@@ -559,5 +587,44 @@ impl PackageExt for cm::Package {
 
         matches!(&self.source, Some(source) if source.is_crates_io())
             && NAMES.contains(&&*self.name)
+    }
+
+    fn read_license_text(&self) -> anyhow::Result<Option<String>> {
+        let mut license = self
+            .license
+            .as_deref()
+            .with_context(|| format!("`{}`: missing `license`", self.id))?;
+
+        if license == "MIT/Apache-2.0" {
+            license = "MIT OR Apache-2.0";
+        }
+        if license == "Apache-2.0/MIT" {
+            license = "Apache-2.0 OR MIT";
+        }
+
+        let license = spdx::Expression::parse(license).map_err(|e| {
+            anyhow!("{}", e).context(format!("`{}`: could not parse `license`", self.id))
+        })?;
+
+        let is = |name| license.evaluate(|r| r.license.id() == spdx::license_id(name));
+
+        let read_license_file = |file_names: &[&str]| -> _ {
+            let path = file_names
+                .iter()
+                .map(|name| self.manifest_path.with_file_name(name))
+                .find(|path| path.exists())
+                .with_context(|| format!("`{}`: could not find the license file", self.id))?;
+            xshell::read_file(path).map_err(anyhow::Error::from)
+        };
+
+        if is("CC0-1.0") || is("Unlicense") {
+            Ok(None)
+        } else if is("MIT") {
+            read_license_file(&["LICENSE-MIT", "LICENSE"]).map(Some)
+        } else if is("Apache-2.0") {
+            read_license_file(&["LICENSE-APACHE", "LICENSE"]).map(Some)
+        } else {
+            bail!("`{}`: unsupported license: `{}`", self.id, license);
+        }
     }
 }

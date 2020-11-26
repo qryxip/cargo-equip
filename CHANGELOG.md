@@ -1,5 +1,60 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Changed format of the "# Bundled libraries".
+
+    ```rust
+    //! # Bundled libraries
+    //!
+    //! - `ac-library-rs-parted-internal-math v0.1.0` → `crate::__ac_library_rs_parted_internal_math_0_1_0` (source: `git+https://github.com/qryxip/ac-library-rs-parted#3fc14c009609d8f0a3db8332493dafe457c3460f`, license: `CC0-1.0`)
+    //! - `ac-library-rs-parted-modint v0.1.0` → `crate::acl_modint` (source: `git+https://github.com/qryxip/ac-library-rs-parted#3fc14c009609d8f0a3db8332493dafe457c3460f`, license: `CC0-1.0`)
+    //! - `input v0.0.0` → `crate::input` (source: `git+https://github.com/qryxip/oj-verify-playground#63ddefa84d96b16cdb7f85e70dcdc4f283f57391`, license: `CC0-1.0`)
+    //! - `output v0.0.0` → `crate::output` (source: `git+https://github.com/qryxip/oj-verify-playground#63ddefa84d96b16cdb7f85e70dcdc4f283f57391`, license: `CC0-1.0`)
+    //! - `tonelli_shanks v0.0.0` → `crate::tonelli_shanks` (source: `git+https://github.com/qryxip/oj-verify-playground#63ddefa84d96b16cdb7f85e70dcdc4f283f57391`, license: `CC0-1.0`)
+    //! - `xorshift v0.0.0` → `crate::__xorshift_0_0_0` (source: `git+https://github.com/qryxip/oj-verify-playground#63ddefa84d96b16cdb7f85e70dcdc4f283f57391`, license: `CC0-1.0`)
+    ```
+
+- Now cargo-equip adds "License and copyright notices" to the output when you are using other people's libraries.
+
+    ```rust
+    //! # License and Copyright Notices
+    //!
+    //! - `maplit 1.0.2 (git+https://github.com/bluss/maplit#04936f703da907bc4ffdaced121e4cfd5ecbaec6)`
+    //!
+    //!     ```text
+    //!     Copyright (c) 2015
+    //!
+    //!     Permission is hereby granted, free of charge, to any
+    //!     person obtaining a copy of this software and associated
+    //!     documentation files (the "Software"), to deal in the
+    //!     Software without restriction, including without
+    //!     limitation the rights to use, copy, modify, merge,
+    //!     publish, distribute, sublicense, and/or sell copies of
+    //!     the Software, and to permit persons to whom the Software
+    //!     is furnished to do so, subject to the following
+    //!     conditions:
+    //!
+    //!     The above copyright notice and this permission notice
+    //!     shall be included in all copies or substantial portions
+    //!     of the Software.
+    //!
+    //!     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+    //!     ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+    //!     TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+    //!     PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+    //!     SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    //!     CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+    //!     OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+    //!     IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    //!     DEALINGS IN THE SOFTWARE.
+    //!     ```
+    ```
+
+    Currently, only `CC0-1.0`, `Unlicense`, `MIT` and `Apache-2.0` are supported.
+
 ## [0.8.0] - 2020-11-13Z
 
 ### Changed
