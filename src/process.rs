@@ -73,16 +73,20 @@ impl ProcessBuilder<Present> {
         Ok(())
     }
 
+    pub(crate) fn read(&self, check: bool) -> anyhow::Result<String> {
+        let Output { stdout, .. } = self.output(check, Stdio::piped(), Stdio::inherit())?;
+        let stdout =
+            str::from_utf8(&stdout).map_err(|_| anyhow!("stream did not contain valid UTF-8"))?;
+        Ok(stdout.trim_end().to_owned())
+    }
+
     pub(crate) fn read_with_status(
         &self,
         check: bool,
         shell: &mut Shell,
     ) -> anyhow::Result<String> {
         shell.status("Running", self)?;
-        let Output { stdout, .. } = self.output(check, Stdio::piped(), Stdio::inherit())?;
-        let stdout =
-            str::from_utf8(&stdout).map_err(|_| anyhow!("stream did not contain valid UTF-8"))?;
-        Ok(stdout.trim_end().to_owned())
+        self.read(check)
     }
 }
 

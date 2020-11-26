@@ -55,6 +55,8 @@
 
     Currently, only `CC0-1.0`, `Unlicense`, `MIT` and `Apache-2.0` are supported.
 
+- Now cargo-equip considers [platform specific dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
+
 ### Fixed
 
 - Only runs `cargo check` on crates to bundle to get `$OUT_DIR`s.
