@@ -16,9 +16,8 @@ use crate::{
 use anyhow::Context as _;
 use cargo_metadata as cm;
 use maplit::hashset;
-use std::{path::PathBuf, str::FromStr};
+use std::{cmp, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
-use url::Url;
 
 #[derive(StructOpt, Debug)]
 #[structopt(
@@ -239,7 +238,7 @@ fn bundle(
     shell.status("Bundling", "the code")?;
 
     let code = rust::expand_mods(&bin.src_path)?;
-    let code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
+    let mut code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
             Ok(lib_package) if lib_package.is_available_on_atcoder_or_codingame()
@@ -309,64 +308,111 @@ fn bundle(
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    let mut code = rust::prepend_mod_doc(&code, &{
-        let mut doc = " # Bundled libraries\n".to_owned();
-        for (pseudo_extern_crate_name, _, lib_package, _) in &contents {
-            doc += "\n ## ";
-            let link = if matches!(&lib_package.source, Some(s) if s.is_crates_io()) {
-                format!(
-                    "https://crates.io/{}/{}",
-                    lib_package.name, lib_package.version
-                )
-                .parse::<Url>()
-                .ok()
-            } else {
-                lib_package.repository.as_ref().and_then(|s| s.parse().ok())
-            };
-            if let Some(link) = link {
-                doc += "[`";
-                doc += &lib_package.name;
-                doc += "`](";
-                doc += link.as_str();
-                doc += ")";
-            } else {
-                doc += "`";
-                doc += &lib_package.name;
-                doc += "` (private)";
+    if !contents.is_empty() {
+        let authors = if bin_package.authors.is_empty() {
+            vec![workspace::get_author(&metadata.workspace_root)?]
+        } else {
+            bin_package.authors.clone()
+        };
+
+        code = rust::prepend_mod_doc(&code, &{
+            let mut doc = " # Bundled libraries\n\n".to_owned();
+
+            for (pseudo_extern_crate_name, _, lib_package, _) in &contents {
+                doc += &format!(
+                    " - `{} v{}` → `crate::{}` (source: ",
+                    lib_package.name, lib_package.version, pseudo_extern_crate_name,
+                );
+                if let Some(cm::Source { repr }) = &lib_package.source {
+                    doc += &format!("`{}`", repr);
+                } else {
+                    doc += "local filesystem";
+                }
+                doc += ", license: ";
+                if let Some(license) = &lib_package.license {
+                    doc += &format!("`{}`", license);
+                } else {
+                    doc += "**missing**";
+                }
+                if lib_package.source.is_none() {
+                    if let Some(repository) = &lib_package.repository {
+                        doc += &format!(", repository: `{}`", repository);
+                    }
+                }
+                doc += ")\n";
             }
-            doc += "\n\n Expanded to `crate::";
-            doc += pseudo_extern_crate_name;
-            doc += "`.\n";
-        }
-        doc
-    })?;
 
-    code += "\n";
-    code += "// The following code was expanded by `cargo-equip`.\n";
-    code += "\n";
+            let notices = contents
+                .iter()
+                .map(|(_, _, p, _)| p)
+                .filter(|lib_package| {
+                    !authors
+                        .iter()
+                        .all(|author| lib_package.authors.contains(author))
+                })
+                .flat_map(|lib_package| match lib_package.read_license_text() {
+                    Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
+                    Ok(None) => None,
+                    Err(err) => Some(Err(err)),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
 
-    if minify == Minify::Libs {
+            if !notices.is_empty() {
+                doc += "\n # License and Copyright Notices\n\n";
+                for (package_id, license_text) in notices {
+                    doc += &format!(" - `{}`\n\n", package_id);
+                    let backquotes = {
+                        let (mut n, mut m) = (2, None);
+                        for c in license_text.chars() {
+                            if c == '`' {
+                                m = Some(m.unwrap_or(0) + 1);
+                            } else if let Some(m) = m.take() {
+                                n = cmp::max(n, m);
+                            }
+                        }
+                        "`".repeat(cmp::max(n, m.unwrap_or(0)) + 1)
+                    };
+                    doc += &format!("     {}text\n", backquotes);
+                    for line in license_text.lines() {
+                        match line {
+                            "" => doc += "\n",
+                            line => doc += &format!("     {}\n", line),
+                        }
+                    }
+                    doc += &format!("     {}\n", backquotes);
+                }
+            }
+
+            doc
+        })?;
+
+        code += "\n";
+        code += "// The following code was expanded by `cargo-equip`.\n";
         code += "\n";
 
-        for (pseudo_extern_crate_name, _, _, content) in &contents {
-            code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
-            code += "#[allow(unused)]pub mod ";
-            code += &pseudo_extern_crate_name.to_string();
-            code += "{";
-            code += &rust::minify(
-                content,
-                shell,
-                Some(&format!("crate::{}", pseudo_extern_crate_name)),
-            )?;
-            code += "}\n";
-        }
-    } else {
-        for (pseudo_extern_crate_name, _, _, content) in &contents {
-            code += "\n#[allow(unused)]\npub mod ";
-            code += pseudo_extern_crate_name;
-            code += " {\n";
-            code += &rust::indent_code(content, 1);
-            code += "}\n";
+        if minify == Minify::Libs {
+            code += "\n";
+
+            for (pseudo_extern_crate_name, _, _, content) in &contents {
+                code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
+                code += "#[allow(unused)]pub mod ";
+                code += &pseudo_extern_crate_name.to_string();
+                code += "{";
+                code += &rust::minify(
+                    content,
+                    shell,
+                    Some(&format!("crate::{}", pseudo_extern_crate_name)),
+                )?;
+                code += "}\n";
+            }
+        } else {
+            for (pseudo_extern_crate_name, _, _, content) in &contents {
+                code += "\n#[allow(unused)]\npub mod ";
+                code += pseudo_extern_crate_name;
+                code += " {\n";
+                code += &rust::indent_code(content, 1);
+                code += "}\n";
+            }
         }
     }
 
