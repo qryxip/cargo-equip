@@ -86,6 +86,10 @@
 
 - `extern crate {core, alloc, std};` will be just ignored.
 
+- Replaced `-p <libraries>...` for `cargo check` with `--bin <binary>` when obtaining `$OUT_DIR`s.
+
+    Previously, `cargo check` sometimes failed.
+
 ## [0.8.0] - 2020-11-13Z
 
 ### Changed
