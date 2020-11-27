@@ -32,7 +32,7 @@
     ```rust
     //! # License and Copyright Notices
     //!
-    //! - `maplit 1.0.2 (git+https://github.com/bluss/maplit#04936f703da907bc4ffdaced121e4cfd5ecbaec6)`
+    //! - `maplit 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)`
     //!
     //!     ```text
     //!     Copyright (c) 2015

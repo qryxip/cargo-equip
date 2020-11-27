@@ -482,9 +482,9 @@ fn bundle(
                 .collect::<Result<Vec<_>, _>>()?;
 
             if !notices.is_empty() {
-                doc += "\n # License and Copyright Notices\n\n";
+                doc += "\n # License and Copyright Notices\n";
                 for (package_id, license_text) in notices {
-                    doc += &format!(" - `{}`\n\n", package_id);
+                    doc += &format!("\n - `{}`\n\n", package_id);
                     let backquotes = {
                         let (mut n, mut m) = (2, None);
                         for c in license_text.chars() {
