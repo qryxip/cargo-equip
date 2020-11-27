@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `--exclude-atcoder-crates`, `--exclude-codingame-crates`, and `--exclude <SPEC>...` options.
+
+    ```console
+            --exclude <SPEC>...           Exclude library crates from bundling
+            --exclude-atcoder-crates      Alias for `--exclude https://github.com/rust-lang/crates.io-index#alga:0.9.3 ..`
+            --exclude-codingame-crates    Alias for `--exclude https://github.com/rust-lang/crates.io-index#chrono:0.4.9 ..`
+    ```
+
 ### Changed
 
 - Changed format of the "# Bundled libraries".
@@ -56,6 +66,17 @@
     Currently, only `CC0-1.0`, `Unlicense`, `MIT` and `Apache-2.0` are supported.
 
 - Now cargo-equip considers [platform specific dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
+
+- The 39 crate available on AtCoder are no longer automatically excluded from bundling.
+
+    Enable `--exlude-atcoder-crates` to exclude them.
+
+    ```console
+    note: attempted to bundle with the following crate(s), which are available on AtCoder. to exclude them from bundling, run with `--exclude-atcoder-crates`
+
+    - `im-rc 14.3.0 (registry+https://github.com/rust-lang/crates.io-index)`
+    - `rand_core 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)`
+    ```
 
 ### Fixed
 

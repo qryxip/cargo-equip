@@ -65,11 +65,11 @@ pub(crate) fn find_skip_attribute(code: &str) -> anyhow::Result<bool> {
 
 pub(crate) fn process_extern_crate_in_bin(
     code: &str,
-    is_available_on_atcoder_or_codingame: impl FnMut(&str) -> bool,
+    is_lib_to_bundle: impl FnMut(&str) -> bool,
 ) -> anyhow::Result<String> {
     struct Visitor<'a, F> {
         replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
-        is_available_on_atcoder_or_codingame: F,
+        is_lib_to_bundle: F,
     };
 
     impl<F: FnMut(&str) -> bool> Visit<'_> for Visitor<'_, F> {
@@ -78,7 +78,7 @@ pub(crate) fn process_extern_crate_in_bin(
                 vis, ident, rename, ..
             } = item_use;
 
-            if !(self.is_available_on_atcoder_or_codingame)(&ident.to_string()) {
+            if (self.is_lib_to_bundle)(&ident.to_string()) {
                 let vis = vis.to_token_stream();
                 let to = match rename {
                     Some((_, ident)) if ident == "_" => "".to_owned(),
@@ -103,7 +103,7 @@ pub(crate) fn process_extern_crate_in_bin(
 
     Visitor {
         replacements: &mut replacements,
-        is_available_on_atcoder_or_codingame,
+        is_lib_to_bundle,
     }
     .visit_file(&file);
 
