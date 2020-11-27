@@ -3,7 +3,6 @@ use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
 use itertools::Itertools as _;
 use krates::PkgSpec;
-use maplit::btreemap;
 use rand::Rng as _;
 use serde::Deserialize;
 use std::{
@@ -35,24 +34,10 @@ pub(crate) fn cargo_metadata(manifest_path: &Path, cwd: &Path) -> cm::Result<cm:
 
 pub(crate) fn execute_build_scripts<'cm>(
     metadata: &'cm cm::Metadata,
-    packages_to_bundle: impl IntoIterator<Item = &'cm cm::PackageId>,
+    bin_package: &'cm cm::Package,
+    bin_target: &'cm cm::Target,
     shell: &mut Shell,
 ) -> anyhow::Result<BTreeMap<&'cm cm::PackageId, PathBuf>> {
-    let packages_to_bundle = packages_to_bundle
-        .into_iter()
-        .map(|id| &metadata[id])
-        .filter(|package| {
-            package
-                .targets
-                .iter()
-                .any(|cm::Target { kind, .. }| *kind == ["custom-build".to_owned()])
-        })
-        .collect::<Vec<_>>();
-
-    if packages_to_bundle.is_empty() {
-        return Ok(btreemap!());
-    }
-
     let cargo_exe = crate::process::cargo_exe()?;
 
     let messages = crate::process::process(&cargo_exe)
@@ -60,12 +45,9 @@ pub(crate) fn execute_build_scripts<'cm>(
         .arg("--message-format")
         .arg("json")
         .arg("-p")
-        .args(
-            &packages_to_bundle
-                .into_iter()
-                .flat_map(|p| vec!["-p".to_owned(), format!("{}:{}", p.name, p.version)])
-                .collect::<Vec<_>>(),
-        )
+        .arg(format!("{}:{}", bin_package.name, bin_package.version))
+        .arg("--bin")
+        .arg(&bin_target.name)
         .cwd(&metadata.workspace_root)
         .read_with_status(true, shell)?;
 
@@ -548,10 +530,17 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 }
 
 pub(crate) trait PackageExt {
+    fn has_custom_build(&self) -> bool;
     fn read_license_text(&self) -> anyhow::Result<Option<String>>;
 }
 
 impl PackageExt for cm::Package {
+    fn has_custom_build(&self) -> bool {
+        self.targets
+            .iter()
+            .any(|cm::Target { kind, .. }| *kind == ["custom-build".to_owned()])
+    }
+
     fn read_license_text(&self) -> anyhow::Result<Option<String>> {
         let mut license = self
             .license

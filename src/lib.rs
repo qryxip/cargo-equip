@@ -17,7 +17,7 @@ use anyhow::Context as _;
 use cargo_metadata as cm;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
-use maplit::hashset;
+use maplit::{btreemap, hashset};
 use std::{cmp, collections::BTreeMap, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
 
@@ -348,8 +348,14 @@ fn bundle(
     rustfmt: bool,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
-    let out_dirs =
-        workspace::execute_build_scripts(metadata, libs_to_bundle.keys().copied(), shell)?;
+    let out_dirs = if libs_to_bundle
+        .keys()
+        .any(|id| metadata[id].has_custom_build())
+    {
+        workspace::execute_build_scripts(metadata, &bin_package, bin, shell)?
+    } else {
+        btreemap!()
+    };
 
     let code = xshell::read_file(&bin.src_path)?;
 
