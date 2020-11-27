@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.0] - 2020-11-27Z
 
 ### Added
 
-- Added `--exclude-atcoder-crates`, `--exclude-codingame-crates`, and `--exclude <SPEC>...` options.
+- Added `--exclude-atcoder-crates`, `--exclude-codingame-crates`, and `--exclude <SPEC>...` options. ([#68](https://github.com/qryxip/cargo-equip/pull/68))
 
     ```console
             --exclude <SPEC>...           Exclude library crates from bundling
@@ -14,7 +14,7 @@
 
 ### Changed
 
-- Changed format of the "# Bundled libraries".
+- Changed format of the "# Bundled libraries". ([#64](https://github.com/qryxip/cargo-equip/pull/64))
 
     ```rust
     //! # Bundled libraries
@@ -27,7 +27,7 @@
     //! - `xorshift v0.0.0` → `crate::__xorshift_0_0_0` (source: `git+https://github.com/qryxip/oj-verify-playground#63ddefa84d96b16cdb7f85e70dcdc4f283f57391`, license: `CC0-1.0`)
     ```
 
-- Now cargo-equip adds "License and copyright notices" to the output when you are using other people's libraries.
+- Now cargo-equip adds "License and copyright notices" to the output when you are using other people's libraries. ([#64](https://github.com/qryxip/cargo-equip/pull/64),  [#68](https://github.com/qryxip/cargo-equip/pull/68))
 
     ```rust
     //! # License and Copyright Notices
@@ -65,9 +65,9 @@
 
     Currently, only `CC0-1.0`, `Unlicense`, `MIT` and `Apache-2.0` are supported.
 
-- Now cargo-equip considers [platform specific dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
+- Now cargo-equip considers [platform specific dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies). ([#66](https://github.com/qryxip/cargo-equip/pull/66))
 
-- The 39 crate available on AtCoder are no longer automatically excluded from bundling.
+- The 39 crate available on AtCoder are no longer automatically excluded from bundling. ([#68](https://github.com/qryxip/cargo-equip/pull/68))
 
     Enable `--exlude-atcoder-crates` to exclude them.
 
@@ -80,13 +80,9 @@
 
 ### Fixed
 
-- Only runs `cargo check` on crates to bundle to get `$OUT_DIR`s.
+- `extern crate {core, alloc, std};` will be just ignored. ([#67](https://github.com/qryxip/cargo-equip/pull/67))
 
-    Previously, cargo-equip tried to `check` all of the packages with `custom-build` and failed.
-
-- `extern crate {core, alloc, std};` will be just ignored.
-
-- Replaced `-p <libraries>...` for `cargo check` with `--bin <binary>` when obtaining `$OUT_DIR`s.
+- Replaced `-p <libraries>...` for `cargo check` with `--bin <binary>` when obtaining `$OUT_DIR`s. ([#69](https://github.com/qryxip/cargo-equip/pull/69))
 
     Previously, `cargo check` sometimes failed.
 
