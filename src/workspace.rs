@@ -237,7 +237,7 @@ pub(crate) trait MetadataExt {
         &'a self,
         src_path: &Path,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
-    fn deps_to_bundle<'a>(
+    fn libs_to_bundle<'a>(
         &'a self,
         package_id: &cm::PackageId,
         cargo_udeps_outcome: &HashSet<String>,
@@ -306,7 +306,7 @@ impl MetadataExt for cm::Metadata {
         }
     }
 
-    fn deps_to_bundle<'a>(
+    fn libs_to_bundle<'a>(
         &'a self,
         package_id: &cm::PackageId,
         cargo_udeps_outcome: &HashSet<String>,

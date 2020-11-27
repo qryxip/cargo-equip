@@ -261,7 +261,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         metadata.exactly_one_bin_target()
     }?;
 
-    let deps_to_bundle = {
+    let libs_to_bundle = {
         let unused_deps = match cargo_udeps::cargo_udeps(&bin_package, &bin.name, &toolchain, shell)
         {
             Ok(unused_deps) => unused_deps,
@@ -270,14 +270,14 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
                 hashset!()
             }
         };
-        metadata.deps_to_bundle(&bin_package.id, &unused_deps, &exclude)?
+        metadata.libs_to_bundle(&bin_package.id, &unused_deps, &exclude)?
     };
 
     let error_message = |head: &str| {
         let mut msg = head.to_owned();
 
         msg += "\n\n";
-        msg += &deps_to_bundle
+        msg += &libs_to_bundle
             .iter()
             .map(|(package_id, (_, pseudo_extern_crate_name))| {
                 format!(
@@ -287,7 +287,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             })
             .join("");
 
-        let crates_available_on_atcoder = iproduct!(deps_to_bundle.keys(), ATCODER_CRATES)
+        let crates_available_on_atcoder = iproduct!(libs_to_bundle.keys(), ATCODER_CRATES)
             .filter(|(id, s)| s.parse::<PkgSpec>().unwrap().matches(&metadata[id]))
             .map(|(id, _)| format!("- `{}`\n", id))
             .join("");
@@ -307,7 +307,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         &metadata,
         &bin_package,
         &bin,
-        &deps_to_bundle,
+        &libs_to_bundle,
         resolve_cfgs,
         &remove,
         minify,
@@ -341,7 +341,7 @@ fn bundle(
     metadata: &cm::Metadata,
     bin_package: &cm::Package,
     bin: &cm::Target,
-    deps_to_bundle: &BTreeMap<&cm::PackageId, (&cm::Target, String)>,
+    libs_to_bundle: &BTreeMap<&cm::PackageId, (&cm::Target, String)>,
     resolve_cfgs: bool,
     remove: &[Remove],
     minify: Minify,
@@ -349,7 +349,7 @@ fn bundle(
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
     let out_dirs =
-        workspace::execute_build_scripts(metadata, deps_to_bundle.keys().copied(), shell)?;
+        workspace::execute_build_scripts(metadata, libs_to_bundle.keys().copied(), shell)?;
 
     let code = xshell::read_file(&bin.src_path)?;
 
@@ -364,11 +364,11 @@ fn bundle(
     let mut code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
-            Ok(lib_package) if deps_to_bundle.contains_key(&lib_package.id)
+            Ok(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
         )
     })?;
 
-    let contents = deps_to_bundle
+    let contents = libs_to_bundle
         .iter()
         .map(|(lib_package, (lib_target, pseudo_extern_crate_name))| {
             let lib_package = &metadata[lib_package];
@@ -392,7 +392,7 @@ fn bundle(
                 let dst_package =
                     metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
                 let (_, dst_pseudo_extern_crate_name) =
-                    deps_to_bundle.get(&dst_package.id).with_context(|| {
+                    libs_to_bundle.get(&dst_package.id).with_context(|| {
                         format!(
                             "missing `extern_crate_name` for `{}`. generated one should be given \
                              beforehead. this is a bug",
@@ -406,12 +406,12 @@ fn bundle(
                 metadata
                     .libs_with_extern_crate_names(
                         &lib_package.id,
-                        &deps_to_bundle.keys().copied().collect(),
+                        &libs_to_bundle.keys().copied().collect(),
                     )?
                     .into_iter()
                     .map(|(package_id, extern_crate_name)| {
                         let (_, pseudo_extern_crate_name) =
-                            deps_to_bundle.get(package_id).with_context(|| {
+                            libs_to_bundle.get(package_id).with_context(|| {
                                 "could not translate pseudo extern crate names. this is a bug"
                             })?;
                         Ok((extern_crate_name, pseudo_extern_crate_name.clone()))
