@@ -2,8 +2,8 @@ use crate::shell::Shell;
 use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
 use itertools::Itertools as _;
-use maplit::{btreemap, hashset};
-use once_cell::sync::Lazy;
+use krates::PkgSpec;
+use maplit::btreemap;
 use rand::Rng as _;
 use serde::Deserialize;
 use std::{
@@ -116,6 +116,7 @@ pub(crate) fn get_author(workspace_root: &Path) -> anyhow::Result<String> {
 pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     metadata: &cm::Metadata,
     package: &cm::Package,
+    exclude: &[PkgSpec],
     code: &str,
 ) -> anyhow::Result<()> {
     let name = {
@@ -176,7 +177,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
             .expect("should contain")
             .deps
             .iter()
-            .filter(|cm::NodeDep { pkg, .. }| !metadata[pkg].is_available_on_atcoder_or_codingame())
+            .filter(|cm::NodeDep { pkg, .. }| !exclude.iter().any(|s| s.matches(&metadata[pkg])))
             .map(|cm::NodeDep { name, pkg, .. }| {
                 if renames.contains(&name) {
                     name
@@ -236,10 +237,11 @@ pub(crate) trait MetadataExt {
         &'a self,
         src_path: &Path,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
-    fn deps_to_bundle<'a>(
+    fn libs_to_bundle<'a>(
         &'a self,
         package_id: &cm::PackageId,
         cargo_udeps_outcome: &HashSet<String>,
+        exclude: &[PkgSpec],
     ) -> anyhow::Result<BTreeMap<&'a cm::PackageId, (&'a cm::Target, String)>>;
     fn dep_lib_by_extern_crate_name<'a>(
         &'a self,
@@ -249,6 +251,7 @@ pub(crate) trait MetadataExt {
     fn libs_with_extern_crate_names(
         &self,
         package_id: &cm::PackageId,
+        only: &HashSet<&cm::PackageId>,
     ) -> anyhow::Result<BTreeMap<&cm::PackageId, String>>;
 }
 
@@ -303,10 +306,11 @@ impl MetadataExt for cm::Metadata {
         }
     }
 
-    fn deps_to_bundle<'a>(
+    fn libs_to_bundle<'a>(
         &'a self,
         package_id: &cm::PackageId,
         cargo_udeps_outcome: &HashSet<String>,
+        exclude: &[PkgSpec],
     ) -> anyhow::Result<BTreeMap<&'a cm::PackageId, (&'a cm::Target, String)>> {
         let package = &self[package_id];
 
@@ -336,6 +340,10 @@ impl MetadataExt for cm::Metadata {
         let nodes = nodes.iter().map(|n| (&n.id, n)).collect::<HashMap<_, _>>();
 
         let satisfies = |node_dep: &cm::NodeDep| -> _ {
+            if exclude.iter().any(|s| s.matches(&self[&node_dep.pkg])) {
+                return false;
+            }
+
             let cm::Node { features, .. } = &nodes[&node_dep.pkg];
             let features = features.iter().map(|s| &**s).collect::<HashSet<_>>();
 
@@ -384,13 +392,10 @@ impl MetadataExt for cm::Metadata {
                 } else {
                     (lib_target.name.replace('-', "_"), &lib_package.name)
                 };
-                if cargo_udeps_outcome.contains(lib_name_in_toml)
-                    || lib_package.is_available_on_atcoder_or_codingame()
-                {
-                    None
-                } else {
-                    Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
+                if cargo_udeps_outcome.contains(lib_name_in_toml) {
+                    return None;
                 }
+                Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
             })
             .collect::<BTreeMap<_, _>>();
 
@@ -405,11 +410,7 @@ impl MetadataExt for cm::Metadata {
                 .keys()
                 .map(|package_id| nodes[package_id])
                 .flat_map(|cm::Node { deps, .. }| deps)
-                .filter(|node_dep| {
-                    satisfies(node_dep)
-                        && !self[&node_dep.pkg].is_available_on_atcoder_or_codingame()
-                        && all_package_ids.insert(&node_dep.pkg)
-                })
+                .filter(|node_dep| satisfies(node_dep) && all_package_ids.insert(&node_dep.pkg))
                 .flat_map(|cm::NodeDep { pkg, .. }| {
                     let package = &self[pkg];
                     let target = package.targets.iter().find(|cm::Target { kind, .. }| {
@@ -489,6 +490,7 @@ impl MetadataExt for cm::Metadata {
     fn libs_with_extern_crate_names(
         &self,
         package_id: &cm::PackageId,
+        only: &HashSet<&cm::PackageId>,
     ) -> anyhow::Result<BTreeMap<&cm::PackageId, String>> {
         let package = &self[package_id];
 
@@ -515,7 +517,7 @@ impl MetadataExt for cm::Metadata {
                         kind: cm::DependencyKind::Normal,
                         ..
                     }]
-                ) && !self[pkg].is_available_on_atcoder_or_codingame()
+                ) && only.contains(pkg)
             })
             .flat_map(|cm::NodeDep { name, pkg, .. }| {
                 let extern_crate_name = if renames.contains(name) {
@@ -546,63 +548,10 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 }
 
 pub(crate) trait PackageExt {
-    fn is_available_on_atcoder_or_codingame(&self) -> bool;
     fn read_license_text(&self) -> anyhow::Result<Option<String>>;
 }
 
 impl PackageExt for cm::Package {
-    fn is_available_on_atcoder_or_codingame(&self) -> bool {
-        static NAMES: Lazy<HashSet<&str>> = Lazy::new(|| {
-            hashset!(
-                "alga",
-                "ascii",
-                "bitset-fixed",
-                "chrono",
-                "either",
-                "fixedbitset",
-                "getrandom",
-                "im-rc",
-                "indexmap",
-                "itertools",
-                "itertools-num",
-                "lazy_static",
-                "libc",
-                "libm",
-                "maplit",
-                "nalgebra",
-                "ndarray",
-                "num",
-                "num-bigint",
-                "num-complex",
-                "num-derive",
-                "num-integer",
-                "num-iter",
-                "num-rational",
-                "num-traits",
-                "ordered-float",
-                "permutohedron",
-                "petgraph",
-                "proconio",
-                "rand",
-                "rand_chacha",
-                "rand_core",
-                "rand_distr",
-                "rand_hc",
-                "rand_pcg",
-                "regex",
-                "rustc-hash",
-                "smallvec",
-                "superslice",
-                "text_io",
-                "time",
-                "whiteread",
-            )
-        });
-
-        matches!(&self.source, Some(source) if source.is_crates_io())
-            && NAMES.contains(&&*self.name)
-    }
-
     fn read_license_text(&self) -> anyhow::Result<Option<String>> {
         let mut license = self
             .license
