@@ -21,22 +21,22 @@ version = "0.0.0"
 edition = "2018"
 
 [dependencies]
-ac-library-rs-parted             = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-convolution = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-dsu         = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-fenwicktree = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-lazysegtree = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-math        = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-maxflow     = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-mincostflow = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-modint      = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-scc         = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-segtree     = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-string      = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-input                            = { git = "https://github.com/qryxip/oj-verify-playground" }
-output                           = { git = "https://github.com/qryxip/oj-verify-playground" }
-tonelli_shanks                   = { git = "https://github.com/qryxip/oj-verify-playground" }
+ac-library-rs-parted                                   = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-convolution                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-dsu                               = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-fenwicktree                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-lazysegtree                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-math                              = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-maxflow                           = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-mincostflow                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-modint                            = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-scc                               = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-segtree                           = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-string                            = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+ac-library-rs-parted-twosat                            = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+qryxips-competitive-programming-library-buffered-print = { git = "https://github.com/qryxip/oj-verify-playground" }
+qryxips-competitive-programming-library-input          = { git = "https://github.com/qryxip/oj-verify-playground" }
+qryxips-competitive-programming-library-tonelli-shanks = { git = "https://github.com/qryxip/oj-verify-playground" }
 # ...
 ```
 
@@ -56,7 +56,7 @@ fn main() {
         yps: [(u32, u32)],
     }
 
-    output::buf_print(|out| {
+    buffered_print::buf_print(|out| {
         macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
         for (y, p) in yps {
             ModInt::set_modulus(p);
@@ -73,19 +73,19 @@ fn main() {
 ↓
 
 ```console
-❯ cargo equip --resolve-cfgs --remove docs --minify libs --rustfmt --check -o ./bundled.rs
-     Running `/home/ryo/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p -p 'ac-library-rs-parted:0.1.0' -p 'ac-library-rs-parted-build:0.1.0' -p 'ac-library-rs-parted-convolution:0.1.0' -p 'ac-library-rs-parted-dsu:0.1.0' -p 'ac-library-rs-parted-fenwicktree:0.1.0' -p 'ac-library-rs-parted-internal-bit:0.1.0' -p 'ac-library-rs-parted-internal-math:0.1.0' -p 'ac-library-rs-parted-internal-queue:0.1.0' -p 'ac-library-rs-parted-internal-scc:0.1.0' -p 'ac-library-rs-parted-internal-type-traits:0.1.0' -p 'ac-library-rs-parted-lazysegtree:0.1.0' -p 'ac-library-rs-parted-math:0.1.0' -p 'ac-library-rs-parted-maxflow:0.1.0' -p 'ac-library-rs-parted-mincostflow:0.1.0' -p 'ac-library-rs-parted-modint:0.1.0' -p 'ac-library-rs-parted-scc:0.1.0' -p 'ac-library-rs-parted-segtree:0.1.0' -p 'ac-library-rs-parted-string:0.1.0' -p 'ac-library-rs-parted-twosat:0.1.0' -p 'anyhow:1.0.34' -p 'byteorder:1.3.4' -p 'num-traits:0.2.14' -p 'proc-macro2:1.0.10' -p 'ryu:1.0.5' -p 'serde:1.0.113' -p 'serde_derive:1.0.113' -p 'serde_json:1.0.59' -p 'syn:1.0.17' -p 'typenum:1.12.0'`
-    Finished dev [unoptimized + debuginfo] target(s) in 0.04s
+❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check -o ./bundled.rs
      Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
     Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.58s
-info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-f295f9b7bca492c1.json"
+    Finished dev [unoptimized + debuginfo] target(s) in 0.48s
+info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-e847c5289cb48717.json"
+     Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p 'solve:0.0.0' --bin solve`
+    Finished dev [unoptimized + debuginfo] target(s) in 0.21s
     Bundling the code
-    Checking cargo-equip-check-output-gefn1vlt5c4e733x v0.1.0 (/tmp/cargo-equip-check-output-gefn1vlt5c4e733x)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.36s
+    Checking cargo-equip-check-output-dmdk9q2orje3e2zl v0.1.0 (/tmp/cargo-equip-check-output-dmdk9q2orje3e2zl)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.38s
 ```
 
-[Submit Info #30787 - Library-Checker](https://judge.yosupo.jp/submission/30787)
+[Submit Info #31638 - Library-Checker](https://judge.yosupo.jp/submission/31638)
 
 ## Installation
 
@@ -144,7 +144,7 @@ Follow these constrants when you writing libraries to bundle.
 
     Mount them in some module **except the root one** with a `extern crate` item and refer them with relative paths.
 
-    cargo-equip replaces `extern crate` items with `use crate::extern_crate_name_in_main_crate;` except for crates available on AtCoder or CodinGame (e.g. `itertools`).
+    cargo-equip replaces `extern crate` items with `use crate::extern_crate_name_in_main_crate;` except for crates specified with `--exclude <SPEC>...`, `--exclude-atcoder-crates`, or `--exclude-codingame-crates`.
     [Rename](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#renaming-dependencies-in-cargotoml) the libraries not to use directly.
 
     ```diff
@@ -156,7 +156,7 @@ Follow these constrants when you writing libraries to bundle.
      use self::extern_crates::another_lib::foo::Foo; // Prepend `self::` to make compatible with Rust 2015
     ```
 
-    If you don't use website where Rust 2018 is unavailable (e.g. AIZU ONLINE JUDGE, yukicoder), you don't have to do this.
+    If you don't use website where Rust 2018 is unavailable (e.g. AIZU ONLINE JUDGE, ~~yukicoder~~), you don't have to do this.
     `mod __pseudo_extern_prelude` like this is created in each library as a substitute for extern prelude.
     This `mod __pseudo_extern_prelude` itself is valid in Rust 2015 but unfortunately Rust 2015 cannot resolve the `use another_lib::A;`.
 
@@ -275,20 +275,10 @@ It gives tentative `extern_crate_name`s like `__package_name_0_1_0` to dependenc
 ```diff
 +//! # Bundled libraries
 +//!
-+//! ## `input` (private)
-+//!
-+//! ### `extern_crate_name`
-+//!
-+//! `input`
-+//!
-+//! ## `output` (private)
-+//!
-+//! ### `extern_crate_name`
-+//!
-+//! `output`
-
-// Uncomment this line if you don't use your libraries. (`--check` still works)
-//#![cfg_attr(cargo_equip, cargo_equip::skip)]
++//! - `qryxips-competitive-programming-library-buffered-print v0.0.0` → `crate::buffered_print` (source: `git+https://github.com/qryxip/oj-verify-playground#e5976f9187d4104de1c36accd939485a94651d2d`, license: `CC0-1.0`)
++//! - `qryxips-competitive-programming-library-input v0.0.0` → `crate::input` (source: `git+https://github.com/qryxip/oj-verify-playground#e5976f9187d4104de1c36accd939485a94651d2d`, license: `CC0-1.0`)
+ // Uncomment this line if you don't use your libraries. (`--check` still works)
+ //#![cfg_attr(cargo_equip, cargo_equip::skip)]
 
 -#[macro_use]
 -extern crate input as _;
