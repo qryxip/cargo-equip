@@ -10,6 +10,10 @@
 
 競技プログラミング用にRustコードを一つの`.rs`ファイルにバンドルするCargoサブコマンドです。
 
+## 更新情報
+
+更新情報は[CHANGELOG.md](https://github.com/qryxip/cargo-equip/blob/master/CHANGELOG.md)にあります。
+
 ## 例
 
 [Sqrt Mod - Library-Cheker](https://judge.yosupo.jp/problem/sqrt_mod)
@@ -41,9 +45,6 @@ qryxips-competitive-programming-library-tonelli-shanks = { git = "https://github
 ```
 
 ```rust
-// Uncomment this line if you don't use your libraries. (`--check` still works)
-//#![cfg_attr(cargo_equip, cargo_equip::skip)]
-
 #[macro_use]
 extern crate input as _;
 
@@ -76,16 +77,16 @@ fn main() {
 ❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check -o ./bundled.rs
      Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
     Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.48s
-info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-e847c5289cb48717.json"
+    Finished dev [unoptimized + debuginfo] target(s) in 0.49s
+info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-a7257ac06e0d401f.json"
      Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p 'solve:0.0.0' --bin solve`
-    Finished dev [unoptimized + debuginfo] target(s) in 0.21s
+    Finished dev [unoptimized + debuginfo] target(s) in 0.22s
     Bundling the code
-    Checking cargo-equip-check-output-dmdk9q2orje3e2zl v0.1.0 (/tmp/cargo-equip-check-output-dmdk9q2orje3e2zl)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.38s
+    Checking cargo-equip-check-output-9n4051cs4xin1cfq v0.1.0 (/tmp/cargo-equip-check-output-9n4051cs4xin1cfq)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.37s
 ```
 
-[Submit Info #31638 - Library-Checker](https://judge.yosupo.jp/submission/31638)
+[Submit Info #31746 - Library-Checker](https://judge.yosupo.jp/submission/31746)
 
 ## インストール
 
@@ -96,7 +97,7 @@ info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/tar
 ```
 
 ```console
-❯ cargo install --git https://github.com/est31/cargo-udeps # for est31/cargo-udeps#80
+❯ cargo install cargo-udeps
 ```
 
 ### Crates.io
@@ -240,9 +241,6 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
 2. `bin`内に`mod`を作る場合、その中では[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から展開予定のライブラリの名前を解決しない。
 
 ```rust
-// Uncomment this line if you don't use your libraries. (`--check` still works)
-//#![cfg_attr(cargo_equip, cargo_equip::skip)]
-
 #[macro_use]
 extern crate input as _;
 
@@ -253,7 +251,7 @@ fn main() {
         n: usize,
     }
 
-    output::buf_print(|out| {
+    buffered_print::buf_print(|out| {
         macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
         for i in 1..=n {
             match i % 15 {
@@ -282,10 +280,8 @@ fn main() {
 ```diff
 +//! # Bundled libraries
 +//!
-+//! - `qryxips-competitive-programming-library-buffered-print v0.0.0` → `crate::buffered_print` (source: `git+https://github.com/qryxip/oj-verify-playground#e5976f9187d4104de1c36accd939485a94651d2d`, license: `CC0-1.0`)
-+//! - `qryxips-competitive-programming-library-input v0.0.0` → `crate::input` (source: `git+https://github.com/qryxip/oj-verify-playground#e5976f9187d4104de1c36accd939485a94651d2d`, license: `CC0-1.0`)
- // Uncomment this line if you don't use your libraries. (`--check` still works)
- //#![cfg_attr(cargo_equip, cargo_equip::skip)]
++//! - `qryxips-competitive-programming-library-buffered-print 0.0.0 (path+█████████████████████████████████████████████████████████████████████████████████████)` as `crate::buffered_print` (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
++//! - `qryxips-competitive-programming-library-input 0.0.0 (path+████████████████████████████████████████████████████████████████████████████)`                   as `crate::input`          (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
 
 -#[macro_use]
 -extern crate input as _;
@@ -299,7 +295,7 @@ fn main() {
          n: usize,
      }
 
-     output::buf_print(|out| {
+     buffered_print::buf_print(|out| {
          macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
          for i in 1..=n {
              match i % 15 {
