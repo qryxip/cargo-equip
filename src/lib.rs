@@ -11,13 +11,14 @@ mod workspace;
 
 use crate::{
     shell::Shell,
-    workspace::{MetadataExt as _, PackageExt as _},
+    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _},
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
 use maplit::{btreemap, hashset};
+use prettytable::{cell, format::FormatBuilder, row, Table};
 use std::{cmp, collections::BTreeMap, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
 
@@ -448,28 +449,36 @@ fn bundle(
         code = rust::prepend_mod_doc(&code, &{
             let mut doc = " # Bundled libraries\n\n".to_owned();
 
+            let mut table = Table::new();
+
+            *table.get_format() = FormatBuilder::new()
+                .column_separator(' ')
+                .borders(' ')
+                .build();
+
             for (pseudo_extern_crate_name, _, lib_package, _) in &contents {
-                doc += &format!(
-                    " - `{} v{}` → `crate::{}` (source: ",
-                    lib_package.name, lib_package.version, pseudo_extern_crate_name,
-                );
-                if let Some(cm::Source { repr }) = &lib_package.source {
-                    doc += &format!("`{}`", repr);
-                } else {
-                    doc += "local filesystem";
-                }
-                doc += ", license: ";
-                if let Some(license) = &lib_package.license {
-                    doc += &format!("`{}`", license);
-                } else {
-                    doc += "**missing**";
-                }
-                if lib_package.source.is_none() {
-                    if let Some(repository) = &lib_package.repository {
-                        doc += &format!(", repository: `{}`", repository);
-                    }
-                }
-                doc += ")\n";
+                table.add_row(row![
+                    format!("- `{}`", lib_package.id.mask_path()),
+                    format!("as `crate::{}`", pseudo_extern_crate_name),
+                    format!(
+                        "(license: {}{})",
+                        if let Some(license) = &lib_package.license {
+                            format!("`{}`", license)
+                        } else {
+                            "**missing**".to_owned()
+                        },
+                        if let Some(repository) = &lib_package.repository {
+                            format!(", repository: {}", repository)
+                        } else {
+                            "".to_owned()
+                        },
+                    ),
+                ]);
+            }
+
+            for line in table.to_string().lines() {
+                doc += line.trim_end();
+                doc += "\n";
             }
 
             let notices = contents

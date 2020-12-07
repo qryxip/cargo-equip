@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Changed the format of `"# Bundled libraries"`.
+
+    ```rust
+    //! - `ac-library-rs-parted-internal-math 0.1.0 (git+https://github.com/qryxip/ac-library-rs-parted#3fc14c009609d8f0a3db8332493dafe457c3460f)`                      as `crate::__ac_library_rs_parted_internal_math_0_1_0`               (license: `CC0-1.0`, repository: https://github.com/qryxip/ac-library-rs-parted)
+    //! - `ac-library-rs-parted-modint 0.1.0 (git+https://github.com/qryxip/ac-library-rs-parted#3fc14c009609d8f0a3db8332493dafe457c3460f)`                             as `crate::acl_modint`                                               (license: `CC0-1.0`, repository: https://github.com/qryxip/ac-library-rs-parted)
+    //! - `maplit 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)`                                                                                        as `crate::maplit`                                                   (license: `MIT/Apache-2.0`, repository: https://github.com/bluss/maplit)
+    //! - `qryxips-competitive-programming-library-buffered-print 0.0.0 (path+█████████████████████████████████████████████████████████████████████████████████████)`   as `crate::buffered_print`                                           (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
+    //! - `qryxips-competitive-programming-library-input 0.0.0 (path+████████████████████████████████████████████████████████████████████████████)`                     as `crate::input`                                                    (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
+    //! - `qryxips-competitive-programming-library-tonelli-shanks 0.0.0 (path+███████████████████████████████████████████████████████████████████████████████████████)` as `crate::tonelli_shanks`                                           (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
+    //! - `qryxips-competitive-programming-library-xorshift 0.0.0 (path+████████████████████████████████████████████████████████████████████████████)`                  as `crate::__qryxips_competitive_programming_library_xorshift_0_0_0` (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
+    ```
+
 ## [0.9.0] - 2020-11-27Z
 
 ### Added

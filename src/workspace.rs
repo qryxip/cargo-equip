@@ -1,6 +1,7 @@
 use crate::shell::Shell;
 use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
+use if_chain::if_chain;
 use itertools::Itertools as _;
 use krates::PkgSpec;
 use rand::Rng as _;
@@ -577,6 +578,28 @@ impl PackageExt for cm::Package {
             read_license_file(&["LICENSE-APACHE", "LICENSE"]).map(Some)
         } else {
             bail!("`{}`: unsupported license: `{}`", self.id, license);
+        }
+    }
+}
+
+pub(crate) trait PackageIdExt {
+    fn mask_path(&self) -> String;
+}
+
+impl PackageIdExt for cm::PackageId {
+    fn mask_path(&self) -> String {
+        if_chain! {
+            if let [s1, s2] = *self.repr.split(" (path+").collect::<Vec<_>>();
+            if s2.ends_with(')');
+            then {
+                format!(
+                    "{} (path+{})",
+                    s1,
+                    s2.chars().map(|_| '█').collect::<String>(),
+                )
+            } else {
+                self.repr.clone()
+            }
         }
     }
 }
