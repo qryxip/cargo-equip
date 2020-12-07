@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.1] - 2020-12-07Z
 
 ### Changed
 
-- Changed the format of `"# Bundled libraries"`.
+- Changed the format of `"# Bundled libraries"`.  ([#72](https://github.com/qryxip/cargo-equip/pull/72))
 
     ```rust
     //! - `ac-library-rs-parted-internal-math 0.1.0 (git+https://github.com/qryxip/ac-library-rs-parted#3fc14c009609d8f0a3db8332493dafe457c3460f)`                      as `crate::__ac_library_rs_parted_internal_math_0_1_0`               (license: `CC0-1.0`, repository: https://github.com/qryxip/ac-library-rs-parted)
