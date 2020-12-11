@@ -77,16 +77,15 @@ fn main() {
 ❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check -o ./bundled.rs
      Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
     Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.49s
-info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-a7257ac06e0d401f.json"
-     Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p 'solve:0.0.0' --bin solve`
-    Finished dev [unoptimized + debuginfo] target(s) in 0.22s
+    Finished dev [unoptimized + debuginfo] target(s) in 0.47s
+info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-6c748f7b1835a414.json"
     Bundling the code
-    Checking cargo-equip-check-output-9n4051cs4xin1cfq v0.1.0 (/tmp/cargo-equip-check-output-9n4051cs4xin1cfq)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.37s
+warning: declaring `extern crate .. as ..` in a root module is not recommended: ` extern crate __acl_internal_math as internal_math`
+    Checking cargo-equip-check-output-iub7pci4y608ubzg v0.1.0 (/tmp/cargo-equip-check-output-iub7pci4y608ubzg)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.56s
 ```
 
-[Submit Info #31746 - Library-Checker](https://judge.yosupo.jp/submission/31746)
+[Submit Info #32015 - Library-Checker](https://judge.yosupo.jp/submission/32015)
 
 ## インストール
 
@@ -214,8 +213,10 @@ info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/tar
 
 [rust-lang-ja/ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs)を使いたい場合、[qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted)を使ってください。
 
-`custom-build`内で本物のac-library-rsを`custom-build`内で自動で加工するクレートです。
-`custom-build`部分は[AtCoder環境と同様のCargo.lock](https://github.com/qryxip/cargo-compete/blob/ba8e0e747ed90768d9f50f3061374162dade8450/resources/atcoder-cargo-lock.toml)を壊さないために`syn 1.0.17`と`proc-macro2 1.0.10`で書かれています。
+本物のac-library-rsを ~~`custom-build`内で自動で加工する~~ スクリプトで加工したクレートです。
+~~`custom-build`部分は[AtCoder環境と同様のCargo.lock](https://github.com/qryxip/cargo-compete/blob/ba8e0e747ed90768d9f50f3061374162dade8450/resources/atcoder-cargo-lock.toml)を壊さないために`syn 1.0.17`と`proc-macro2 1.0.10`で書かれています。~~
+やっぱり小さいといってもdependencyが数十個付いてきてCI等で煩わしいのでやめました。
+現在のこれらのクレートは外部の依存クレートを持たず、瞬時にビルド可能です。
 
 ```toml
 [dependencies]

@@ -77,16 +77,15 @@ fn main() {
 ❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check -o ./bundled.rs
      Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
     Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.49s
-info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-a7257ac06e0d401f.json"
-     Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p 'solve:0.0.0' --bin solve`
-    Finished dev [unoptimized + debuginfo] target(s) in 0.22s
+    Finished dev [unoptimized + debuginfo] target(s) in 0.47s
+info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-6c748f7b1835a414.json"
     Bundling the code
-    Checking cargo-equip-check-output-9n4051cs4xin1cfq v0.1.0 (/tmp/cargo-equip-check-output-9n4051cs4xin1cfq)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.37s
+warning: declaring `extern crate .. as ..` in a root module is not recommended: ` extern crate __acl_internal_math as internal_math`
+    Checking cargo-equip-check-output-iub7pci4y608ubzg v0.1.0 (/tmp/cargo-equip-check-output-iub7pci4y608ubzg)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.56s
 ```
 
-[Submit Info #31746 - Library-Checker](https://judge.yosupo.jp/submission/31746)
+[Submit Info #32015 - Library-Checker](https://judge.yosupo.jp/submission/32015)
 
 ## Installation
 
@@ -211,8 +210,7 @@ When you finish preparing your library crates, add them to `[dependencies]` of t
 If you generate packages automatically with a tool, add them to its template.
 
 If you want to use [rust-lang-ja/ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs), use [qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted) instead.
-ac-library-rs-parted is a collection of 17 crates that process the real ac-library-rs in a `custom-build`.
-The `custom-build` is written with `syn 1.0.17` and `proc-macro2 1.0.10` in order not to break [lockfiles for AtCoder](https://github.com/qryxip/cargo-compete/blob/ba8e0e747ed90768d9f50f3061374162dade8450/resources/atcoder-cargo-lock.toml).
+ac-library-rs-parted is a collection of 17 crates that process the real ac-library-rs with a script.
 
 ```toml
 [dependencies]
