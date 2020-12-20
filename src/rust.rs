@@ -1,4 +1,7 @@
-use crate::shell::Shell;
+use crate::{
+    shell::Shell,
+    workspace::{MacroExpander, WattInput, WattRuntime, WattRuntimes},
+};
 use anyhow::{anyhow, bail, Context as _};
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
@@ -7,31 +10,32 @@ use maplit::{btreemap, btreeset};
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     env, fs, mem,
+    ops::Range,
     path::PathBuf,
     str,
 };
 use syn::{
     parse::{ParseStream, Parser as _},
     parse_quote,
-    punctuated::Punctuated,
+    punctuated::{Pair, Punctuated},
     spanned::Spanned,
     visit::{self, Visit},
-    Arm, Attribute, BareFnArg, ConstParam, Expr, ExprArray, ExprAssign, ExprAssignOp, ExprAsync,
-    ExprAwait, ExprBinary, ExprBlock, ExprBox, ExprBreak, ExprCall, ExprCast, ExprClosure,
-    ExprContinue, ExprField, ExprForLoop, ExprGroup, ExprIf, ExprIndex, ExprLet, ExprLit, ExprLoop,
-    ExprMacro, ExprMatch, ExprMethodCall, ExprParen, ExprPath, ExprRange, ExprReference,
-    ExprRepeat, ExprReturn, ExprStruct, ExprTry, ExprTryBlock, ExprTuple, ExprType, ExprUnary,
-    ExprUnsafe, ExprWhile, ExprYield, Field, FieldPat, FieldValue, ForeignItemFn, ForeignItemMacro,
-    ForeignItemStatic, ForeignItemType, Ident, ImplItemConst, ImplItemMacro, ImplItemMethod,
-    ImplItemType, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn, ItemForeignMod, ItemImpl,
-    ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait, ItemTraitAlias, ItemType,
-    ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro, Meta, MetaList, MetaNameValue,
-    PatBox, PatIdent, PatLit, PatMacro, PatOr, PatPath, PatRange, PatReference, PatRest, PatSlice,
-    PatStruct, PatTuple, PatTupleStruct, PatType, PatWild, Receiver, Token, TraitItemConst,
-    TraitItemMacro, TraitItemMethod, TraitItemType, TypeParam, UseGroup, UseName, UsePath,
-    UseRename, UseTree, Variadic, Variant, VisRestricted,
+    Arm, AttrStyle, Attribute, BareFnArg, ConstParam, Expr, ExprArray, ExprAssign, ExprAssignOp,
+    ExprAsync, ExprAwait, ExprBinary, ExprBlock, ExprBox, ExprBreak, ExprCall, ExprCast,
+    ExprClosure, ExprContinue, ExprField, ExprForLoop, ExprGroup, ExprIf, ExprIndex, ExprLet,
+    ExprLit, ExprLoop, ExprMacro, ExprMatch, ExprMethodCall, ExprParen, ExprPath, ExprRange,
+    ExprReference, ExprRepeat, ExprReturn, ExprStruct, ExprTry, ExprTryBlock, ExprTuple, ExprType,
+    ExprUnary, ExprUnsafe, ExprWhile, ExprYield, Field, FieldPat, FieldValue, ForeignItemFn,
+    ForeignItemMacro, ForeignItemStatic, ForeignItemType, Ident, ImplItemConst, ImplItemMacro,
+    ImplItemMethod, ImplItemType, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn,
+    ItemForeignMod, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
+    ItemTraitAlias, ItemType, ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro, Meta,
+    MetaList, MetaNameValue, NestedMeta, PatBox, PatIdent, PatLit, PatMacro, PatOr, PatPath,
+    PatRange, PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct, PatType,
+    PatWild, Receiver, Token, TraitItemConst, TraitItemMacro, TraitItemMethod, TraitItemType,
+    TypeParam, UseGroup, UseName, UsePath, UseRename, UseTree, Variadic, Variant, VisRestricted,
 };
 
 pub(crate) fn find_skip_attribute(code: &str) -> anyhow::Result<bool> {
@@ -205,6 +209,268 @@ pub(crate) fn indent_code(code: &str, n: usize) -> String {
             .join("")
     } else {
         code.to_owned()
+    }
+}
+
+pub(crate) fn expand_watt_macros(
+    code: &str,
+    watt_runtimes: &WattRuntimes,
+    shell: &mut Shell,
+) -> anyhow::Result<String> {
+    let macro_expander = &mut MacroExpander::new()?;
+    let mut code = code.to_owned();
+
+    loop {
+        let code_lines = &code.split('\n').collect::<Vec<_>>();
+
+        let file = syn::parse_file(&code)
+            .map_err(|e| anyhow!("{:?}", e))
+            .with_context(|| "could not parse the code")?;
+
+        let mut output = None;
+        AttributeMacroVisitor {
+            names: &watt_runtimes.proc_macro_attribute,
+            output: &mut output,
+        }
+        .visit_file(&file);
+
+        if let Some((span, macro_path, input1, input2)) = output {
+            let WattRuntime { path, function } = &watt_runtimes.proc_macro_attribute[&macro_path];
+            let input = WattInput::ProcMacroAttribute(&input1, &input2);
+            let output = macro_expander.expand(path, function, input, shell)?;
+
+            let end = to_index(code_lines, span.end());
+            let start = to_index(code_lines, span.start());
+            code.insert_str(end, &format!("*/{}", output));
+            code.insert_str(start, "/*");
+
+            continue;
+        }
+
+        let mut output = None;
+        DeriveMacroVisitor {
+            names: &watt_runtimes.proc_macro_derive,
+            output: &mut output,
+        }
+        .visit_file(&file);
+
+        if let Some((item, macro_path, macro_path_span, comma_span)) = output {
+            let insert_at = to_index(code_lines, item.span().end());
+            let comma_end = comma_span.map(|comma_end| to_index(code_lines, comma_end));
+            let path_range = to_range(code_lines, macro_path_span);
+
+            let WattRuntime { path, function } = &watt_runtimes.proc_macro_derive[&macro_path];
+            let output =
+                macro_expander.expand(path, function, WattInput::ProcMacroDerive(&item), shell)?;
+
+            code.insert_str(insert_at, &output.to_string());
+            let end = if let Some(comma_end) = comma_end {
+                comma_end
+            } else {
+                path_range.end
+            };
+            code.insert_str(end, "*/");
+            code.insert_str(path_range.start, "/*");
+
+            continue;
+        }
+
+        let mut output = None;
+        FunctionLikeMacroVisitor {
+            names: &watt_runtimes.proc_macro,
+            output: &mut output,
+        }
+        .visit_file(&file);
+
+        if let Some((span, macro_path, input)) = output {
+            let WattRuntime { path, function } = &watt_runtimes.proc_macro[&macro_path];
+            let output =
+                macro_expander.expand(path, function, WattInput::ProcMacro(&input), shell)?;
+
+            let i1 = to_index(code_lines, span.end());
+            let i2 = to_index(code_lines, span.start());
+            code.insert_str(i1, &format!("*/{}", output));
+            code.insert_str(i2, "/*");
+
+            continue;
+        }
+
+        return Ok(code);
+    }
+
+    struct AttributeMacroVisitor<'a, V> {
+        names: &'a HashMap<String, V>,
+        output: &'a mut Option<(Span, String, TokenStream, TokenStream)>,
+    }
+
+    impl<V> AttributeMacroVisitor<'_, V> {
+        fn visit_item_with_attrs<'a, T: ToTokens + Clone + 'a>(
+            &mut self,
+            i: &'a T,
+            attrs: &[Attribute],
+            remove_attr: fn(&mut T, usize) -> Attribute,
+            visit: fn(&mut Self, &'a T),
+        ) {
+            if self.output.is_some() {
+                return;
+            }
+
+            if let Some((nth, path, input_attr)) = attrs
+                .iter()
+                .enumerate()
+                .filter(|(_, Attribute { style, .. })| *style == AttrStyle::Outer)
+                .flat_map(|(i, a)| a.parse_meta().map(|m| (i, m)))
+                .flat_map(|(nth, meta)| {
+                    let (path, input_attr) = match meta {
+                        Meta::Path(path) => (path, TokenStream::new()),
+                        Meta::List(MetaList { path, nested, .. }) => {
+                            (path, nested.to_token_stream())
+                        }
+                        Meta::NameValue(_) => return None,
+                    };
+                    let path = path.get_ident()?.to_string();
+                    Some((nth, path, input_attr))
+                })
+                .find(|(_, path, _)| self.names.contains_key(path))
+            {
+                let span = i.span();
+                let i = &mut i.clone();
+                remove_attr(i, nth);
+                *self.output = Some((span, path, input_attr, i.to_token_stream()));
+            } else {
+                visit(self, i);
+            }
+        }
+    }
+
+    macro_rules! impl_visits {
+        ($(fn $method:ident(&mut self, _: &'_ $ty:path) { _(_, _, _, $visit:path) })*) => {
+            $(
+                fn $method(&mut self, i: &'_ $ty) {
+                    self.visit_item_with_attrs(i, &i.attrs, |i, nth| i.attrs.remove(nth), $visit)
+                }
+            )*
+        };
+    }
+
+    impl<V> Visit<'_> for AttributeMacroVisitor<'_, V> {
+        impl_visits! {
+            fn visit_item_const       (&mut self, _: &'_ ItemConst      ) { _(_, _, _, visit::visit_item_const       ) }
+            fn visit_item_enum        (&mut self, _: &'_ ItemEnum       ) { _(_, _, _, visit::visit_item_enum        ) }
+            fn visit_item_extern_crate(&mut self, _: &'_ ItemExternCrate) { _(_, _, _, visit::visit_item_extern_crate) }
+            fn visit_item_fn          (&mut self, _: &'_ ItemFn         ) { _(_, _, _, visit::visit_item_fn          ) }
+            fn visit_item_foreign_mod (&mut self, _: &'_ ItemForeignMod ) { _(_, _, _, visit::visit_item_foreign_mod ) }
+            fn visit_item_impl        (&mut self, _: &'_ ItemImpl       ) { _(_, _, _, visit::visit_item_impl        ) }
+            fn visit_item_macro       (&mut self, _: &'_ ItemMacro      ) { _(_, _, _, visit::visit_item_macro       ) }
+            fn visit_item_macro2      (&mut self, _: &'_ ItemMacro2     ) { _(_, _, _, visit::visit_item_macro2      ) }
+            fn visit_item_mod         (&mut self, _: &'_ ItemMod        ) { _(_, _, _, visit::visit_item_mod         ) }
+            fn visit_item_static      (&mut self, _: &'_ ItemStatic     ) { _(_, _, _, visit::visit_item_static      ) }
+            fn visit_item_struct      (&mut self, _: &'_ ItemStruct     ) { _(_, _, _, visit::visit_item_struct      ) }
+            fn visit_item_trait       (&mut self, _: &'_ ItemTrait      ) { _(_, _, _, visit::visit_item_trait       ) }
+            fn visit_item_trait_alias (&mut self, _: &'_ ItemTraitAlias ) { _(_, _, _, visit::visit_item_trait_alias ) }
+            fn visit_item_type        (&mut self, _: &'_ ItemType       ) { _(_, _, _, visit::visit_item_type        ) }
+            fn visit_item_union       (&mut self, _: &'_ ItemUnion      ) { _(_, _, _, visit::visit_item_union       ) }
+            fn visit_item_use         (&mut self, _: &'_ ItemUse        ) { _(_, _, _, visit::visit_item_use         ) }
+        }
+    }
+
+    struct DeriveMacroVisitor<'a, V> {
+        names: &'a HashMap<String, V>,
+        output: &'a mut Option<(TokenStream, String, Span, Option<LineColumn>)>,
+    }
+
+    impl<V> DeriveMacroVisitor<'_, V> {
+        fn visit_struct_enum_union(&mut self, i: impl ToTokens, attrs: &[Attribute]) {
+            if self.output.is_some() {
+                return;
+            }
+
+            if let Some((path, path_span, comma_end)) = attrs
+                .iter()
+                .flat_map(Attribute::parse_meta)
+                .flat_map(|meta| match meta {
+                    Meta::List(list_meta) => Some(list_meta),
+                    _ => None,
+                })
+                .filter(|MetaList { path, .. }| path.is_ident("derive"))
+                .flat_map(|MetaList { nested, .. }| nested.into_pairs())
+                .flat_map(|pair| {
+                    fn get_ident(nested_meta: &NestedMeta) -> Option<String> {
+                        if let NestedMeta::Meta(Meta::Path(path)) = nested_meta {
+                            path.get_ident().map(ToString::to_string)
+                        } else {
+                            None
+                        }
+                    }
+
+                    match pair {
+                        Pair::Punctuated(m, p) => {
+                            Some((get_ident(&m)?, m.span(), Some(p.span().end())))
+                        }
+                        Pair::End(m) => Some((get_ident(&m)?, m.span(), None)),
+                    }
+                })
+                .find(|(p, _, _)| self.names.contains_key(p))
+            {
+                *self.output = Some((i.to_token_stream(), path, path_span, comma_end));
+            }
+        }
+    }
+
+    impl<V> Visit<'_> for DeriveMacroVisitor<'_, V> {
+        fn visit_item_struct(&mut self, i: &'_ ItemStruct) {
+            self.visit_struct_enum_union(i, &i.attrs);
+        }
+
+        fn visit_item_enum(&mut self, i: &'_ ItemEnum) {
+            self.visit_struct_enum_union(i, &i.attrs);
+        }
+
+        fn visit_item_union(&mut self, i: &'_ ItemUnion) {
+            self.visit_struct_enum_union(i, &i.attrs);
+        }
+    }
+
+    struct FunctionLikeMacroVisitor<'a, V> {
+        names: &'a HashMap<String, V>,
+        output: &'a mut Option<(Span, String, TokenStream)>,
+    }
+
+    impl<V> Visit<'_> for FunctionLikeMacroVisitor<'_, V> {
+        fn visit_item_macro(&mut self, i: &'_ ItemMacro) {
+            if i.ident.is_none() {
+                self.visit_macro(&i.mac);
+            }
+        }
+
+        fn visit_macro(&mut self, i: &'_ Macro) {
+            if self.output.is_some() {
+                return;
+            }
+
+            if let Some(path) = i.path.get_ident() {
+                let path = path.to_string();
+                if self.names.contains_key(&path) {
+                    *self.output = Some((i.span(), path, i.tokens.clone()));
+                }
+            }
+        }
+    }
+
+    fn to_range(lines: &[&str], span: Span) -> Range<usize> {
+        to_index(lines, span.start())..to_index(lines, span.end())
+    }
+
+    fn to_index(lines: &[&str], loc: LineColumn) -> usize {
+        lines[..loc.line - 1]
+            .iter()
+            .map(|s| s.len() + 1)
+            .sum::<usize>()
+            + lines[loc.line - 1]
+                .char_indices()
+                .nth(loc.column)
+                .map(|(i, _)| i)
+                .unwrap_or_else(|| lines[loc.line - 1].len())
     }
 }
 

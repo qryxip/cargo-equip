@@ -11,7 +11,7 @@ mod workspace;
 
 use crate::{
     shell::Shell,
-    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _},
+    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _, WattRuntimes},
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
@@ -358,6 +358,21 @@ fn bundle(
         btreemap!()
     };
 
+    let watt_runtimes = {
+        let read = |package: &cm::Package| -> anyhow::Result<WattRuntimes> {
+            package.metadata()?.watt.expand_file_paths(
+                package.manifest_dir(),
+                out_dirs.get(&package.id).map(|p| &**p),
+            )
+        };
+
+        libs_to_bundle
+            .keys()
+            .try_fold(read(bin_package)?, |acc, id| {
+                acc.merge(read(&metadata[id])?)
+            })?
+    };
+
     let code = xshell::read_file(&bin.src_path)?;
 
     if rust::find_skip_attribute(&code)? {
@@ -368,16 +383,21 @@ fn bundle(
     shell.status("Bundling", "the code")?;
 
     let code = rust::expand_mods(&bin.src_path)?;
-    let mut code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
+    let code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
             Ok(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
         )
     })?;
+    let mut code = rust::expand_watt_macros(&code, &watt_runtimes, shell)?;
 
     let contents = libs_to_bundle
         .iter()
         .map(|(lib_package, (lib_target, pseudo_extern_crate_name))| {
+            if *lib_target.kind == ["proc-macro".to_owned()] {
+                return Ok((pseudo_extern_crate_name, None));
+            }
+
             let lib_package = &metadata[lib_package];
 
             let cm::Node { features, .. } = metadata
@@ -435,7 +455,10 @@ fn bundle(
                 content = rust::erase_comments(&content)?;
             }
 
-            Ok((pseudo_extern_crate_name, lib_target, lib_package, content))
+            Ok((
+                pseudo_extern_crate_name,
+                Some((lib_package, lib_target, content)),
+            ))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
@@ -456,24 +479,26 @@ fn bundle(
                 .borders(' ')
                 .build();
 
-            for (pseudo_extern_crate_name, _, lib_package, _) in &contents {
-                table.add_row(row![
-                    format!("- `{}`", lib_package.id.mask_path()),
-                    format!("as `crate::{}`", pseudo_extern_crate_name),
-                    format!(
-                        "(license: {}{})",
-                        if let Some(license) = &lib_package.license {
-                            format!("`{}`", license)
-                        } else {
-                            "**missing**".to_owned()
-                        },
-                        if let Some(repository) = &lib_package.repository {
-                            format!(", repository: {}", repository)
-                        } else {
-                            "".to_owned()
-                        },
-                    ),
-                ]);
+            for (pseudo_extern_crate_name, contents) in &contents {
+                if let Some((lib_package, _, _)) = contents {
+                    table.add_row(row![
+                        format!("- `{}`", lib_package.id.mask_path()),
+                        format!("as `crate::{}`", pseudo_extern_crate_name),
+                        format!(
+                            "(license: {}{})",
+                            if let Some(license) = &lib_package.license {
+                                format!("`{}`", license)
+                            } else {
+                                "**missing**".to_owned()
+                            },
+                            if let Some(repository) = &lib_package.repository {
+                                format!(", repository: {}", repository)
+                            } else {
+                                "".to_owned()
+                            },
+                        ),
+                    ]);
+                }
             }
 
             for line in table.to_string().lines() {
@@ -483,7 +508,8 @@ fn bundle(
 
             let notices = contents
                 .iter()
-                .map(|(_, _, p, _)| p)
+                .flat_map(|(_, contents)| contents)
+                .map(|(p, _, _)| p)
                 .filter(|lib_package| {
                     !authors
                         .iter()
@@ -532,24 +558,32 @@ fn bundle(
         if minify == Minify::Libs {
             code += "\n";
 
-            for (pseudo_extern_crate_name, _, _, content) in &contents {
+            for (pseudo_extern_crate_name, contents) in &contents {
                 code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
                 code += "#[allow(unused)]pub mod ";
                 code += &pseudo_extern_crate_name.to_string();
                 code += "{";
-                code += &rust::minify(
-                    content,
-                    shell,
-                    Some(&format!("crate::{}", pseudo_extern_crate_name)),
-                )?;
+                code += &if let Some((_, _, content)) = contents {
+                    rust::minify(
+                        content,
+                        shell,
+                        Some(&format!("crate::{}", pseudo_extern_crate_name)),
+                    )?
+                } else {
+                    "".to_owned()
+                };
                 code += "}\n";
             }
         } else {
-            for (pseudo_extern_crate_name, _, _, content) in &contents {
+            for (pseudo_extern_crate_name, contents) in &contents {
                 code += "\n#[allow(unused)]\npub mod ";
                 code += pseudo_extern_crate_name;
                 code += " {\n";
-                code += &rust::indent_code(content, 1);
+                code += &if let Some((_, _, content)) = contents {
+                    rust::indent_code(content, 1)
+                } else {
+                    "    // This is a `proc-macro`.\n".to_owned()
+                };
                 code += "}\n";
             }
         }
