@@ -1,5 +1,40 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Enabled expanding procedural macros.
+
+    The `proc_macro` crates need to use [watt](https://github.com/dtolnay/watt) and have `package.metadata` like this.
+
+    ```toml
+    [package.metadata.cargo-equip.watt.proc-macro]
+    input = "$OUT_DIR/macros_impl.wasm"
+
+    [package.metadata.cargo-equip.watt.proc-macro-attribute]
+    fastout = "$OUT_DIR/macros_impl.wasm"
+    ```
+
+    [Example](https://github.com/qryxip/competitive-programming-library/tree/master/proc-macros/fastout)
+
+    ```toml
+    [dependencies]
+    qryxip-competitive-fastout = { git = "https://github.com/qryxip/competitive-programming-library" }
+    ```
+
+    ```rust
+    #[macro_use]
+    extern crate fastout as _;
+
+    #[fastout]
+    fn main() {
+        for i in 0..10 {
+            println!("{}", i);
+        }
+    }
+    ```
+
 ## [0.9.1] - 2020-12-07Z
 
 ### Changed
