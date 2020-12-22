@@ -359,17 +359,18 @@ fn bundle(
     };
 
     let watt_runtimes = {
-        let read = |package: &cm::Package| -> anyhow::Result<WattRuntimes> {
+        let expand = |package: &cm::Package, target: &cm::Target| -> anyhow::Result<WattRuntimes> {
             package.metadata()?.watt.expand_file_paths(
-                package.manifest_dir(),
+                package,
+                target,
                 out_dirs.get(&package.id).map(|p| &**p),
             )
         };
 
         libs_to_bundle
-            .keys()
-            .try_fold(read(bin_package)?, |acc, id| {
-                acc.merge(read(&metadata[id])?)
+            .iter()
+            .try_fold(expand(bin_package, bin)?, |acc, (id, (target, _))| {
+                acc.merge(expand(&metadata[id], target)?)
             })?
     };
 

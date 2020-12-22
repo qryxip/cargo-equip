@@ -8,13 +8,12 @@ use krates::PkgSpec;
 use proc_macro2::TokenStream;
 use quote::quote;
 use rand::Rng as _;
-use serde::{
-    de::{Deserializer, Error as _},
-    Deserialize,
-};
+use serde::Deserialize;
+use shellexpand::LookupError;
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
-    env,
+    env::{self, VarError},
     io::Cursor,
     mem,
     path::{Path, PathBuf},
@@ -344,7 +343,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     let name = {
         let mut rng = rand::thread_rng();
         let suf = (0..16)
-            .map(|_| match rng.gen_range(0, 26 + 10) {
+            .map(|_| match rng.gen_range(0..=35) {
                 n @ 0..=25 => b'a' + n,
                 n @ 26..=35 => b'0' + n - 26,
                 _ => unreachable!(),
@@ -773,6 +772,7 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 pub(crate) trait PackageExt {
     fn has_custom_build(&self) -> bool;
     fn manifest_dir(&self) -> &Path;
+    fn manifest_dir_utf8(&self) -> &str;
     fn metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip>;
     fn read_license_text(&self) -> anyhow::Result<Option<String>>;
 }
@@ -786,6 +786,12 @@ impl PackageExt for cm::Package {
 
     fn manifest_dir(&self) -> &Path {
         self.manifest_path.parent().expect("should not be empty")
+    }
+
+    fn manifest_dir_utf8(&self) -> &str {
+        self.manifest_dir()
+            .to_str()
+            .expect("this value comes from a JSON")
     }
 
     fn metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
@@ -847,109 +853,55 @@ pub(crate) struct PackageMetadataCargoEquip {
     pub(crate) watt: PackageMetadataCargoEquipWatt,
 }
 
-#[derive(Default)]
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) struct PackageMetadataCargoEquipWatt {
+    #[serde(default)]
     proc_macro: HashMap<String, PackageMetadataCargoEquipWattValue>,
+    #[serde(default)]
     proc_macro_attribute: HashMap<String, PackageMetadataCargoEquipWattValue>,
+    #[serde(default)]
     proc_macro_derive: HashMap<String, PackageMetadataCargoEquipWattValue>,
 }
 
 impl PackageMetadataCargoEquipWatt {
     pub(crate) fn expand_file_paths(
         &self,
-        manifest_dir: &Path,
+        package: &cm::Package,
+        target: &cm::Target,
         out_dir: Option<&Path>,
     ) -> anyhow::Result<WattRuntimes> {
-        let variables = liquid::object!({
-            "manifest_dir": manifest_dir,
-            "out_dir": out_dir,
-        });
-
         let mut runtimes = WattRuntimes::default();
 
-        let render = |value: &PackageMetadataCargoEquipWattValue| -> Result<_, liquid::Error> {
-            let path = PathBuf::from(value.path.render(&variables)?);
+        let expand = |value: &PackageMetadataCargoEquipWattValue| -> anyhow::Result<_> {
+            let path = PathBuf::from(value.path.expand(package, target, out_dir)?);
             let function = value.function.clone();
             Ok(WattRuntime { path, function })
         };
 
         for (name, value) in &self.proc_macro {
-            runtimes.proc_macro.insert(name.clone(), render(value)?);
+            runtimes.proc_macro.insert(name.clone(), expand(value)?);
         }
 
         for (name, template) in &self.proc_macro_attribute {
             runtimes
                 .proc_macro_attribute
-                .insert(name.clone(), render(template)?);
+                .insert(name.clone(), expand(template)?);
         }
 
         for (name, template) in &self.proc_macro_derive {
             runtimes
                 .proc_macro_derive
-                .insert(name.clone(), render(template)?);
+                .insert(name.clone(), expand(template)?);
         }
 
         Ok(runtimes)
     }
 }
 
-impl<'de> Deserialize<'de> for PackageMetadataCargoEquipWatt {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let Repr {
-            proc_macro,
-            proc_macro_attribute,
-            proc_macro_derive,
-        } = Repr::deserialize(deserializer)?;
-
-        let parser = liquid::ParserBuilder::with_stdlib()
-            .build()
-            .map_err(D::Error::custom)?;
-
-        let parse = |map: HashMap<String, ReprValue>| -> _ {
-            map.into_iter()
-                .map(|(name, ReprValue { path, function })| {
-                    parser.parse(&path).map(move |path| {
-                        (name, PackageMetadataCargoEquipWattValue { path, function })
-                    })
-                })
-                .collect::<Result<_, _>>()
-                .map_err(D::Error::custom)
-        };
-
-        let proc_macro = parse(proc_macro)?;
-        let proc_macro_attribute = parse(proc_macro_attribute)?;
-        let proc_macro_derive = parse(proc_macro_derive)?;
-
-        return Ok(Self {
-            proc_macro,
-            proc_macro_attribute,
-            proc_macro_derive,
-        });
-
-        #[derive(Deserialize)]
-        #[serde(rename_all = "kebab-case")]
-        struct Repr {
-            #[serde(default)]
-            proc_macro: HashMap<String, ReprValue>,
-            #[serde(default)]
-            proc_macro_attribute: HashMap<String, ReprValue>,
-            #[serde(default)]
-            proc_macro_derive: HashMap<String, ReprValue>,
-        }
-
-        #[derive(Deserialize)]
-        struct ReprValue {
-            path: String,
-            function: String,
-        }
-    }
-}
-
+#[derive(Deserialize)]
 struct PackageMetadataCargoEquipWattValue {
-    path: liquid::Template,
+    path: ShellString,
     function: String,
 }
 
@@ -989,6 +941,48 @@ impl WattRuntimes {
         }
 
         Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct ShellString(String);
+
+impl ShellString {
+    fn expand(
+        &self,
+        package: &cm::Package,
+        target: &cm::Target,
+        out_dir: Option<&Path>,
+    ) -> Result<String, LookupError<VarError>> {
+        return shellexpand::full_with_context(&self.0, dirs_next::home_dir, |name| match name {
+            "CARGO_MANIFEST_DIR" => Ok(Some(package.manifest_dir_utf8().to_owned())),
+            "CARGO_PKG_VERSION" => Ok(Some(package.version.to_string())),
+            "CARGO_PKG_VERSION_MAJOR" => Ok(Some(package.version.major.to_string())),
+            "CARGO_PKG_VERSION_MINOR" => Ok(Some(package.version.minor.to_string())),
+            "CARGO_PKG_VERSION_PATCH" => Ok(Some(package.version.patch.to_string())),
+            "CARGO_PKG_VERSION_PRE" => todo!("$CARGO_PKG_VERSION_PRE"),
+            "CARGO_PKG_VERSION_AUTHORS" => Ok(Some(package.authors.iter().join(":"))),
+            "CARGO_PKG_VERSION_NAME" => Ok(Some(package.name.clone())),
+            "CARGO_PKG_DESCRIPTION" => Ok(Some(package.description.clone().unwrap_or_default())),
+            "CARGO_PKG_HOMEPAGE" => Ok(Some(package.homepage.clone().unwrap_or_default())),
+            "CARGO_PKG_REPOSITORY" => Ok(Some(package.repository.clone().unwrap_or_default())),
+            "CARGO_PKG_LICENSE" => Ok(Some(package.license.clone().unwrap_or_default())),
+            "CARGO_PKG_LICENSE_FILE" => todo!("$CARGO_PKG_LICENSE_FILE"),
+            "CARGO_CRATE_NAME" => Ok(Some(target.name.replace('-', "_"))),
+            "CARGO_PKG_BIN_NAME" => todo!("$CARGO_BIN_NAME"),
+            name if name.starts_with("CARGO_BIN_EXE_") => todo!("${}", name),
+            "OUT_DIR" => out_dir
+                .map(|d| Ok(d.to_str().expect("this comes from a JSON").to_owned()))
+                .unwrap_or_else(|| env_var("OUT_DIR"))
+                .map(Some),
+            name => env_var(name).map(Some),
+        })
+        .map(Cow::into_owned);
+
+        fn env_var(name: &str) -> Result<String, VarError> {
+            env::var(name)
+        }
     }
 }
 
