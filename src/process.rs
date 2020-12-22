@@ -73,6 +73,11 @@ impl ProcessBuilder<Present> {
         Ok(())
     }
 
+    pub(crate) fn exec_with_status(&self, shell: &mut Shell) -> anyhow::Result<()> {
+        shell.status("Running", self)?;
+        self.exec()
+    }
+
     pub(crate) fn read(&self, check: bool) -> anyhow::Result<String> {
         let Output { stdout, .. } = self.output(check, Stdio::piped(), Stdio::inherit())?;
         let stdout =

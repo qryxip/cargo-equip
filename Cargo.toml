@@ -10,32 +10,34 @@ keywords = ["competitive", "cli", "windows"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins"]
 
 [dependencies]
-anyhow = "1.0.35"
+anyhow = "1.0.36"
 atty = "0.2.14"
 cargo_metadata = "0.12.1"
-cfg-expr = "0.5.0"
+cfg-expr = "0.5.1"
+dirs-next = "2.0.0"
 fixedbitset = "0.3.1"
 if_chain = "1.0.1"
+indoc = "1.0.3"
 itertools = "0.9.0"
 krates = "0.5.0"
 maplit = "1.0.2"
 prettytable-rs = "0.8.0"
 proc-macro2 = { version = "1.0.24", features = ["span-locations"] }
-quote = "1.0.7"
-rand = "0.7.3"
+quote = "1.0.8"
+rand = "0.8.0"
 serde = { version = "1.0.118", features = ["derive"] }
 serde_json = "1.0.60"
 shell-escape = "0.1.5"
+shellexpand = "2.1.0"
 spdx = "0.3.4"
 structopt = "0.3.21"
-syn = { version = "1.0.53", features = ["extra-traits", "full", "parsing"] }
+syn = { version = "1.0.55", features = ["extra-traits", "full", "parsing"] }
 tempfile = "3.1.0"
 termcolor = "1.1.2"
-toml = "0.5.7"
+toml = "0.5.8"
 toml_edit = "0.2.0"
-url = "2.2.0"
 which = "4.0.2"
-xshell = "0.1.6"
+xshell = "0.1.8"
 
 [dev-dependencies]
 difference = "2.0.0"

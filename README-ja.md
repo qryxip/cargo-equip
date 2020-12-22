@@ -25,49 +25,48 @@ version = "0.0.0"
 edition = "2018"
 
 [dependencies]
-ac-library-rs-parted                                   = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-convolution                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-dsu                               = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-fenwicktree                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-lazysegtree                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-math                              = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-maxflow                           = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-mincostflow                       = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-modint                            = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-scc                               = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-segtree                           = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-string                            = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-ac-library-rs-parted-twosat                            = { git = "https://github.com/qryxip/ac-library-rs-parted" }
-qryxips-competitive-programming-library-buffered-print = { git = "https://github.com/qryxip/oj-verify-playground" }
-qryxips-competitive-programming-library-input          = { git = "https://github.com/qryxip/oj-verify-playground" }
-qryxips-competitive-programming-library-tonelli-shanks = { git = "https://github.com/qryxip/oj-verify-playground" }
+ac-library-rs-parted              = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-convolution  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-dsu          = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-fenwicktree  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-lazysegtree  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-math         = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-maxflow      = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-mincostflow  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-modint       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-scc          = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-segtree      = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-string       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+ac-library-rs-parted-twosat       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
+qryxip-competitive-fastout        = { git = "https://github.com/qryxip/competitive-programming-library" }
+qryxip-competitive-input          = { git = "https://github.com/qryxip/competitive-programming-library" }
+qryxip-competitive-tonelli-shanks = { git = "https://github.com/qryxip/competitive-programming-library" }
 # ...
 ```
 
 ```rust
 #[macro_use]
 extern crate input as _;
+#[macro_use]
+extern crate fastout as _;
 
 use acl_modint::ModInt;
-use std::io::Write as _;
 use tonelli_shanks::ModIntBaseExt as _;
 
+#[fastout]
 fn main() {
     input! {
         yps: [(u32, u32)],
     }
 
-    buffered_print::buf_print(|out| {
-        macro_rules! println(($($tt:tt)*) => (writeln!(out, $($tt)*).unwrap()));
-        for (y, p) in yps {
-            ModInt::set_modulus(p);
-            if let Some(sqrt) = ModInt::new(y).sqrt() {
-                println!("{}", sqrt);
-            } else {
-                println!("-1");
-            }
+    for (y, p) in yps {
+        ModInt::set_modulus(p);
+        if let Some(sqrt) = ModInt::new(y).sqrt() {
+            println!("{}", sqrt);
+        } else {
+            println!("-1");
         }
-    });
+    }
 }
 ```
 
@@ -77,15 +76,20 @@ fn main() {
 ❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check -o ./bundled.rs
      Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
     Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.47s
-info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-6c748f7b1835a414.json"
+    Finished dev [unoptimized + debuginfo] target(s) in 1.76s
+info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-99d680d49de8dec4.json"
+     Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p 'solve:0.0.0' --bin solve`
+    Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
+    Finished dev [unoptimized + debuginfo] target(s) in 1.75s
     Bundling the code
+     Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check`
+    Finished dev [unoptimized + debuginfo] target(s) in 0.00s
 warning: declaring `extern crate .. as ..` in a root module is not recommended: ` extern crate __acl_internal_math as internal_math`
-    Checking cargo-equip-check-output-iub7pci4y608ubzg v0.1.0 (/tmp/cargo-equip-check-output-iub7pci4y608ubzg)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.56s
+    Checking cargo-equip-check-output-gasbxby00cjlqd1x v0.1.0 (/tmp/cargo-equip-check-output-gasbxby00cjlqd1x)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.40s
 ```
 
-[Submit Info #32015 - Library-Checker](https://judge.yosupo.jp/submission/32015)
+[Submit Info #33161 - Library-Checker](https://judge.yosupo.jp/submission/33161)
 
 ## インストール
 
@@ -342,6 +346,12 @@ cargo-equipがやる操作は以下の通りです。
 - 全体
     - `--minify all`オプションを付けた場合コード全体を最小化する
     - `--rustfmt`オプションを付けた場合Rustfmtでフォーマットする
+
+## 手続き型マクロの展開
+
+cargo-equipは[watt](https://github.com/dtolnay/watt)を使った手続き型マクロを展開する機能を持っています。
+
+TODO
 
 ## オプション
 

@@ -2,14 +2,20 @@ use crate::shell::Shell;
 use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
 use if_chain::if_chain;
+use indoc::indoc;
 use itertools::Itertools as _;
 use krates::PkgSpec;
+use proc_macro2::TokenStream;
+use quote::quote;
 use rand::Rng as _;
 use serde::Deserialize;
+use shellexpand::LookupError;
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashMap, HashSet},
-    env,
+    env::{self, VarError},
     io::Cursor,
+    mem,
     path::{Path, PathBuf},
     str,
 };
@@ -70,6 +76,238 @@ pub(crate) fn execute_build_scripts<'cm>(
         .collect())
 }
 
+pub(crate) struct MacroExpander {
+    manifest_dir: PathBuf,
+    inited: bool,
+}
+
+impl MacroExpander {
+    pub(crate) fn new() -> anyhow::Result<Self> {
+        let manifest_dir = dirs_next::cache_dir()
+            .with_context(|| "could not find the cache directory")?
+            .join("cargo-equip")
+            .join("macro-expander");
+
+        Ok(Self {
+            manifest_dir,
+            inited: false,
+        })
+    }
+
+    pub(crate) fn expand(
+        &mut self,
+        path: &Path,
+        name: &str,
+        input: WattInput<'_>,
+        shell: &mut Shell,
+    ) -> anyhow::Result<String> {
+        if !mem::replace(&mut self.inited, true) {
+            static MAIN_MANIFEST: &str = indoc! {r#"
+                [profile.dev.package.cargo_equip_macro_expander]
+                opt-level = 3
+                debug = false
+                debug-assertions = false
+                overflow-checks = false
+
+                [package]
+                name = "cargo-equip-macro-expand"
+                version = "0.0.0"
+                edition = "2018"
+
+                [dependencies]
+                cargo_equip_macro_expander = { path = "./expander" }
+            "#};
+
+            static SUB_MANIFEST: &str = indoc! {r#"
+                [package]
+                name = "cargo_equip_macro_expander"
+                version = "0.0.0"
+                edition = "2018"
+
+                [lib]
+                proc-macro = true
+
+                [dependencies]
+                watt = "*"
+            "#};
+
+            static LIB_RS: &str = indoc! {r#"
+                use proc_macro::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenStream, TokenTree};
+                use std::{fs, iter};
+                use watt::WasmMacro;
+
+                #[proc_macro]
+                pub fn expand(input: TokenStream) -> TokenStream {
+                    run(|| {
+                        let input = &*input.into_iter().collect::<Vec<_>>();
+
+                        // `cargo_equip_macro_expander::expand("/path/to/lib.wasm", ProcMacro, "name", { $($input)* })`
+                        if let [TokenTree::Literal(path), TokenTree::Punct(comma1), TokenTree::Ident(kind), TokenTree::Punct(comma2), TokenTree::Literal(fun), TokenTree::Punct(comma3), TokenTree::Group(input)] =
+                            input
+                        {
+                            if kind.to_string() == "ProcMacro"
+                                && comma1.as_char() == ','
+                                && comma2.as_char() == ','
+                                && comma3.as_char() == ','
+                            {
+                                if let (Some(path), Some(fun)) = (parse_str_lit(path), parse_str_lit(fun)) {
+                                    let tt = read_wasm_macro(&path)?.proc_macro(&fun, input.stream());
+                                    return write_tt(tt);
+                                }
+                            }
+                        }
+
+                        // `cargo_equip_macro_expander::expand("/path/to/lib.wasm", ProcMacroAttribute, "name", { $($input1)* }, { $($input2)* })`
+                        if let [TokenTree::Literal(path), TokenTree::Punct(comma1), TokenTree::Ident(kind), TokenTree::Punct(comma2), TokenTree::Literal(fun), TokenTree::Punct(comma3), TokenTree::Group(input1), TokenTree::Punct(comma4), TokenTree::Group(input2)] =
+                            input
+                        {
+                            if kind.to_string() == "ProcMacroAttribute"
+                                && comma1.as_char() == ','
+                                && comma2.as_char() == ','
+                                && comma3.as_char() == ','
+                                && comma4.as_char() == ','
+                            {
+                                if let (Some(path), Some(fun)) = (parse_str_lit(path), parse_str_lit(fun)) {
+                                    let (input1, input2) = (input1.stream(), input2.stream());
+                                    let tt = read_wasm_macro(&path)?.proc_macro_attribute(&fun, input1, input2);
+                                    return write_tt(tt);
+                                }
+                            }
+                        }
+
+                        // `cargo_equip_macro_expander::expand("/path/to/lib.wasm", ProcMacroDerive, "name", { $($input)* })`
+                        if let [TokenTree::Literal(path), TokenTree::Punct(comma1), TokenTree::Ident(kind), TokenTree::Punct(comma2), TokenTree::Literal(fun), TokenTree::Punct(comma3), TokenTree::Group(input)] =
+                            input
+                        {
+                            if kind.to_string() == "ProcMacroDerive"
+                                && comma1.as_char() == ','
+                                && comma2.as_char() == ','
+                                && comma3.as_char() == ','
+                            {
+                                if let (Some(path), Some(fun)) = (parse_str_lit(path), parse_str_lit(fun)) {
+                                    let tt = read_wasm_macro(&path)?.proc_macro_derive(&fun, input.stream());
+                                    return write_tt(tt);
+                                }
+                            }
+                        }
+
+                        Err("unexpected format".to_owned())
+                    })
+                }
+
+                fn run(f: impl FnOnce() -> Result<(), String>) -> TokenStream {
+                    if let Err(err) = f() {
+                        vec![
+                            TokenTree::Ident(Ident::new("compile_error", Span::call_site())),
+                            TokenTree::Punct(Punct::new('!', Spacing::Alone)),
+                            TokenTree::Group(Group::new(
+                                Delimiter::Brace,
+                                iter::once(TokenTree::Literal(Literal::string(&err))).collect(),
+                            )),
+                        ]
+                        .into_iter()
+                        .collect()
+                    } else {
+                        TokenStream::new()
+                    }
+                }
+
+                fn read_wasm_macro(path: &str) -> Result<WasmMacro, String> {
+                    let wasm = fs::read(path).map_err(|e| format!("could not read `{}`: {}", path, e))?;
+                    Ok(WasmMacro::new(Box::leak(wasm.into_boxed_slice())))
+                }
+
+                fn parse_str_lit(lit: &Literal) -> Option<String> {
+                    let lit = lit.to_string();
+                    if lit.starts_with('"') && lit.ends_with('"') {
+                        if lit.contains('\\') {
+                            todo!("backslash in {:?}", lit);
+                        }
+                        Some(lit[1..lit.len() - 1].to_owned())
+                    } else {
+                        None
+                    }
+                }
+
+                fn write_tt(output: TokenStream) -> Result<(), String> {
+                    let output = output.to_string();
+                    return fs::write(PATH, output).map_err(|e| format!("could not write `{}`: {}", PATH, e));
+                    static PATH: &str = "./expanded.rs.txt";
+                }
+            "#};
+
+            xshell::mkdir_p(self.manifest_dir.join("src"))?;
+            xshell::mkdir_p(self.manifest_dir.join("expander").join("src"))?;
+
+            write_file_unless_unchanged(&self.manifest_dir.join("Cargo.toml"), MAIN_MANIFEST)?;
+            write_file_unless_unchanged(
+                &self.manifest_dir.join("expander").join("Cargo.toml"),
+                SUB_MANIFEST,
+            )?;
+            write_file_unless_unchanged(
+                &self
+                    .manifest_dir
+                    .join("expander")
+                    .join("src")
+                    .join("lib.rs"),
+                LIB_RS,
+            )?;
+        }
+
+        let path = path
+            .to_str()
+            .with_context(|| format!("non utf-8 path: `{}`", path.display()))?;
+
+        let main_rs = &match input {
+            WattInput::ProcMacro(input) => quote! {
+                fn main() {}
+                cargo_equip_macro_expander::expand!(#path, ProcMacro, #name, { #input });
+            },
+            WattInput::ProcMacroAttribute(input1, input2) => quote! {
+                fn main() {}
+                cargo_equip_macro_expander::expand!(#path, ProcMacroAttribute, #name, { #input1 }, { #input2 });
+            },
+            WattInput::ProcMacroDerive(input) => quote! {
+                fn main() {}
+                cargo_equip_macro_expander::expand!(#path, ProcMacroDerive, #name, { #input });
+            },
+        }.to_string();
+
+        write_file_unless_unchanged(&self.manifest_dir.join("src").join("main.rs"), main_rs)?;
+
+        crate::process::process(crate::process::cargo_exe()?)
+            .arg("check")
+            .cwd(&self.manifest_dir)
+            .exec_with_status(shell)?;
+
+        let output = xshell::read_file(self.manifest_dir.join("expanded.rs.txt"))?;
+        Ok(output)
+    }
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum WattInput<'a> {
+    ProcMacro(&'a TokenStream),
+    ProcMacroAttribute(&'a TokenStream, &'a TokenStream),
+    ProcMacroDerive(&'a TokenStream),
+}
+
+fn write_file_unless_unchanged(path: &Path, content: &str) -> anyhow::Result<()> {
+    let read_file =
+        || std::fs::read(path).with_context(|| format!("could not read `{}`", path.display()));
+
+    let write_file = || -> _ {
+        std::fs::write(path, content)
+            .with_context(|| format!("could not write `{}`", path.display()))
+    };
+
+    if !(path.exists() && read_file()? == content.as_bytes()) {
+        write_file()?;
+    }
+    Ok(())
+}
+
 pub(crate) fn get_author(workspace_root: &Path) -> anyhow::Result<String> {
     #[derive(Deserialize)]
     struct Manifest {
@@ -105,7 +343,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     let name = {
         let mut rng = rand::thread_rng();
         let suf = (0..16)
-            .map(|_| match rng.gen_range(0, 26 + 10) {
+            .map(|_| match rng.gen_range(0..=35) {
                 n @ 0..=25 => b'a' + n,
                 n @ 26..=35 => b'0' + n - 26,
                 _ => unreachable!(),
@@ -390,8 +628,9 @@ impl MetadataExt for cm::Metadata {
 
         while {
             let next = deps
-                .keys()
-                .map(|package_id| nodes[package_id])
+                .iter()
+                .filter(|(_, (cm::Target { kind, .. }, _))| *kind == ["lib".to_owned()])
+                .map(|(package_id, _)| nodes[package_id])
                 .flat_map(|cm::Node { deps, .. }| deps)
                 .filter(|node_dep| satisfies(node_dep) && all_package_ids.insert(&node_dep.pkg))
                 .flat_map(|cm::NodeDep { pkg, .. }| {
@@ -532,6 +771,9 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 
 pub(crate) trait PackageExt {
     fn has_custom_build(&self) -> bool;
+    fn manifest_dir(&self) -> &Path;
+    fn manifest_dir_utf8(&self) -> &str;
+    fn metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip>;
     fn read_license_text(&self) -> anyhow::Result<Option<String>>;
 }
 
@@ -540,6 +782,29 @@ impl PackageExt for cm::Package {
         self.targets
             .iter()
             .any(|cm::Target { kind, .. }| *kind == ["custom-build".to_owned()])
+    }
+
+    fn manifest_dir(&self) -> &Path {
+        self.manifest_path.parent().expect("should not be empty")
+    }
+
+    fn manifest_dir_utf8(&self) -> &str {
+        self.manifest_dir()
+            .to_str()
+            .expect("this value comes from a JSON")
+    }
+
+    fn metadata(&self) -> anyhow::Result<PackageMetadataCargoEquip> {
+        let PackageMetadata { cargo_equip } =
+            serde_json::from_value::<Option<_>>(self.metadata.clone())?.unwrap_or_default();
+        return Ok(cargo_equip);
+
+        #[derive(Deserialize, Default)]
+        #[serde(rename_all = "kebab-case")]
+        struct PackageMetadata {
+            #[serde(default)]
+            cargo_equip: PackageMetadataCargoEquip,
+        }
     }
 
     fn read_license_text(&self) -> anyhow::Result<Option<String>> {
@@ -580,6 +845,151 @@ impl PackageExt for cm::Package {
             bail!("`{}`: unsupported license: `{}`", self.id, license);
         }
     }
+}
+
+#[derive(Default, Deserialize)]
+pub(crate) struct PackageMetadataCargoEquip {
+    #[serde(default)]
+    pub(crate) watt: PackageMetadataCargoEquipWatt,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct PackageMetadataCargoEquipWatt {
+    #[serde(default)]
+    proc_macro: HashMap<String, PackageMetadataCargoEquipWattValue>,
+    #[serde(default)]
+    proc_macro_attribute: HashMap<String, PackageMetadataCargoEquipWattValue>,
+    #[serde(default)]
+    proc_macro_derive: HashMap<String, PackageMetadataCargoEquipWattValue>,
+}
+
+impl PackageMetadataCargoEquipWatt {
+    pub(crate) fn expand_file_paths(
+        &self,
+        package: &cm::Package,
+        target: &cm::Target,
+        out_dir: Option<&Path>,
+    ) -> anyhow::Result<WattRuntimes> {
+        let mut runtimes = WattRuntimes::default();
+
+        let expand = |value: &PackageMetadataCargoEquipWattValue| -> anyhow::Result<_> {
+            let path = PathBuf::from(value.path.expand(package, target, out_dir)?);
+            let function = value.function.clone();
+            Ok(WattRuntime { path, function })
+        };
+
+        for (name, value) in &self.proc_macro {
+            runtimes.proc_macro.insert(name.clone(), expand(value)?);
+        }
+
+        for (name, template) in &self.proc_macro_attribute {
+            runtimes
+                .proc_macro_attribute
+                .insert(name.clone(), expand(template)?);
+        }
+
+        for (name, template) in &self.proc_macro_derive {
+            runtimes
+                .proc_macro_derive
+                .insert(name.clone(), expand(template)?);
+        }
+
+        Ok(runtimes)
+    }
+}
+
+#[derive(Deserialize)]
+struct PackageMetadataCargoEquipWattValue {
+    path: ShellString,
+    function: String,
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct WattRuntimes {
+    pub(crate) proc_macro: HashMap<String, WattRuntime>,
+    pub(crate) proc_macro_attribute: HashMap<String, WattRuntime>,
+    pub(crate) proc_macro_derive: HashMap<String, WattRuntime>,
+}
+
+impl WattRuntimes {
+    pub(crate) fn merge(mut self, other: Self) -> anyhow::Result<Self> {
+        for (name, contents) in other.proc_macro {
+            if self.proc_macro.insert(name.clone(), contents).is_some() {
+                bail!("duplicated function-like macro: {}", name);
+            }
+        }
+
+        for (name, contents) in other.proc_macro_attribute {
+            if self
+                .proc_macro_attribute
+                .insert(name.clone(), contents)
+                .is_some()
+            {
+                bail!("duplicated attribute macro: {}", name);
+            }
+        }
+
+        for (name, contents) in other.proc_macro_derive {
+            if self
+                .proc_macro_derive
+                .insert(name.clone(), contents)
+                .is_some()
+            {
+                bail!("duplicated derive macro: {}", name);
+            }
+        }
+
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct ShellString(String);
+
+impl ShellString {
+    fn expand(
+        &self,
+        package: &cm::Package,
+        target: &cm::Target,
+        out_dir: Option<&Path>,
+    ) -> Result<String, LookupError<VarError>> {
+        return shellexpand::full_with_context(&self.0, dirs_next::home_dir, |name| match name {
+            "CARGO_MANIFEST_DIR" => Ok(Some(package.manifest_dir_utf8().to_owned())),
+            "CARGO_PKG_VERSION" => Ok(Some(package.version.to_string())),
+            "CARGO_PKG_VERSION_MAJOR" => Ok(Some(package.version.major.to_string())),
+            "CARGO_PKG_VERSION_MINOR" => Ok(Some(package.version.minor.to_string())),
+            "CARGO_PKG_VERSION_PATCH" => Ok(Some(package.version.patch.to_string())),
+            "CARGO_PKG_VERSION_PRE" => todo!("$CARGO_PKG_VERSION_PRE"),
+            "CARGO_PKG_VERSION_AUTHORS" => Ok(Some(package.authors.iter().join(":"))),
+            "CARGO_PKG_VERSION_NAME" => Ok(Some(package.name.clone())),
+            "CARGO_PKG_DESCRIPTION" => Ok(Some(package.description.clone().unwrap_or_default())),
+            "CARGO_PKG_HOMEPAGE" => Ok(Some(package.homepage.clone().unwrap_or_default())),
+            "CARGO_PKG_REPOSITORY" => Ok(Some(package.repository.clone().unwrap_or_default())),
+            "CARGO_PKG_LICENSE" => Ok(Some(package.license.clone().unwrap_or_default())),
+            "CARGO_PKG_LICENSE_FILE" => todo!("$CARGO_PKG_LICENSE_FILE"),
+            "CARGO_CRATE_NAME" => Ok(Some(target.name.replace('-', "_"))),
+            "CARGO_PKG_BIN_NAME" => todo!("$CARGO_BIN_NAME"),
+            name if name.starts_with("CARGO_BIN_EXE_") => todo!("${}", name),
+            "OUT_DIR" => out_dir
+                .map(|d| Ok(d.to_str().expect("this comes from a JSON").to_owned()))
+                .unwrap_or_else(|| env_var("OUT_DIR"))
+                .map(Some),
+            name => env_var(name).map(Some),
+        })
+        .map(Cow::into_owned);
+
+        fn env_var(name: &str) -> Result<String, VarError> {
+            env::var(name)
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct WattRuntime {
+    pub(crate) path: PathBuf,
+    pub(crate) function: String,
 }
 
 pub(crate) trait PackageIdExt {
