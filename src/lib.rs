@@ -15,6 +15,7 @@ use crate::{
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
+use either::Either;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
 use maplit::{btreemap, hashset};
@@ -395,11 +396,11 @@ fn bundle(
     let contents = libs_to_bundle
         .iter()
         .map(|(lib_package, (lib_target, pseudo_extern_crate_name))| {
-            if *lib_target.kind == ["proc-macro".to_owned()] {
-                return Ok((pseudo_extern_crate_name, None));
-            }
-
             let lib_package = &metadata[lib_package];
+
+            if *lib_target.kind == ["proc-macro".to_owned()] {
+                return Ok((pseudo_extern_crate_name, Either::Right(lib_package)));
+            }
 
             let cm::Node { features, .. } = metadata
                 .resolve
@@ -458,7 +459,7 @@ fn bundle(
 
             Ok((
                 pseudo_extern_crate_name,
-                Some((lib_package, lib_target, content)),
+                Either::Left((lib_package, content)),
             ))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
@@ -471,46 +472,81 @@ fn bundle(
         };
 
         code = rust::prepend_mod_doc(&code, &{
-            let mut doc = " # Bundled libraries\n\n".to_owned();
+            fn list_packages<'a>(
+                doc: &mut String,
+                title: &str,
+                contents: impl Iterator<Item = (Option<&'a str>, &'a cm::Package)>,
+            ) {
+                let mut table = Table::new();
 
-            let mut table = Table::new();
+                *table.get_format() = FormatBuilder::new()
+                    .column_separator(' ')
+                    .borders(' ')
+                    .build();
 
-            *table.get_format() = FormatBuilder::new()
-                .column_separator(' ')
-                .borders(' ')
-                .build();
+                let contents = contents.collect::<Vec<_>>();
+                let any_from_local_filesystem = contents.iter().any(|(_, p)| p.source.is_none());
 
-            for (pseudo_extern_crate_name, contents) in &contents {
-                if let Some((lib_package, _, _)) = contents {
-                    table.add_row(row![
-                        format!("- `{}`", lib_package.id.mask_path()),
-                        format!("as `crate::{}`", pseudo_extern_crate_name),
-                        format!(
-                            "(license: {}{})",
-                            if let Some(license) = &lib_package.license {
-                                format!("`{}`", license)
-                            } else {
-                                "**missing**".to_owned()
-                            },
-                            if let Some(repository) = &lib_package.repository {
-                                format!(", repository: {}", repository)
-                            } else {
-                                "".to_owned()
-                            },
-                        ),
-                    ]);
+                for (pseudo_extern_crate_name, package) in contents {
+                    let mut row = row![format!("- `{}`", package.id.mask_path())];
+
+                    if any_from_local_filesystem {
+                        row.add_cell(if package.source.is_some() {
+                            cell!("")
+                        } else if let Some(repository) = &package.repository {
+                            cell!(format!("published in {}", repository))
+                        } else {
+                            cell!("published in **missing**")
+                        });
+                    }
+
+                    row.add_cell(if let Some(license) = &package.license {
+                        cell!(format!("licensed under `{}`", license))
+                    } else {
+                        cell!("licensed under **missing**")
+                    });
+
+                    if let Some(pseudo_extern_crate_name) = pseudo_extern_crate_name {
+                        row.add_cell(cell!(format!("as `crate::{}`", pseudo_extern_crate_name)));
+                    }
+
+                    table.add_row(row);
+                }
+
+                if !table.is_empty() {
+                    if !doc.is_empty() {
+                        *doc += "\n";
+                    }
+                    *doc += &format!(" # {}\n\n", title);
+                    for line in table.to_string().lines() {
+                        *doc += line.trim_end();
+                        *doc += "\n";
+                    }
                 }
             }
 
-            for line in table.to_string().lines() {
-                doc += line.trim_end();
-                doc += "\n";
-            }
+            let mut doc = "".to_owned();
+
+            list_packages(
+                &mut doc,
+                "Bundled libraries",
+                contents
+                    .iter()
+                    .flat_map(|(k, v)| v.as_ref().left().map(|(p, _)| (Some(&***k), *p))),
+            );
+
+            list_packages(
+                &mut doc,
+                "Procedural macros",
+                contents
+                    .iter()
+                    .flat_map(|(_, v)| v.as_ref().right().map(|p| (None, *p))),
+            );
 
             let notices = contents
                 .iter()
-                .flat_map(|(_, contents)| contents)
-                .map(|(p, _, _)| p)
+                .flat_map(|(_, contents)| contents.as_ref().left())
+                .map(|(p, _)| p)
                 .filter(|lib_package| {
                     !authors
                         .iter()
@@ -564,7 +600,7 @@ fn bundle(
                 code += "#[allow(unused)]pub mod ";
                 code += &pseudo_extern_crate_name.to_string();
                 code += "{";
-                code += &if let Some((_, _, content)) = contents {
+                code += &if let Either::Left((_, content)) = contents {
                     rust::minify(
                         content,
                         shell,
@@ -580,7 +616,7 @@ fn bundle(
                 code += "\n#[allow(unused)]\npub mod ";
                 code += pseudo_extern_crate_name;
                 code += " {\n";
-                code += &if let Some((_, _, content)) = contents {
+                code += &if let Either::Left((_, content)) = contents {
                     rust::indent_code(content, 1)
                 } else {
                     "    // This is a `proc-macro`.\n".to_owned()
