@@ -283,10 +283,11 @@ fn main() {
 `extern_crate_name`が`bin`側から与えられていないクレートは`__package_name_0_1_0`のような名前が与えられます。
 
 ```diff
+```diff
 +//! # Bundled libraries
 +//!
-+//! - `qryxips-competitive-programming-library-buffered-print 0.0.0 (path+█████████████████████████████████████████████████████████████████████████████████████)` as `crate::buffered_print` (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
-+//! - `qryxips-competitive-programming-library-input 0.0.0 (path+████████████████████████████████████████████████████████████████████████████)`                   as `crate::input`          (license: `CC0-1.0`, repository: https://github.com/qryxip/oj-verify-playground)
++//! - `qryxip-competitive-buffered-print 0.0.0 (path+█████████████████████████████████████████████████████████████████████████████████████)` published in https://github.com/qryxip/competitive-programming-library licensed under `CC0-1.0` as `crate::buffered_print`
++//! - `qryxip-competitive-input 0.0.0 (path+████████████████████████████████████████████████████████████████████████████)`                   published in https://github.com/qryxip/competitive-programming-library licensed under `CC0-1.0` as `crate::input`
 
 -#[macro_use]
 -extern crate input as _;
@@ -316,14 +317,15 @@ fn main() {
 +// The following code was expanded by `cargo-equip`.
 +
 +#[allow(dead_code)]
-+mod input {
++mod buffered_print {
 +    // ...
 +}
 +
 +#[allow(dead_code)]
-+mod output {
++mod input {
 +    // ...
 +}
+```
 ```
 
 cargo-equipがやる操作は以下の通りです。

@@ -35,6 +35,25 @@
     }
     ```
 
+### Changed
+
+- Changed the format of `"# Bundled libraries"`.
+
+    ```toml
+    //! # Bundled libraries
+    //!
+    //! - `ac-library-rs-parted-internal-math 0.1.0 (git+https://github.com/qryxip/ac-library-rs-parted#0b35cf2fd575eaf8ace84340722d6cefb7e82d14)`                                    licensed under `CC0-1.0` as `crate::__ac_library_rs_parted_internal_math_0_1_0`
+    //! - `ac-library-rs-parted-modint 0.1.0 (git+https://github.com/qryxip/ac-library-rs-parted#0b35cf2fd575eaf8ace84340722d6cefb7e82d14)`                                           licensed under `CC0-1.0` as `crate::acl_modint`
+    //! - `local 0.0.0 (path+██████████████████████████████████████████████████)`                                                                            published in **missing** licensed under `CC0-1.0` as `crate::local`
+    //! - `qryxip-competitive-input 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#0d98777f6af8d6174419bf9b9a202c7f023d6857)`                                   licensed under `CC0-1.0` as `crate::input`
+    //! - `qryxip-competitive-tonelli-shanks 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#0d98777f6af8d6174419bf9b9a202c7f023d6857)`                          licensed under `CC0-1.0` as `crate::tonelli_shanks`
+    //! - `qryxip-competitive-xorshift 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#0d98777f6af8d6174419bf9b9a202c7f023d6857)`                                licensed under `CC0-1.0` as `crate::__qryxip_competitive_xorshift_0_0_0`
+    //!
+    //! # Procedural macros
+    //!
+    //! - `qryxip-competitive-fastout 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#0d98777f6af8d6174419bf9b9a202c7f023d6857)` licensed under `CC0-1.0`
+    ```
+
 ## [0.9.1] - 2020-12-07Z
 
 ### Changed
