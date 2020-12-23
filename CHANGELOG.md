@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.2] - 2020-12-23Z
 
 ### Added
 
-- Enabled expanding procedural macros.
+- Enabled expanding procedural macros. ([#76](https://github.com/qryxip/cargo-equip/pull/76))
 
     The `proc_macro` crates need to use [watt](https://github.com/dtolnay/watt) and have `package.metadata` like this.
 
@@ -37,7 +37,7 @@
 
 ### Changed
 
-- Changed the format of `"# Bundled libraries"`.
+- Changed the format of `"# Bundled libraries"`. ([#77](https://github.com/qryxip/cargo-equip/pull/77))
 
     ```toml
     //! # Bundled libraries
