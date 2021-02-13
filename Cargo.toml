@@ -32,7 +32,7 @@ shell-escape = "0.1.5"
 shellexpand = "2.1.0"
 spdx = "0.3.6"
 structopt = "0.3.21"
-syn = { version = "1.0.60", features = ["extra-traits", "full", "parsing"] }
+syn = { version = "1.0.60", features = ["extra-traits", "full", "parsing", "visit"] }
 tempfile = "3.2.0"
 termcolor = "1.1.2"
 toml = "0.5.8"
