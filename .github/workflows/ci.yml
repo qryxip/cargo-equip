@@ -135,6 +135,18 @@ jobs:
         env:
           RUST_BACKTRACE: full
 
+      - name: cargo-install (locked)
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path . --debug --locked
+
+      - name: cargo-install
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --path . --debug
+
   upload:
     strategy:
       fail-fast: false
