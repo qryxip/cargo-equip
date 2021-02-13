@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed inability to `cargo install cargo-equip` without `--locked`.
+
 ## [0.9.2] - 2020-12-23Z
 
 ### Added
