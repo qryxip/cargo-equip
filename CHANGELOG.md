@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.9.3] - 2021-02-13Z
 
 ### Fixed
 
-- Fixed inability to `cargo install cargo-equip` without `--locked`.
+- Fixed inability to `cargo install cargo-equip` without `--locked`. ([#79](https://github.com/qryxip/cargo-equip/pull/79))
 
 ## [0.9.2] - 2020-12-23Z
 
