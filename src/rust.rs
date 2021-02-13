@@ -1193,27 +1193,25 @@ pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
 }
 
 pub(crate) fn erase_comments(code: &str) -> anyhow::Result<String> {
-    fn visit_file(mask: &mut [FixedBitSet], token_stream: TokenStream) -> syn::Result<()> {
-        fn visit_token_stream(mask: &mut [FixedBitSet], token_stream: TokenStream) {
-            for tt in token_stream {
-                if let TokenTree::Group(group) = tt {
-                    set_span(mask, group.span_open(), false);
-                    visit_token_stream(mask, group.stream());
-                    set_span(mask, group.span_close(), false);
-                } else {
-                    set_span(mask, tt.span(), false);
-                }
-            }
-        }
-
+    return erase(code, |mask, token_stream| {
         for mask in &mut *mask {
             mask.insert_range(..);
         }
         visit_token_stream(mask, token_stream);
         Ok(())
-    }
+    });
 
-    erase(code, visit_file)
+    fn visit_token_stream(mask: &mut [FixedBitSet], token_stream: TokenStream) {
+        for tt in token_stream {
+            if let TokenTree::Group(group) = tt {
+                set_span(mask, group.span_open(), false);
+                visit_token_stream(mask, group.stream());
+                set_span(mask, group.span_close(), false);
+            } else {
+                set_span(mask, tt.span(), false);
+            }
+        }
+    }
 }
 
 fn erase(
