@@ -1,7 +1,4 @@
-use crate::{
-    shell::Shell,
-    workspace::{MacroExpander, WattInput, WattRuntime, WattRuntimes},
-};
+use crate::{ra_proc_macro::ProcMacroExpander, shell::Shell};
 use anyhow::{anyhow, bail, Context as _};
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
@@ -10,7 +7,7 @@ use maplit::{btreemap, btreeset};
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     env, fs, mem,
     ops::Range,
     path::PathBuf,
@@ -74,7 +71,7 @@ pub(crate) fn process_extern_crate_in_bin(
     struct Visitor<'a, F> {
         replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
         is_lib_to_bundle: F,
-    };
+    }
 
     impl<F: FnMut(&str) -> bool> Visit<'_> for Visitor<'_, F> {
         fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
@@ -212,12 +209,11 @@ pub(crate) fn indent_code(code: &str, n: usize) -> String {
     }
 }
 
-pub(crate) fn expand_watt_macros(
+pub(crate) fn expand_proc_macros(
     code: &str,
-    watt_runtimes: &WattRuntimes,
+    expander: &mut ProcMacroExpander,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
-    let macro_expander = &mut MacroExpander::new()?;
     let mut code = code.to_owned();
 
     loop {
@@ -227,43 +223,37 @@ pub(crate) fn expand_watt_macros(
             .map_err(|e| anyhow!("{:?}", e))
             .with_context(|| "could not parse the code")?;
 
-        let mut output = None;
+        let mut output = Ok(None);
         AttributeMacroVisitor {
-            names: &watt_runtimes.proc_macro_attribute,
+            expander,
             output: &mut output,
+            shell,
         }
         .visit_file(&file);
 
-        if let Some((span, macro_path, input1, input2)) = output {
-            let WattRuntime { path, function } = &watt_runtimes.proc_macro_attribute[&macro_path];
-            let input = WattInput::ProcMacroAttribute(&input1, &input2);
-            let output = macro_expander.expand(path, function, input, shell)?;
-
+        if let Some((span, expansion)) = output? {
             let end = to_index(code_lines, span.end());
             let start = to_index(code_lines, span.start());
-            code.insert_str(end, &format!("*/{}", output));
+            code.insert_str(end, &format!("*/{}", expansion));
             code.insert_str(start, "/*");
 
             continue;
         }
 
-        let mut output = None;
+        let mut output = Ok(None);
         DeriveMacroVisitor {
-            names: &watt_runtimes.proc_macro_derive,
+            expander,
             output: &mut output,
+            shell,
         }
         .visit_file(&file);
 
-        if let Some((item, macro_path, macro_path_span, comma_span)) = output {
-            let insert_at = to_index(code_lines, item.span().end());
+        if let Some((expansion, item_span, macro_path_span, comma_span)) = output? {
+            let insert_at = to_index(code_lines, item_span.end());
             let comma_end = comma_span.map(|comma_end| to_index(code_lines, comma_end));
             let path_range = to_range(code_lines, macro_path_span);
 
-            let WattRuntime { path, function } = &watt_runtimes.proc_macro_derive[&macro_path];
-            let output =
-                macro_expander.expand(path, function, WattInput::ProcMacroDerive(&item), shell)?;
-
-            code.insert_str(insert_at, &output.to_string());
+            code.insert_str(insert_at, &expansion.to_string());
             let end = if let Some(comma_end) = comma_end {
                 comma_end
             } else {
@@ -275,35 +265,32 @@ pub(crate) fn expand_watt_macros(
             continue;
         }
 
-        let mut output = None;
+        let mut output = Ok(None);
         FunctionLikeMacroVisitor {
-            names: &watt_runtimes.proc_macro,
+            expander,
             output: &mut output,
+            shell,
         }
         .visit_file(&file);
 
-        if let Some((span, macro_path, input)) = output {
-            let WattRuntime { path, function } = &watt_runtimes.proc_macro[&macro_path];
-            let output =
-                macro_expander.expand(path, function, WattInput::ProcMacro(&input), shell)?;
-
+        if let Some((span, expansion)) = output? {
             let i1 = to_index(code_lines, span.end());
             let i2 = to_index(code_lines, span.start());
-            code.insert_str(i1, &format!("*/{}", output));
+            code.insert_str(i1, &format!("*/{}", expansion));
             code.insert_str(i2, "/*");
-
             continue;
         }
 
         return Ok(code);
     }
 
-    struct AttributeMacroVisitor<'a, V> {
-        names: &'a HashMap<String, V>,
-        output: &'a mut Option<(Span, String, TokenStream, TokenStream)>,
+    struct AttributeMacroVisitor<'a> {
+        expander: &'a mut ProcMacroExpander,
+        output: &'a mut anyhow::Result<Option<(Span, proc_macro2::Group)>>,
+        shell: &'a mut Shell,
     }
 
-    impl<V> AttributeMacroVisitor<'_, V> {
+    impl AttributeMacroVisitor<'_> {
         fn visit_item_with_attrs<'a, T: ToTokens + Clone + 'a>(
             &mut self,
             i: &'a T,
@@ -311,32 +298,47 @@ pub(crate) fn expand_watt_macros(
             remove_attr: fn(&mut T, usize) -> Attribute,
             visit: fn(&mut Self, &'a T),
         ) {
-            if self.output.is_some() {
+            if !matches!(self.output, Ok(None)) {
                 return;
             }
 
-            if let Some((nth, path, input_attr)) = attrs
+            if let Some(result) = attrs
                 .iter()
                 .enumerate()
                 .filter(|(_, Attribute { style, .. })| *style == AttrStyle::Outer)
-                .flat_map(|(i, a)| a.parse_meta().map(|m| (i, m)))
-                .flat_map(|(nth, meta)| {
-                    let (path, input_attr) = match meta {
-                        Meta::Path(path) => (path, TokenStream::new()),
-                        Meta::List(MetaList { path, nested, .. }) => {
-                            (path, nested.to_token_stream())
-                        }
-                        Meta::NameValue(_) => return None,
-                    };
-                    let path = path.get_ident()?.to_string();
-                    Some((nth, path, input_attr))
+                .find_map(|(nth, attr)| {
+                    let Self {
+                        expander, shell, ..
+                    } = self;
+                    let macro_name = attr.path.get_ident()?.to_string();
+                    expander
+                        .expand_attr_macro(
+                            &macro_name,
+                            || {
+                                let i = &mut i.clone();
+                                remove_attr(i, nth);
+                                i.to_token_stream()
+                            },
+                            || {
+                                syn::parse2(attr.tokens.clone()).unwrap_or_else(|_| {
+                                    proc_macro2::Group::new(
+                                        proc_macro2::Delimiter::None,
+                                        attr.tokens.clone(),
+                                    )
+                                })
+                            },
+                            |msg| {
+                                shell.warn(format!("error from RA: {}", msg))?;
+                                Ok(())
+                            },
+                        )
+                        .transpose()
                 })
-                .find(|(_, path, _)| self.names.contains_key(path))
             {
-                let span = i.span();
-                let i = &mut i.clone();
-                remove_attr(i, nth);
-                *self.output = Some((span, path, input_attr, i.to_token_stream()));
+                *self.output = match result {
+                    Ok(expansion) => Ok(Some((i.span(), expansion))),
+                    Err(err) => Err(err),
+                };
             } else {
                 visit(self, i);
             }
@@ -353,7 +355,7 @@ pub(crate) fn expand_watt_macros(
         };
     }
 
-    impl<V> Visit<'_> for AttributeMacroVisitor<'_, V> {
+    impl Visit<'_> for AttributeMacroVisitor<'_> {
         impl_visits! {
             fn visit_item_const       (&mut self, _: &'_ ItemConst      ) { _(_, _, _, visit::visit_item_const       ) }
             fn visit_item_enum        (&mut self, _: &'_ ItemEnum       ) { _(_, _, _, visit::visit_item_enum        ) }
@@ -374,18 +376,21 @@ pub(crate) fn expand_watt_macros(
         }
     }
 
-    struct DeriveMacroVisitor<'a, V> {
-        names: &'a HashMap<String, V>,
-        output: &'a mut Option<(TokenStream, String, Span, Option<LineColumn>)>,
+    #[allow(clippy::type_complexity)]
+    struct DeriveMacroVisitor<'a> {
+        expander: &'a mut ProcMacroExpander,
+        output:
+            &'a mut anyhow::Result<Option<(proc_macro2::Group, Span, Span, Option<LineColumn>)>>,
+        shell: &'a mut Shell,
     }
 
-    impl<V> DeriveMacroVisitor<'_, V> {
+    impl DeriveMacroVisitor<'_> {
         fn visit_struct_enum_union(&mut self, i: impl ToTokens, attrs: &[Attribute]) {
-            if self.output.is_some() {
+            if !matches!(self.output, Ok(None)) {
                 return;
             }
 
-            if let Some((path, path_span, comma_end)) = attrs
+            if let Some(result) = attrs
                 .iter()
                 .flat_map(Attribute::parse_meta)
                 .flat_map(|meta| match meta {
@@ -410,14 +415,36 @@ pub(crate) fn expand_watt_macros(
                         Pair::End(m) => Some((get_ident(&m)?, m.span(), None)),
                     }
                 })
-                .find(|(p, _, _)| self.names.contains_key(p))
+                .find_map(|(macro_name, path_span, comma_end)| {
+                    let Self {
+                        expander, shell, ..
+                    } = self;
+                    expander
+                        .expand_derive_macro(
+                            &macro_name,
+                            || i.to_token_stream(),
+                            |msg| {
+                                shell.warn(format!("error from RA: {}", msg))?;
+                                Ok(())
+                            },
+                        )
+                        .transpose()
+                        .map(move |expansion| {
+                            expansion.map(move |expansion| (expansion, path_span, comma_end))
+                        })
+                })
             {
-                *self.output = Some((i.to_token_stream(), path, path_span, comma_end));
+                *self.output = match result {
+                    Ok((expansion, path_span, comma_end)) => {
+                        Ok(Some((expansion, i.span(), path_span, comma_end)))
+                    }
+                    Err(err) => Err(err),
+                };
             }
         }
     }
 
-    impl<V> Visit<'_> for DeriveMacroVisitor<'_, V> {
+    impl Visit<'_> for DeriveMacroVisitor<'_> {
         fn visit_item_struct(&mut self, i: &'_ ItemStruct) {
             self.visit_struct_enum_union(i, &i.attrs);
         }
@@ -431,12 +458,13 @@ pub(crate) fn expand_watt_macros(
         }
     }
 
-    struct FunctionLikeMacroVisitor<'a, V> {
-        names: &'a HashMap<String, V>,
-        output: &'a mut Option<(Span, String, TokenStream)>,
+    struct FunctionLikeMacroVisitor<'a> {
+        expander: &'a mut ProcMacroExpander,
+        output: &'a mut anyhow::Result<Option<(Span, proc_macro2::Group)>>,
+        shell: &'a mut Shell,
     }
 
-    impl<V> Visit<'_> for FunctionLikeMacroVisitor<'_, V> {
+    impl Visit<'_> for FunctionLikeMacroVisitor<'_> {
         fn visit_item_macro(&mut self, i: &'_ ItemMacro) {
             if i.ident.is_none() {
                 self.visit_macro(&i.mac);
@@ -444,15 +472,28 @@ pub(crate) fn expand_watt_macros(
         }
 
         fn visit_macro(&mut self, i: &'_ Macro) {
-            if self.output.is_some() {
+            if !matches!(self.output, Ok(None)) {
                 return;
             }
 
-            if let Some(path) = i.path.get_ident() {
-                let path = path.to_string();
-                if self.names.contains_key(&path) {
-                    *self.output = Some((i.span(), path, i.tokens.clone()));
-                }
+            if let Some(macro_name) = i.path.get_ident() {
+                let Self {
+                    expander, shell, ..
+                } = self;
+                let expansion = expander.expand_func_like_macro(
+                    &macro_name.to_string(),
+                    || i.tokens.clone(),
+                    |msg| {
+                        shell.warn(format!("error from RA: {}", msg))?;
+                        Ok(())
+                    },
+                );
+
+                *self.output = match expansion {
+                    Ok(Some(expansion)) => Ok(Some((i.span(), expansion))),
+                    Ok(None) => Ok(None),
+                    Err(err) => Err(err),
+                };
             }
         }
     }
@@ -650,7 +691,7 @@ pub(crate) fn process_extern_crates_in_lib(
     struct Visitor<'a, F> {
         replacements: &'a mut anyhow::Result<BTreeMap<(LineColumn, LineColumn), String>>,
         convert_extern_crate_name: F,
-    };
+    }
 
     impl<F: FnMut(&syn::Ident) -> anyhow::Result<String>> Visit<'_> for Visitor<'_, F> {
         fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
@@ -743,7 +784,7 @@ pub(crate) fn modify_macros(code: &str, pseudo_extern_crate_name: &str) -> anyho
                 acc.insert(tt2.span().end());
             }
         }
-    };
+    }
 
     struct Visitor<'a> {
         public_macros: &'a mut BTreeSet<String>,

@@ -4,21 +4,24 @@
 
 mod cargo_udeps;
 mod process;
+mod ra_proc_macro;
 mod rust;
 mod rustfmt;
 pub mod shell;
+mod toolchain;
 mod workspace;
 
 use crate::{
+    ra_proc_macro::ProcMacroExpander,
     shell::Shell,
-    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _, WattRuntimes},
+    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _},
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
 use either::Either;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
-use maplit::{btreemap, hashset};
+use maplit::hashset;
 use prettytable::{cell, format::FormatBuilder, row, Table};
 use std::{cmp, collections::BTreeMap, path::PathBuf, str::FromStr};
 use structopt::{clap::AppSettings, StructOpt};
@@ -350,30 +353,49 @@ fn bundle(
     rustfmt: bool,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
-    let out_dirs = if libs_to_bundle
+    let cargo_check_message_format_json = |toolchain: &str, shell: &mut Shell| -> _ {
+        workspace::cargo_check_message_format_json(toolchain, metadata, &bin_package, bin, shell)
+    };
+
+    let cargo_messages_for_out_dirs = &libs_to_bundle
         .keys()
-        .any(|id| metadata[id].has_custom_build())
-    {
-        workspace::execute_build_scripts(metadata, &bin_package, bin, shell)?
-    } else {
-        btreemap!()
-    };
+        .any(|p| metadata[p].has_custom_build())
+        .then(|| {
+            let toolchain = &toolchain::active_toolchain(bin_package.manifest_dir())?;
+            cargo_check_message_format_json(toolchain, shell)
+        })
+        .unwrap_or_else(|| Ok(vec![]))?;
 
-    let watt_runtimes = {
-        let expand = |package: &cm::Package, target: &cm::Target| -> anyhow::Result<WattRuntimes> {
-            package.metadata()?.watt.expand_file_paths(
-                package,
-                target,
-                out_dirs.get(&package.id).map(|p| &**p),
+    let cargo_messages_for_proc_macro_dll_paths = &libs_to_bundle
+        .keys()
+        .any(|p| metadata[p].has_proc_macro())
+        .then(|| {
+            let toolchain =
+                &toolchain::find_toolchain_compatible_with_ra(bin_package.manifest_dir(), shell)?;
+            cargo_check_message_format_json(toolchain, shell)
+        })
+        .unwrap_or_else(|| Ok(vec![]))?;
+
+    let out_dirs = workspace::list_out_dirs(metadata, cargo_messages_for_out_dirs);
+    let proc_macro_crate_dlls =
+        &ra_proc_macro::list_proc_macro_dlls(cargo_messages_for_proc_macro_dll_paths, |p| {
+            libs_to_bundle.contains_key(p)
+        });
+
+    let macro_expander = (!proc_macro_crate_dlls.is_empty())
+        .then(|| {
+            ProcMacroExpander::new(
+                &ra_proc_macro::dl_ra(
+                    &dirs_next::cache_dir()
+                        .with_context(|| "could not find the cache directory")?
+                        .join("cargo-equip"),
+                    shell,
+                )?,
+                proc_macro_crate_dlls,
+                shell,
             )
-        };
-
-        libs_to_bundle
-            .iter()
-            .try_fold(expand(bin_package, bin)?, |acc, (id, (target, _))| {
-                acc.merge(expand(&metadata[id], target)?)
-            })?
-    };
+        })
+        .transpose()?;
 
     let code = xshell::read_file(&bin.src_path)?;
 
@@ -385,13 +407,15 @@ fn bundle(
     shell.status("Bundling", "the code")?;
 
     let code = rust::expand_mods(&bin.src_path)?;
-    let code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
+    let mut code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
             Ok(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
         )
     })?;
-    let mut code = rust::expand_watt_macros(&code, &watt_runtimes, shell)?;
+    if let Some(mut macro_expander) = macro_expander {
+        code = rust::expand_proc_macros(&code, &mut macro_expander, shell)?;
+    }
 
     let contents = libs_to_bundle
         .iter()

@@ -1,5 +1,130 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- cargo-equip now expand procedural macros using `rust-analyzer(.exe)`.
+
+    ```rust
+    #[macro_use]
+    extern crate memoise as _;
+    #[macro_use]
+    extern crate proconio_derive as _;
+
+    #[fastout]
+    fn main() {
+        for i in 0..=100 {
+            println!("{}", fib(i));
+        }
+    }
+
+    #[memoise(n <= 100)]
+    fn fib(n: i64) -> i64 {
+        if n == 0 || n == 1 {
+            return n;
+        }
+        fib(n - 1) + fib(n - 2)
+    }
+    ```
+
+    ↓
+
+    <details>
+    <summary>Output</summary>
+
+    ```rust
+    //! # Procedural macros
+    //!
+    //! - `memoise 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)`         licensed under `BSD-3-Clause`
+    //! - `proconio-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)` licensed under `MIT OR Apache-2.0`
+
+    /*#[macro_use]
+    extern crate memoise as _;*/
+    /*#[macro_use]
+    extern crate proconio_derive as _;*/
+
+    /*#[fastout]
+    fn main() {
+        for i in 0..=100 {
+            println!("{}", fib(i));
+        }
+    }*/
+    fn main() {
+        let __proconio_stdout = ::std::io::stdout();
+        let mut __proconio_stdout = ::std::io::BufWriter::new(__proconio_stdout.lock());
+        #[allow(unused_macros)]
+        macro_rules ! print { ($ ($ tt : tt) *) => { { use std :: io :: Write as _ ; :: std :: write ! (__proconio_stdout , $ ($ tt) *) . unwrap () ; } } ; }
+        #[allow(unused_macros)]
+        macro_rules ! println { ($ ($ tt : tt) *) => { { use std :: io :: Write as _ ; :: std :: writeln ! (__proconio_stdout , $ ($ tt) *) . unwrap () ; } } ; }
+        let __proconio_res = {
+            for i in 0..=100 {
+                println!("{}", fib(i));
+            }
+        };
+        <::std::io::BufWriter<::std::io::StdoutLock> as ::std::io::Write>::flush(
+            &mut __proconio_stdout,
+        )
+        .unwrap();
+        return __proconio_res;
+    }
+
+    /*#[memoise(n <= 100)]
+    fn fib(n: i64) -> i64 {
+        if n == 0 || n == 1 {
+            return n;
+        }
+        fib(n - 1) + fib(n - 2)
+    }*/
+    thread_local ! (static FIB : std :: cell :: RefCell < Vec < Option < i64 > > > = std :: cell :: RefCell :: new (vec ! [None ; 101usize]));
+    fn fib_reset() {
+        FIB.with(|cache| {
+            let mut r = cache.borrow_mut();
+            for r in r.iter_mut() {
+                *r = None
+            }
+        });
+    }
+    fn fib(n: i64) -> i64 {
+        if let Some(ret) = FIB.with(|cache| {
+            let mut bm = cache.borrow_mut();
+            bm[(n) as usize].clone()
+        }) {
+            return ret;
+        }
+        let ret: i64 = (|| {
+            if n == 0 || n == 1 {
+                return n;
+            }
+            fib(n - 1) + fib(n - 2)
+        })();
+        FIB.with(|cache| {
+            let mut bm = cache.borrow_mut();
+            bm[(n) as usize] = Some(ret.clone());
+        });
+        ret
+    }
+
+    // The following code was expanded by `cargo-equip`.
+
+    #[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]#[allow(unused)]pub mod memoise{}
+    #[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]#[allow(unused)]pub mod proconio_derive{}
+    ```
+
+    </details>
+
+    - `watt` crate no longer necessary.
+    - `rust-analyzer(.exe)` is automatically downloaded.
+    - `proc-macro` crates need to be compile with Rust 1.47.0+.
+       If version of the active toolchain is less than 1.47.0, cargo-equip finds an alternative toolchain and uses it for compiling `proc-macro`s.
+    - procedural macros re-exported with `pub use $name::*;` are also able to be expanded.
+
+### Fixed
+
+- Enabled handling non-[`Meta`](https://docs.rs/syn/1/syn/enum.Meta.html) attribute macros such as `#[memoise(n <= 100)]`.
+
+- Fixed a problem where `extern crate` items in a `bin` crate are not removed properly.
+
 ## [0.9.3] - 2021-02-13Z
 
 ### Fixed

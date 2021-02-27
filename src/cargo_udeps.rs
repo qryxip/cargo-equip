@@ -1,9 +1,8 @@
-use crate::shell::Shell;
+use crate::{shell::Shell, toolchain};
 use cargo_metadata as cm;
 use serde::Deserialize;
 use std::{
     collections::{HashMap, HashSet},
-    env,
     path::PathBuf,
 };
 
@@ -15,8 +14,7 @@ pub(crate) fn cargo_udeps(
 ) -> Result<HashSet<String>, String> {
     let cwd = &package.manifest_path.with_file_name("");
 
-    let rustup_exe = which::which_in("rustup", env::var_os("PATH"), cwd)
-        .map_err(|_| "could not find `rustup`".to_owned())?;
+    let rustup_exe = toolchain::rustup_exe(cwd).map_err(|e| e.to_string())?;
 
     let output = crate::process::process(rustup_exe)
         .arg("run")
