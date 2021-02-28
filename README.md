@@ -46,9 +46,9 @@ qryxip-competitive-tonelli-shanks = { git = "https://github.com/qryxip/competiti
 
 ```rust
 #[macro_use]
-extern crate input as _;
-#[macro_use]
 extern crate fastout as _;
+#[macro_use]
+extern crate input as _;
 
 use acl_modint::ModInt;
 use tonelli_shanks::ModIntBaseExt as _;
@@ -73,23 +73,10 @@ fn main() {
 ↓
 
 ```console
-❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check -o ./bundled.rs
-     Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
-    Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 1.76s
-info: Loading save analysis from "/home/ryo/src/local/play-cargo-equip/solve/target/debug/deps/save-analysis/solve-99d680d49de8dec4.json"
-     Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check --message-format json -p 'solve:0.0.0' --bin solve`
-    Checking solve v0.0.0 (/home/ryo/src/local/play-cargo-equip/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 1.75s
-    Bundling the code
-     Running `/home/ryo/.rustup/toolchains/1.42.0-x86_64-unknown-linux-gnu/bin/cargo check`
-    Finished dev [unoptimized + debuginfo] target(s) in 0.00s
-warning: declaring `extern crate .. as ..` in a root module is not recommended: ` extern crate __acl_internal_math as internal_math`
-    Checking cargo-equip-check-output-gasbxby00cjlqd1x v0.1.0 (/tmp/cargo-equip-check-output-gasbxby00cjlqd1x)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.40s
+❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check --bin solve | xsel -b
 ```
 
-[Submit Info #33161 - Library-Checker](https://judge.yosupo.jp/submission/33161)
+[Submit Info #40609 - Library-Checker](https://judge.yosupo.jp/submission/40609)
 
 ## Installation
 
@@ -103,13 +90,13 @@ Install a `nightly` toolchain and [cargo-udeps](https://github.com/est31/cargo-u
 ❯ cargo install cargo-udeps
 ```
 
-### Crates.io
+### From Crates.io
 
 ```console
 ❯ cargo install cargo-equip
 ```
 
-### `master`
+### From `master` branch
 
 ```console
 ❯ cargo install --git https://github.com/qryxip/cargo-equip
@@ -339,9 +326,119 @@ cargo-equip does the following modification.
 
 ## Expanding procedural macros
 
-cargo-equip can expand procedural macros with [watt](https://github.com/dtolnay/watt) crate.
+cargo-equip can expand procedural macros.
 
-TODO
+```rust
+#[macro_use]
+extern crate memoise as _;
+#[macro_use]
+extern crate proconio_derive as _;
+
+#[fastout]
+fn main() {
+    for i in 0..=100 {
+        println!("{}", fib(i));
+    }
+}
+
+#[memoise(n <= 100)]
+fn fib(n: i64) -> i64 {
+    if n == 0 || n == 1 {
+        return n;
+    }
+    fib(n - 1) + fib(n - 2)
+}
+```
+
+↓
+
+<details>
+<summary>Output</summary>
+
+```rust
+//! # Procedural macros
+//!
+//! - `memoise 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)`         licensed under `BSD-3-Clause`
+//! - `proconio-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)` licensed under `MIT OR Apache-2.0`
+
+/*#[macro_use]
+extern crate memoise as _;*/
+/*#[macro_use]
+extern crate proconio_derive as _;*/
+
+/*#[fastout]
+fn main() {
+    for i in 0..=100 {
+        println!("{}", fib(i));
+    }
+}*/
+fn main() {
+    let __proconio_stdout = ::std::io::stdout();
+    let mut __proconio_stdout = ::std::io::BufWriter::new(__proconio_stdout.lock());
+    #[allow(unused_macros)]
+    macro_rules ! print { ($ ($ tt : tt) *) => { { use std :: io :: Write as _ ; :: std :: write ! (__proconio_stdout , $ ($ tt) *) . unwrap () ; } } ; }
+    #[allow(unused_macros)]
+    macro_rules ! println { ($ ($ tt : tt) *) => { { use std :: io :: Write as _ ; :: std :: writeln ! (__proconio_stdout , $ ($ tt) *) . unwrap () ; } } ; }
+    let __proconio_res = {
+        for i in 0..=100 {
+            println!("{}", fib(i));
+        }
+    };
+    <::std::io::BufWriter<::std::io::StdoutLock> as ::std::io::Write>::flush(
+        &mut __proconio_stdout,
+    )
+    .unwrap();
+    return __proconio_res;
+}
+
+/*#[memoise(n <= 100)]
+fn fib(n: i64) -> i64 {
+    if n == 0 || n == 1 {
+        return n;
+    }
+    fib(n - 1) + fib(n - 2)
+}*/
+thread_local ! (static FIB : std :: cell :: RefCell < Vec < Option < i64 > > > = std :: cell :: RefCell :: new (vec ! [None ; 101usize]));
+fn fib_reset() {
+    FIB.with(|cache| {
+        let mut r = cache.borrow_mut();
+        for r in r.iter_mut() {
+            *r = None
+        }
+    });
+}
+fn fib(n: i64) -> i64 {
+    if let Some(ret) = FIB.with(|cache| {
+        let mut bm = cache.borrow_mut();
+        bm[(n) as usize].clone()
+    }) {
+        return ret;
+    }
+    let ret: i64 = (|| {
+        if n == 0 || n == 1 {
+            return n;
+        }
+        fib(n - 1) + fib(n - 2)
+    })();
+    FIB.with(|cache| {
+        let mut bm = cache.borrow_mut();
+        bm[(n) as usize] = Some(ret.clone());
+    });
+    ret
+}
+
+// The following code was expanded by `cargo-equip`.
+
+#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]#[allow(unused)]pub mod memoise{}
+#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]#[allow(unused)]pub mod proconio_derive{}
+```
+
+</details>
+
+- `rust-analyzer(.exe)` is automatically downloaded.
+- `proc-macro` crates need to be compile with Rust 1.47.0+.
+   If version of the active toolchain is less than 1.47.0, cargo-equip finds an alternative toolchain and uses it for compiling `proc-macro`s.
+- procedural macros re-exported with `pub use $name::*;` are also able to be expanded.
 
 ## Options
 
