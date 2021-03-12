@@ -1,6 +1,7 @@
 mod tt;
 
 use anyhow::{anyhow, bail, Context as _};
+use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
 use itertools::Itertools as _;
 use maplit::btreemap;
@@ -79,7 +80,7 @@ pub(crate) fn dl_ra(dir: &Path, shell: &mut Shell) -> anyhow::Result<PathBuf> {
 pub(crate) fn list_proc_macro_dlls<P: FnMut(&cm::PackageId) -> bool>(
     cargo_messages: &[cm::Message],
     mut filter: P,
-) -> HashSet<&Path> {
+) -> HashSet<&Utf8Path> {
     cargo_messages
         .iter()
         .flat_map(|message| match message {
@@ -94,15 +95,15 @@ pub(crate) fn list_proc_macro_dlls<P: FnMut(&cm::PackageId) -> bool>(
 
 pub(crate) struct ProcMacroExpander {
     ra: RaProcMacro,
-    func_like: BTreeMap<String, PathBuf>,
-    attr: BTreeMap<String, PathBuf>,
-    custom_derive: BTreeMap<String, PathBuf>,
+    func_like: BTreeMap<String, Utf8PathBuf>,
+    attr: BTreeMap<String, Utf8PathBuf>,
+    custom_derive: BTreeMap<String, Utf8PathBuf>,
 }
 
 impl ProcMacroExpander {
     pub(crate) fn new(
         rust_analyzer_exe: &Path,
-        dll_paths: &HashSet<&Path>,
+        dll_paths: &HashSet<&Utf8Path>,
         shell: &mut Shell,
     ) -> anyhow::Result<Self> {
         shell.status(
@@ -206,7 +207,7 @@ impl ProcMacroExpander {
 
     fn expand(
         &mut self,
-        dll_path: &Path,
+        dll_path: &Utf8Path,
         macro_name: &str,
         macro_body: proc_macro2::TokenStream,
         attributes: Option<proc_macro2::Group>,
@@ -255,7 +256,7 @@ impl RaProcMacro {
 
     pub(crate) fn list_macro(
         &mut self,
-        dll_path: &Path,
+        dll_path: &Utf8Path,
         mut on_error: impl FnMut(&str) -> anyhow::Result<()>,
     ) -> anyhow::Result<Vec<(String, ProcMacroKind)>> {
         self.request(Request::ListMacro(ListMacrosTask {
@@ -272,7 +273,7 @@ impl RaProcMacro {
 
     fn expansion_macro(
         &mut self,
-        dll_path: &Path,
+        dll_path: &Utf8Path,
         macro_name: &str,
         macro_body: tt::Subtree,
         attributes: Option<tt::Subtree>,
@@ -334,7 +335,7 @@ enum Request {
 
 #[derive(Serialize)]
 struct ListMacrosTask {
-    lib: PathBuf,
+    lib: Utf8PathBuf,
 }
 
 #[derive(Serialize)]
@@ -342,7 +343,7 @@ struct ExpansionTask {
     macro_body: tt::Subtree,
     macro_name: String,
     attributes: Option<tt::Subtree>,
-    lib: PathBuf,
+    lib: Utf8PathBuf,
     env: Vec<(String, String)>,
 }
 

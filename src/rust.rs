@@ -1,5 +1,6 @@
 use crate::{ra_proc_macro::ProcMacroExpander, shell::Shell};
 use anyhow::{anyhow, bail, Context as _};
+use camino::{Utf8Path, Utf8PathBuf};
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
 use itertools::Itertools as _;
@@ -10,7 +11,6 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     env, fs, mem,
     ops::Range,
-    path::PathBuf,
     str,
 };
 use syn::{
@@ -111,14 +111,14 @@ pub(crate) fn process_extern_crate_in_bin(
     Ok(replace_ranges(code, replacements))
 }
 
-pub(crate) fn expand_mods(src_path: &std::path::Path) -> anyhow::Result<String> {
-    fn expand_mods(src_path: &std::path::Path, depth: usize) -> anyhow::Result<String> {
+pub(crate) fn expand_mods(src_path: &Utf8Path) -> anyhow::Result<String> {
+    fn expand_mods(src_path: &Utf8Path, depth: usize) -> anyhow::Result<String> {
         let content = std::fs::read_to_string(src_path)
-            .with_context(|| format!("could not read `{}`", src_path.display()))?;
+            .with_context(|| format!("could not read `{}`", src_path))?;
 
         let syn::File { items, .. } = syn::parse_file(&content)
             .map_err(|e| anyhow!("{:?}", e))
-            .with_context(|| format!("could not parse `{}`", src_path.display()))?;
+            .with_context(|| format!("could not parse `{}`", src_path))?;
 
         let replacements = items
             .into_iter()
@@ -148,7 +148,7 @@ pub(crate) fn expand_mods(src_path: &std::path::Path) -> anyhow::Result<String> 
                         _ => None,
                     }) {
                     vec![src_path.with_file_name("").join(path)]
-                } else if depth == 0 || src_path.file_name() == Some("mod.rs".as_ref()) {
+                } else if depth == 0 || src_path.file_name() == Some("mod.rs") {
                     vec![
                         src_path
                             .with_file_name(&ident.to_string())
@@ -515,9 +515,9 @@ pub(crate) fn expand_proc_macros(
     }
 }
 
-pub(crate) fn expand_includes(code: &str, out_dir: &std::path::Path) -> anyhow::Result<String> {
+pub(crate) fn expand_includes(code: &str, out_dir: &Utf8Path) -> anyhow::Result<String> {
     struct Visitor<'a> {
-        out_dir: &'a std::path::Path,
+        out_dir: &'a Utf8Path,
         replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
     }
 
@@ -540,7 +540,7 @@ pub(crate) fn expand_includes(code: &str, out_dir: &std::path::Path) -> anyhow::
                 } else if [parse_quote!(::core::env), parse_quote!(::std::env)].contains(path) {
                     let name = syn::parse2::<LitStr>(tokens.clone()).ok()?.value();
                     if name == "OUT_DIR" {
-                        self.out_dir.to_str().map(ToOwned::to_owned)
+                        Some(self.out_dir.as_str().to_owned())
                     } else {
                         env::var(name).ok()
                     }
@@ -567,7 +567,7 @@ pub(crate) fn expand_includes(code: &str, out_dir: &std::path::Path) -> anyhow::
             {
                 if let Ok(expr) = syn::parse2(i.mac.tokens.clone()) {
                     if let Some(path) = self.resolve(&expr) {
-                        let path = PathBuf::from(path);
+                        let path = Utf8PathBuf::from(path);
                         if path.is_absolute() {
                             if let Ok(content) = fs::read_to_string(path) {
                                 self.replacements

@@ -1,5 +1,6 @@
 use crate::{shell::Shell, toolchain};
 use anyhow::{anyhow, bail, Context as _};
+use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
 use if_chain::if_chain;
 use itertools::Itertools as _;
@@ -64,7 +65,7 @@ pub(crate) fn cargo_check_message_format_json(
 pub(crate) fn list_out_dirs<'cm>(
     metadata: &'cm cm::Metadata,
     messages: &[cm::Message],
-) -> BTreeMap<&'cm cm::PackageId, PathBuf> {
+) -> BTreeMap<&'cm cm::PackageId, Utf8PathBuf> {
     messages
         .iter()
         .flat_map(|message| match message {
@@ -78,7 +79,7 @@ pub(crate) fn list_out_dirs<'cm>(
         .collect()
 }
 
-pub(crate) fn get_author(workspace_root: &Path) -> anyhow::Result<String> {
+pub(crate) fn get_author(workspace_root: &Utf8Path) -> anyhow::Result<String> {
     #[derive(Deserialize)]
     struct Manifest {
         package: ManifestPackage,
@@ -542,8 +543,7 @@ fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &c
 pub(crate) trait PackageExt {
     fn has_custom_build(&self) -> bool;
     fn has_proc_macro(&self) -> bool;
-    fn manifest_dir(&self) -> &Path;
-    fn manifest_dir_utf8(&self) -> &str;
+    fn manifest_dir(&self) -> &Utf8Path;
     fn read_license_text(&self) -> anyhow::Result<Option<String>>;
 }
 
@@ -560,14 +560,8 @@ impl PackageExt for cm::Package {
             .any(|cm::Target { kind, .. }| *kind == ["proc-macro".to_owned()])
     }
 
-    fn manifest_dir(&self) -> &Path {
+    fn manifest_dir(&self) -> &Utf8Path {
         self.manifest_path.parent().expect("should not be empty")
-    }
-
-    fn manifest_dir_utf8(&self) -> &str {
-        self.manifest_dir()
-            .to_str()
-            .expect("this value comes from a JSON")
     }
 
     fn read_license_text(&self) -> anyhow::Result<Option<String>> {
