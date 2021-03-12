@@ -1,6 +1,11 @@
-use std::{env, path::Path};
+use camino::Utf8Path;
+use std::env;
 
-pub(crate) fn rustfmt(workspace_root: &Path, code: &str, edition: &str) -> anyhow::Result<String> {
+pub(crate) fn rustfmt(
+    workspace_root: &Utf8Path,
+    code: &str,
+    edition: &str,
+) -> anyhow::Result<String> {
     let tempfile = tempfile::Builder::new()
         .prefix("cargo-equip-")
         .suffix(".rs")

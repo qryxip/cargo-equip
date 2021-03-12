@@ -1,5 +1,6 @@
 use crate::shell::Shell;
 use anyhow::{anyhow, Context as _};
+use camino::Utf8Path;
 use once_cell::sync::Lazy;
 use semver::{Version, VersionReq};
 use std::{
@@ -8,11 +9,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(crate) fn rustup_exe(cwd: &Path) -> anyhow::Result<PathBuf> {
+pub(crate) fn rustup_exe(cwd: impl AsRef<Path>) -> anyhow::Result<PathBuf> {
     which::which_in("rustup", env::var_os("PATH"), cwd).map_err(|_| anyhow!("`rustup` not found"))
 }
 
-pub(crate) fn active_toolchain(manifest_dir: &Path) -> anyhow::Result<String> {
+pub(crate) fn active_toolchain(manifest_dir: &Utf8Path) -> anyhow::Result<String> {
     let output = crate::process::process(rustup_exe(manifest_dir)?)
         .args(&["show", "active-toolchain"])
         .cwd(manifest_dir)
@@ -21,7 +22,7 @@ pub(crate) fn active_toolchain(manifest_dir: &Path) -> anyhow::Result<String> {
 }
 
 pub(crate) fn find_toolchain_compatible_with_ra(
-    manifest_dir: &Path,
+    manifest_dir: &Utf8Path,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
     let rustup_exe = &rustup_exe(manifest_dir)?;
