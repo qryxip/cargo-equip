@@ -406,16 +406,16 @@ fn bundle(
 
     shell.status("Bundling", "the code")?;
 
-    let code = rust::expand_mods(&bin.src_path)?;
+    let mut code = rust::expand_mods(&bin.src_path)?;
+    if let Some(mut macro_expander) = macro_expander {
+        code = rust::expand_proc_macros(&code, &mut macro_expander, shell)?;
+    }
     let mut code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
             Ok(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
         )
     })?;
-    if let Some(mut macro_expander) = macro_expander {
-        code = rust::expand_proc_macros(&code, &mut macro_expander, shell)?;
-    }
 
     let contents = libs_to_bundle
         .iter()
