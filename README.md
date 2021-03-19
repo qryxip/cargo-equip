@@ -308,6 +308,7 @@ cargo-equip does the following modification.
 - `bin`
     - If a `#![cfg_attr(cargo_equip, cargo_equip::skip)]` was found, skips the remaining modification, does `cargo check` if `--check` is specified, and outputs the source code as-is.
     - If any, expands `mod $name;`s recursively indenting them except those containing multi-line literals.
+    - Expands procedural macros.
     - Replaces some of the `extern crate` items.
     - Prepends a doc comment.
     - Appends the expanded libraries.

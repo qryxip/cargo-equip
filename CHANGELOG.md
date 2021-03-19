@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Changed the process order for `bin` crates.
+
+    `extern crate` items are replaced after procedural macros are expanded.
+
+    ```rust
+    let foo = /*foo!()*/{
+        /*extern crate foo as __foo ;*/
+        use crate::foo as __foo;
+        __foo::Foo::new()
+    };
+    ```
+
 ## [0.10.0] - 2021-02-28Z
 
 ### Changed
