@@ -16,6 +16,10 @@
     };
     ```
 
+- Added `https://github.com/rust-lang/crates.io-index#proconio:0.3.7` to `--exclude-atcoder-crates`.
+
+    See [statiolake/proconio-rs#18](https://github.com/statiolake/proconio-rs/pull/18).
+
 ## [0.10.0] - 2021-02-28Z
 
 ### Changed
