@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.11.0] - 2021-03-27Z
 
 ### Changed
 
-- Changed the process order for `bin` crates.
+- Changed the process order for `bin` crates. ([#92](https://github.com/qryxip/cargo-equip/pull/92))
 
     `extern crate` items are replaced after procedural macros are expanded.
 
@@ -16,7 +16,7 @@
     };
     ```
 
-- Added `https://github.com/rust-lang/crates.io-index#proconio:0.3.7` to `--exclude-atcoder-crates`.
+- Added `https://github.com/rust-lang/crates.io-index#proconio:0.3.7` to `--exclude-atcoder-crates`. ([#97](https://github.com/qryxip/cargo-equip/pull/97))
 
     See [statiolake/proconio-rs#18](https://github.com/statiolake/proconio-rs/pull/18).
 
