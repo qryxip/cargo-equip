@@ -192,6 +192,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         "https://github.com/rust-lang/crates.io-index#permutohedron:0.2.4",
         "https://github.com/rust-lang/crates.io-index#petgraph:0.5.0",
         "https://github.com/rust-lang/crates.io-index#proconio:0.3.6",
+        "https://github.com/rust-lang/crates.io-index#proconio:0.3.7",
         "https://github.com/rust-lang/crates.io-index#rand:0.7.3",
         "https://github.com/rust-lang/crates.io-index#rand_chacha:0.2.2",
         "https://github.com/rust-lang/crates.io-index#rand_core:0.5.1",
