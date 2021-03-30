@@ -1,16 +1,12 @@
 # Changelog
 
-## [0.11.0] - 2021-03-27Z
+## [0.11.1] - 2021-03-30Z
 
 ### Added
 
-- Now downloads `aarch` rust-analyzers.
+- Enabled using `aarch64` rust-analyzers. ([#99](https://github.com/qryxip/cargo-equip/pull/99))
 
-- Enabled running for `example` targets.
-
-    ```console
-    ❯ cargo equip … --example atcoder-abc188-a
-    ```
+- Enabled running for `example` targets. ([#100](https://github.com/qryxip/cargo-equip/pull/100))
 
     ```console
     ❯ cargo equip -h | head -n 9 | tail -5
@@ -20,6 +16,20 @@
         cargo equip [OPTIONS] --bin <NAME>
         cargo equip [OPTIONS] --example <NAME>
     ```
+
+    ```console
+    ❯ cargo equip … --example atcoder-abc188-a
+    ```
+
+### Changed
+
+- Updated rust-analzyer to `2021-03-29`. ([#99](https://github.com/qryxip/cargo-equip/pull/99))
+
+### Fixed
+
+- `lib`/`proc-macro` crates in the same packages will be included. ([#100](https://github.com/qryxip/cargo-equip/pull/100))
+
+## [0.11.0] - 2021-03-27Z
 
 ### Changed
 
@@ -38,8 +48,6 @@
 - Added `https://github.com/rust-lang/crates.io-index#proconio:0.3.7` to `--exclude-atcoder-crates`. ([#97](https://github.com/qryxip/cargo-equip/pull/97))
 
     See [statiolake/proconio-rs#18](https://github.com/statiolake/proconio-rs/pull/18).
-
-- Updated rust-analzyer to `2021-03-29`.
 
 ## [0.10.0] - 2021-02-28Z
 
