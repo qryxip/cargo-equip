@@ -113,7 +113,7 @@ fn main() {
 1. 各crate rootには`#[macro_export]`したマクロと同名なアイテムが存在しないようにする。
 
     cargo-equipは`mod lib_name`直下に`pub use crate::{ それらの名前 };`を挿入するため、展開後の`use`で壊れます。
-    `bin`側ではマクロは`#[macro_use]`で使ってください。
+    `bin`/`example`側ではマクロは`#[macro_use]`で使ってください。
 
     ```rust
     // in main source code
@@ -122,7 +122,7 @@ fn main() {
     extern crate input as _;
     ```
 
-    `bin`内の`extern crate`はコメントアウトされます。
+    `bin`/`example`内の`extern crate`はコメントアウトされます。
 
     ```rust
     // in main source code
@@ -199,7 +199,7 @@ fn main() {
     ⋮
     ```
 
-ライブラリが用意できたら、それらを`bin`側の`Cargo.toml`の`[dependencies]`に加えてください。
+ライブラリが用意できたら、それらを`bin`/`example`側の`Cargo.toml`の`[dependencies]`に加えてください。
 コンテスト毎にツールでパッケージを自動生成しているならそれのテンプレートに加えてください。
 
 [rust-lang-ja/ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs)を使いたい場合、[qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted)を使ってください。
@@ -227,10 +227,10 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
 ```
 
 準備ができたらコードを書いてください。
-`bin`側の制約は以下の2つです。
+`bin`/`example`側の制約は以下の2つです。
 
 1. マクロは`use`しない。qualified pathで使うか`#[macro_use]`で使う。
-2. `bin`内に`mod`を作る場合、その中では[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から展開予定のライブラリの名前を解決しない。
+2. `bin`/`example`内に`mod`を作る場合、その中では[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から展開予定のライブラリの名前を解決しない。
 
 ```rust
 #[macro_use]
@@ -258,8 +258,8 @@ fn main() {
 ```
 
 コードが書けたら`cargo equip`で展開します。
-`--bin {binの名前}`か`--src {binのファイルパス}`で`bin`を指定してください。
-パッケージ内の`bin`が一つの場合は省略できます。
+`--bin {binの名前}`か`--example {exampleの名前}`、または`--src {binのファイルパス}`で`bin`/`example`を指定してください。
+パッケージ内の`bin`/`example`が一つの場合は省略できます。
 ただし`default-run`には未対応です。
 
 ```console
@@ -267,9 +267,8 @@ fn main() {
 ```
 
 コードはこのように展開されます。
-`extern_crate_name`が`bin`側から与えられていないクレートは`__package_name_0_1_0`のような名前が与えられます。
+`extern_crate_name`が`bin`/`example`側から与えられていないクレートは`__package_name_0_1_0`のような名前が与えられます。
 
-```diff
 ```diff
 +//! # Bundled libraries
 +//!
@@ -316,7 +315,7 @@ fn main() {
 
 cargo-equipがやる操作は以下の通りです。
 
-- `bin`側
+- `bin`/`example`側
     - トップに`#![cfg_attr(cargo_equip, cargo_equip::skip)]`を発見した場合、以下の処理をスキップして`--check`の処理だけ行い出力
     - (もしあるのなら)`mod $name;`をすべて再帰的に展開する。このとき各モジュールをインデントする。ただし複数行にまたがるリテラルが無い場合はインデントしない
     - 手続き型マクロを展開
@@ -464,7 +463,7 @@ fn fib(n: i64) -> i64 {
 - [`test`](https://doc.rust-lang.org/reference/conditional-compilation.html#test): `false`
 - [`proc_macro`](https://doc.rust-lang.org/reference/conditional-compilation.html#proc_macro): `false`
 - `cargo_equip`: `true`
-- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `bin`側から見て有効化されているもののみ`true`
+- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `bin`/`example`側から見て有効化されているもののみ`true`
 - それ以外: 不明
 
 ```rust

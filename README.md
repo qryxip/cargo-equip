@@ -113,7 +113,7 @@ Follow these constrants when you writing libraries to bundle.
 1. Do not put items with the name names of `#[macro_export]`ed macros in each crate root.
 
     cargo-equip inserts `pub use crate::{ these_names };` just below each `mod lib_name`.
-    Use `#[macro_use]` to import macros in a `bin`.
+    Use `#[macro_use]` to import macros in a `bin`/`example`.
 
     ```rust
     // in main source code
@@ -122,7 +122,7 @@ Follow these constrants when you writing libraries to bundle.
     extern crate input as _;
     ```
 
-    `extern crate` items in `bin`s are commented-out.
+    `extern crate` items in `bin`s/`example`s are commented-out.
 
     ```rust
     // in main source code
@@ -197,7 +197,7 @@ Follow these constrants when you writing libraries to bundle.
     ⋮
     ```
 
-When you finish preparing your library crates, add them to `[dependencies]` of the `bin`.
+When you finish preparing your library crates, add them to `[dependencies]` of the `bin`/`example`.
 If you generate packages automatically with a tool, add them to its template.
 
 If you want to use [rust-lang-ja/ac-library-rs](https://github.com/rust-lang-ja/ac-library-rs), use [qryxip/ac-library-rs-parted](https://github.com/qryxip/ac-library-rs-parted) instead.
@@ -220,7 +220,7 @@ ac-library-rs-parted-string      = { git = "https://github.com/qryxip/ac-library
 ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library-rs-parted" }
 ```
 
-The constraints for `bin`s are:
+The constraints for `bin`s/`example`s are:
 
 1. Do not import macros with `use`. Use them with `#[macro_use]` or with qualified paths.
 2. If you create `mod`s, inside them do not resolve names of crates to bundle directly from [extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude).
@@ -254,6 +254,10 @@ Then execute `cargo-equip`.
 
 ```console
 ❯ cargo equip --bin "$name"
+```
+
+```console
+❯ cargo equip --example "$name"
 ```
 
 cargo-equip outputs code like this.
@@ -305,7 +309,7 @@ It gives tentative `extern_crate_name`s like `__package_name_0_1_0` to dependenc
 
 cargo-equip does the following modification.
 
-- `bin`
+- `bin`/`example`
     - If a `#![cfg_attr(cargo_equip, cargo_equip::skip)]` was found, skips the remaining modification, does `cargo check` if `--check` is specified, and outputs the source code as-is.
     - If any, expands `mod $name;`s recursively indenting them except those containing multi-line literals.
     - Expands procedural macros.
