@@ -6,6 +6,21 @@
 
 - Now downloads `aarch` rust-analyzers.
 
+- Enabled running for `example` targets.
+
+    ```console
+    ❯ cargo equip … --example atcoder-abc188-a
+    ```
+
+    ```console
+    ❯ cargo equip -h | head -n 9 | tail -5
+    USAGE:
+        cargo equip [OPTIONS]
+        cargo equip [OPTIONS] --src <PATH>
+        cargo equip [OPTIONS] --bin <NAME>
+        cargo equip [OPTIONS] --example <NAME>
+    ```
+
 ### Changed
 
 - Changed the process order for `bin` crates. ([#92](https://github.com/qryxip/cargo-equip/pull/92))

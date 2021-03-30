@@ -1,4 +1,4 @@
-use crate::{shell::Shell, toolchain};
+use crate::{shell::Shell, toolchain, workspace::TargetExt as _};
 use cargo_metadata as cm;
 use serde::Deserialize;
 use std::{
@@ -8,7 +8,7 @@ use std::{
 
 pub(crate) fn cargo_udeps(
     package: &cm::Package,
-    bin: &str,
+    target: &cm::Target,
     toolchain: &str,
     shell: &mut Shell,
 ) -> Result<HashSet<String>, String> {
@@ -25,8 +25,7 @@ pub(crate) fn cargo_udeps(
         .arg("json")
         .arg("-p")
         .arg(&package.name)
-        .arg("--bin")
-        .arg(bin)
+        .args(&target.target_option())
         .cwd(cwd)
         .read_with_status(false, shell)
         .map_err(|e| e.to_string())?;
@@ -39,7 +38,16 @@ pub(crate) fn cargo_udeps(
         .find(|(_, OutcomeUnusedDeps { manifest_path, .. })| {
             *manifest_path == package.manifest_path
         })
-        .map(|(_, OutcomeUnusedDeps { normal, .. })| normal)
+        .map(
+            |(
+                _,
+                OutcomeUnusedDeps {
+                    normal,
+                    development,
+                    ..
+                },
+            )| &normal | &development,
+        )
         .unwrap_or_default())
 }
 
@@ -52,4 +60,5 @@ struct Outcome {
 struct OutcomeUnusedDeps {
     manifest_path: PathBuf,
     normal: HashSet<String>,
+    development: HashSet<String>,
 }
