@@ -50,8 +50,7 @@ pub(crate) fn cargo_check_message_format_json(
         .arg("json")
         .arg("-p")
         .arg(format!("{}:{}", bin_package.name, bin_package.version))
-        .arg("--bin")
-        .arg(&bin_target.name)
+        .args(&bin_target.target_option())
         .cwd(&metadata.workspace_root)
         .read_with_status(true, shell)?;
 
@@ -108,6 +107,7 @@ pub(crate) fn get_author(workspace_root: &Utf8Path) -> anyhow::Result<String> {
 pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     metadata: &cm::Metadata,
     package: &cm::Package,
+    need_dev_deps: bool,
     exclude: &[PkgSpec],
     code: &str,
 ) -> anyhow::Result<()> {
@@ -152,13 +152,18 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .parse::<toml_edit::Document>()?;
 
     temp_manifest["dependencies"] = orig_manifest["dependencies"].clone();
-    if let toml_edit::Item::Table(dependencies) = &mut temp_manifest["dependencies"] {
-        let renames = package
-            .dependencies
-            .iter()
-            .flat_map(|cm::Dependency { rename, .. }| rename.as_ref())
-            .collect::<HashSet<_>>();
+    temp_manifest["dev-dependencies"] = orig_manifest["dev-dependencies"].clone();
 
+    let renames = package
+        .dependencies
+        .iter()
+        .filter(|cm::Dependency { kind, .. }| {
+            [cm::DependencyKind::Normal, cm::DependencyKind::Development].contains(kind)
+        })
+        .flat_map(|cm::Dependency { rename, .. }| rename)
+        .collect::<HashSet<_>>();
+
+    let remove_excluded = |table: &mut toml_edit::Table| {
         for name_in_toml in metadata
             .resolve
             .as_ref()
@@ -178,8 +183,15 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
                 }
             })
         {
-            dependencies.remove(name_in_toml);
+            table.remove(name_in_toml);
         }
+    };
+
+    if let toml_edit::Item::Table(table) = &mut temp_manifest["dependencies"] {
+        remove_excluded(table);
+    }
+    if let toml_edit::Item::Table(table) = &mut temp_manifest["dev-dependencies"] {
+        remove_excluded(table);
     }
 
     std::fs::write(
@@ -188,13 +200,15 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     )?;
 
     std::fs::create_dir(temp_pkg.path().join("src").join("bin"))?;
+    std::fs::create_dir(temp_pkg.path().join("examples"))?;
     std::fs::write(
-        temp_pkg
-            .path()
-            .join("src")
-            .join("bin")
-            .join(name)
-            .with_extension("rs"),
+        if need_dev_deps {
+            temp_pkg.path().join("examples")
+        } else {
+            temp_pkg.path().join("src").join("bin")
+        }
+        .join(name)
+        .with_extension("rs"),
         code,
     )?;
 
@@ -211,6 +225,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .arg(&metadata.target_directory)
         .arg("--manifest-path")
         .arg(temp_pkg.path().join("Cargo.toml"))
+        .arg("--all-targets")
         .arg("--offline")
         .cwd(&metadata.workspace_root)
         .exec()?;
@@ -220,18 +235,23 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
 }
 
 pub(crate) trait MetadataExt {
-    fn exactly_one_bin_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)>;
+    fn exactly_one_bin_like_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)>;
     fn bin_target_by_name<'a>(
         &'a self,
         name: &str,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
-    fn bin_target_by_src_path<'a>(
+    fn example_target_by_name<'a>(
+        &'a self,
+        name: &str,
+    ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
+    fn bin_like_target_by_src_path<'a>(
         &'a self,
         src_path: &Path,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
     fn libs_to_bundle<'a>(
         &'a self,
-        package_id: &cm::PackageId,
+        package_id: &'a cm::PackageId,
+        need_dev_deps: bool,
         cargo_udeps_outcome: &HashSet<String>,
         exclude: &[PkgSpec],
     ) -> anyhow::Result<BTreeMap<&'a cm::PackageId, (&'a cm::Target, String)>>;
@@ -248,16 +268,21 @@ pub(crate) trait MetadataExt {
 }
 
 impl MetadataExt for cm::Metadata {
-    fn exactly_one_bin_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)> {
-        match &*bin_targets(self).collect::<Vec<_>>() {
-            [] => bail!("no bin target in this workspace"),
-            [bin] => Ok(*bin),
-            [bins @ ..] => bail!(
-                "could not determine which binary to choose. Use the `--bin` option or \
-                 `--src` option to specify a binary.\n\
+    fn exactly_one_bin_like_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)> {
+        match &*targets_in_ws(self)
+            .filter(|(cm::Target { kind, .. }, _)| {
+                [&["bin".to_owned()][..], &["example".to_owned()][..]].contains(&&**kind)
+            })
+            .collect::<Vec<_>>()
+        {
+            [] => bail!("no bin/example target in this workspace"),
+            [t] => Ok(*t),
+            [ts @ ..] => bail!(
+                "could not determine which binary to choose. Use the `--bin` option, `--example` \
+                 option, or `--src` option to specify a binary.\n\
                  available binaries: {}\n\
                  note: currently `cargo-equip` does not support the `default-run` manifest key.",
-                bins.iter()
+                ts.iter()
                     .map(|(cm::Target { name, .. }, _)| name)
                     .format(", "),
             ),
@@ -268,21 +293,21 @@ impl MetadataExt for cm::Metadata {
         &'a self,
         name: &str,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)> {
-        match *bin_targets(self)
-            .filter(|(t, _)| t.name == name)
-            .collect::<Vec<_>>()
-        {
-            [] => bail!("no bin target named `{}`", name),
-            [bin] => Ok(bin),
-            [..] => bail!("multiple bin targets named `{}` in this workspace", name),
-        }
+        target_by_kind_and_name(self, "bin", name)
     }
 
-    fn bin_target_by_src_path<'a>(
+    fn example_target_by_name<'a>(
+        &'a self,
+        name: &str,
+    ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)> {
+        target_by_kind_and_name(self, "example", name)
+    }
+
+    fn bin_like_target_by_src_path<'a>(
         &'a self,
         src_path: &Path,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)> {
-        match *bin_targets(self)
+        match *targets_in_ws(self)
             .filter(|(t, _)| t.src_path == src_path)
             .collect::<Vec<_>>()
         {
@@ -300,7 +325,8 @@ impl MetadataExt for cm::Metadata {
 
     fn libs_to_bundle<'a>(
         &'a self,
-        package_id: &cm::PackageId,
+        package_id: &'a cm::PackageId,
+        need_dev_deps: bool,
         cargo_udeps_outcome: &HashSet<String>,
         exclude: &[PkgSpec],
     ) -> anyhow::Result<BTreeMap<&'a cm::PackageId, (&'a cm::Target, String)>> {
@@ -309,6 +335,9 @@ impl MetadataExt for cm::Metadata {
         let renames = package
             .dependencies
             .iter()
+            .filter(|cm::Dependency { kind, .. }| {
+                [cm::DependencyKind::Normal, cm::DependencyKind::Development].contains(kind)
+            })
             .flat_map(|cm::Dependency { rename, .. }| rename)
             .collect::<HashSet<_>>();
 
@@ -331,7 +360,7 @@ impl MetadataExt for cm::Metadata {
             .with_context(|| "`resolve` is `null`")?;
         let nodes = nodes.iter().map(|n| (&n.id, n)).collect::<HashMap<_, _>>();
 
-        let satisfies = |node_dep: &cm::NodeDep| -> _ {
+        let satisfies = |node_dep: &cm::NodeDep, accepts_dev: bool| -> _ {
             if exclude.iter().any(|s| s.matches(&self[&node_dep.pkg])) {
                 return false;
             }
@@ -343,7 +372,8 @@ impl MetadataExt for cm::Metadata {
                 .dep_kinds
                 .iter()
                 .any(|cm::DepKindInfo { kind, target, .. }| {
-                    *kind == cm::DependencyKind::Normal
+                    (*kind == cm::DependencyKind::Normal
+                        || accepts_dev && *kind == cm::DependencyKind::Development)
                         && target
                             .as_ref()
                             .and_then(|target| {
@@ -371,7 +401,7 @@ impl MetadataExt for cm::Metadata {
         let mut deps = nodes[package_id]
             .deps
             .iter()
-            .filter(|node_dep| satisfies(node_dep))
+            .filter(|node_dep| satisfies(node_dep, need_dev_deps))
             .flat_map(|node_dep| {
                 let lib_package = &self[&node_dep.pkg];
                 let lib_target =
@@ -382,13 +412,18 @@ impl MetadataExt for cm::Metadata {
                 {
                     (node_dep.name.clone(), &node_dep.name)
                 } else {
-                    (lib_target.name.replace('-', "_"), &lib_package.name)
+                    (lib_target.crate_name(), &lib_package.name)
                 };
                 if cargo_udeps_outcome.contains(lib_name_in_toml) {
                     return None;
                 }
                 Some((&lib_package.id, (lib_target, lib_extern_crate_name)))
             })
+            .chain(
+                package
+                    .lib_like_target()
+                    .map(|lib_target| (package_id, (lib_target, lib_target.crate_name()))),
+            )
             .collect::<BTreeMap<_, _>>();
 
         let all_package_ids = &mut deps.keys().copied().collect::<HashSet<_>>();
@@ -403,7 +438,9 @@ impl MetadataExt for cm::Metadata {
                 .filter(|(_, (cm::Target { kind, .. }, _))| *kind == ["lib".to_owned()])
                 .map(|(package_id, _)| nodes[package_id])
                 .flat_map(|cm::Node { deps, .. }| deps)
-                .filter(|node_dep| satisfies(node_dep) && all_package_ids.insert(&node_dep.pkg))
+                .filter(|node_dep| {
+                    satisfies(node_dep, false) && all_package_ids.insert(&node_dep.pkg)
+                })
                 .flat_map(|cm::NodeDep { pkg, .. }| {
                     let package = &self[pkg];
                     let target = package.targets.iter().find(|cm::Target { kind, .. }| {
@@ -467,10 +504,14 @@ impl MetadataExt for cm::Metadata {
                 .map(|dep_id| &self[dep_id])
                 .flat_map(|p| p.targets.iter().map(move |t| (t, p)))
                 .find(|(t, _)| {
-                    t.name.replace('-', "_") == extern_crate_name
+                    t.crate_name() == extern_crate_name
                         && (*t.kind == ["lib".to_owned()] || *t.kind == ["proc-macro".to_owned()])
                 })
                 .map(|(_, p)| p)
+                .or_else(|| {
+                    matches!(package.lib_like_target(), Some(t) if t.crate_name() == extern_crate_name)
+                        .then(|| package)
+                })
                 .with_context(|| {
                     format!(
                         "no external library found which `extern_crate_name` is `{}`",
@@ -522,8 +563,7 @@ impl MetadataExt for cm::Metadata {
                         .find(|cm::Target { kind, .. }| {
                             *kind == ["lib".to_owned()] || *kind == ["proc-macro".to_owned()]
                         })?
-                        .name
-                        .replace('-', "_")
+                        .crate_name()
                 };
                 Some((pkg, extern_crate_name))
             })
@@ -531,18 +571,37 @@ impl MetadataExt for cm::Metadata {
     }
 }
 
-fn bin_targets(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &cm::Package)> {
+fn target_by_kind_and_name<'a>(
+    metadata: &'a cm::Metadata,
+    kind: &str,
+    name: &str,
+) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)> {
+    match *targets_in_ws(metadata)
+        .filter(|(t, _)| t.name == name && t.kind == [kind.to_owned()])
+        .collect::<Vec<_>>()
+    {
+        [] => bail!("no {} target named `{}`", kind, name),
+        [target] => Ok(target),
+        [..] => bail!(
+            "multiple {} targets named `{}` in this workspace",
+            kind,
+            name,
+        ),
+    }
+}
+
+fn targets_in_ws(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, &cm::Package)> {
     metadata
         .packages
         .iter()
         .filter(move |cm::Package { id, .. }| metadata.workspace_members.contains(id))
         .flat_map(|p| p.targets.iter().map(move |t| (t, p)))
-        .filter(|(cm::Target { kind, .. }, _)| *kind == ["bin".to_owned()])
 }
 
 pub(crate) trait PackageExt {
     fn has_custom_build(&self) -> bool;
     fn has_proc_macro(&self) -> bool;
+    fn lib_like_target(&self) -> Option<&cm::Target>;
     fn manifest_dir(&self) -> &Utf8Path;
     fn read_license_text(&self) -> anyhow::Result<Option<String>>;
 }
@@ -558,6 +617,12 @@ impl PackageExt for cm::Package {
         self.targets
             .iter()
             .any(|cm::Target { kind, .. }| *kind == ["proc-macro".to_owned()])
+    }
+
+    fn lib_like_target(&self) -> Option<&cm::Target> {
+        self.targets.iter().find(|cm::Target { kind, .. }| {
+            [&["lib".to_owned()][..], &["proc-macro".to_owned()][..]].contains(&&**kind)
+        })
     }
 
     fn manifest_dir(&self) -> &Utf8Path {
@@ -622,6 +687,30 @@ impl PackageIdExt for cm::PackageId {
             } else {
                 self.repr.clone()
             }
+        }
+    }
+}
+
+pub(crate) trait TargetExt {
+    fn is_example(&self) -> bool;
+    fn crate_name(&self) -> String;
+    fn target_option(&self) -> [&str; 2];
+}
+
+impl TargetExt for cm::Target {
+    fn is_example(&self) -> bool {
+        self.kind == ["example".to_owned()]
+    }
+
+    fn crate_name(&self) -> String {
+        self.name.replace('-', "_")
+    }
+
+    fn target_option(&self) -> [&str; 2] {
+        if self.is_example() {
+            ["--example", &self.name]
+        } else {
+            ["--bin", &self.name]
         }
     }
 }

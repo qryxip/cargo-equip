@@ -14,7 +14,7 @@ mod workspace;
 use crate::{
     ra_proc_macro::ProcMacroExpander,
     shell::Shell,
-    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _},
+    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _, TargetExt as _},
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
@@ -40,17 +40,22 @@ pub enum Opt {
         usage(
             r#"cargo equip [OPTIONS]
     cargo equip [OPTIONS] --src <PATH>
-    cargo equip [OPTIONS] --bin <NAME>"#,
+    cargo equip [OPTIONS] --bin <NAME>
+    cargo equip [OPTIONS] --example <NAME>"#,
         )
     )]
     Equip {
         /// Path the main source file of the bin target
-        #[structopt(long, value_name("PATH"), conflicts_with("bin"))]
+        #[structopt(long, value_name("PATH"), conflicts_with_all(&["bin", "example"]))]
         src: Option<PathBuf>,
 
         /// Name of the bin target
-        #[structopt(long, value_name("NAME"))]
+        #[structopt(long, value_name("NAME"), conflicts_with("example"))]
         bin: Option<String>,
+
+        /// Name of the example target
+        #[structopt(long, value_name("NAME"))]
+        example: Option<String>,
 
         /// Path to Cargo.toml
         #[structopt(long, value_name("PATH"))]
@@ -219,6 +224,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let Opt::Equip {
         src,
         bin,
+        example,
         manifest_path,
         exclude,
         exclude_atcoder_crates,
@@ -261,22 +267,23 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let (bin, bin_package) = if let Some(bin) = bin {
         metadata.bin_target_by_name(&bin)
+    } else if let Some(example) = example {
+        metadata.example_target_by_name(&example)
     } else if let Some(src) = src {
-        metadata.bin_target_by_src_path(&cwd.join(src))
+        metadata.bin_like_target_by_src_path(&cwd.join(src))
     } else {
-        metadata.exactly_one_bin_target()
+        metadata.exactly_one_bin_like_target()
     }?;
 
     let libs_to_bundle = {
-        let unused_deps = match cargo_udeps::cargo_udeps(&bin_package, &bin.name, &toolchain, shell)
-        {
+        let unused_deps = &match cargo_udeps::cargo_udeps(&bin_package, &bin, &toolchain, shell) {
             Ok(unused_deps) => unused_deps,
             Err(warning) => {
                 shell.warn(warning)?;
                 hashset!()
             }
         };
-        metadata.libs_to_bundle(&bin_package.id, &unused_deps, &exclude)?
+        metadata.libs_to_bundle(&bin_package.id, bin.is_example(), unused_deps, &exclude)?
     };
 
     let error_message = |head: &str| {
@@ -326,6 +333,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         workspace::cargo_check_using_current_lockfile_and_cache(
             &metadata,
             &bin_package,
+            bin.is_example(),
             &exclude,
             &code,
         )
