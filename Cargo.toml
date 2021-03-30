@@ -21,6 +21,7 @@ fixedbitset = "0.4.0"
 if_chain = "1.0.1"
 itertools = "0.10.0"
 krates = "0.7.0"
+libflate = "1.0.4"
 maplit = "1.0.2"
 once_cell = "1.7.2"
 prettytable-rs = "0.8.0"
@@ -34,12 +35,12 @@ shell-escape = "0.1.5"
 smol_str = { version = "0.1.17", features = ["serde"] }
 spdx = "0.4.0"
 structopt = "0.3.21"
-syn = { version = "1.0.65", features = ["extra-traits", "full", "parsing", "visit"] }
+syn = { version = "1.0.67", features = ["extra-traits", "full", "parsing", "visit"] }
 tempfile = "3.2.0"
 termcolor = "1.1.2"
 toml = "0.5.8"
 toml_edit = "0.2.0"
-which = "4.0.2"
+which = "4.1.0"
 xshell = "0.1.9"
 
 [dev-dependencies]
