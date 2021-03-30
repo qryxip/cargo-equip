@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
+// https://github.com/rust-analyzer/rust-analyzer/blob/2021-03-29/crates/proc_macro_api/src/rpc.rs
+
 #[derive(Clone, Deserialize, Serialize)]
 enum TokenTree {
     Leaf(Leaf),
@@ -48,10 +50,7 @@ impl From<proc_macro2::Group> for Subtree {
         };
 
         fn delimiter(kind: DelimiterKind) -> Delimiter {
-            Delimiter {
-                id: TokenId::unspecified(),
-                kind,
-            }
+            Delimiter { kind }
         }
     }
 }
@@ -76,7 +75,6 @@ impl From<Subtree> for proc_macro2::Group {
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
 struct Delimiter {
-    id: TokenId,
     kind: DelimiterKind,
 }
 
@@ -97,14 +95,12 @@ enum Leaf {
 #[derive(Clone, Deserialize, Serialize)]
 struct Literal {
     text: SmolStr,
-    id: TokenId,
 }
 
 impl From<proc_macro2::Literal> for Literal {
     fn from(lit: proc_macro2::Literal) -> Self {
         Self {
             text: lit.to_string().into(),
-            id: TokenId::unspecified(),
         }
     }
 }
@@ -120,7 +116,6 @@ impl From<Literal> for proc_macro2::Literal {
 struct Punct {
     char: char,
     spacing: Spacing,
-    id: TokenId,
 }
 
 impl From<proc_macro2::Punct> for Punct {
@@ -128,7 +123,6 @@ impl From<proc_macro2::Punct> for Punct {
         Self {
             char: punct.as_char(),
             spacing: punct.spacing().into(),
-            id: TokenId::unspecified(),
         }
     }
 }
@@ -166,14 +160,12 @@ impl From<Spacing> for proc_macro2::Spacing {
 #[derive(Clone, Deserialize, Serialize)]
 struct Ident {
     text: SmolStr,
-    id: TokenId,
 }
 
 impl From<proc_macro2::Ident> for Ident {
     fn from(ident: proc_macro2::Ident) -> Self {
         Self {
             text: ident.to_string().into(),
-            id: TokenId::unspecified(),
         }
     }
 }
@@ -181,14 +173,5 @@ impl From<proc_macro2::Ident> for Ident {
 impl From<Ident> for proc_macro2::Ident {
     fn from(ident: Ident) -> Self {
         proc_macro2::Ident::new(&ident.text, proc_macro2::Span::call_site())
-    }
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize)]
-struct TokenId(u32);
-
-impl TokenId {
-    const fn unspecified() -> Self {
-        Self(!0)
     }
 }

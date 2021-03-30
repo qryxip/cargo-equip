@@ -2,6 +2,10 @@
 
 ## [0.11.0] - 2021-03-27Z
 
+### Added
+
+- Now downloads `aarch` rust-analyzers.
+
 ### Changed
 
 - Changed the process order for `bin` crates. ([#92](https://github.com/qryxip/cargo-equip/pull/92))
@@ -19,6 +23,8 @@
 - Added `https://github.com/rust-lang/crates.io-index#proconio:0.3.7` to `--exclude-atcoder-crates`. ([#97](https://github.com/qryxip/cargo-equip/pull/97))
 
     See [statiolake/proconio-rs#18](https://github.com/statiolake/proconio-rs/pull/18).
+
+- Updated rust-analzyer to `2021-03-29`.
 
 ## [0.10.0] - 2021-02-28Z
 

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashSet, VecDeque},
     env,
-    io::{self, BufRead as _, BufReader, Write as _},
+    io::{self, BufRead as _, BufReader, Read as _, Write as _},
     ops::Deref,
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -21,47 +21,54 @@ pub(crate) fn dl_ra(dir: &Path, shell: &mut Shell) -> anyhow::Result<PathBuf> {
     xshell::mkdir_p(dir)?;
 
     let ra_path = dir
-        .join("rust-analyzer")
+        .join(format!("rust-analyzer-{}", TAG))
         .with_extension(env::consts::EXE_EXTENSION);
 
     if ra_path.exists() {
-        let output = crate::process::process(&ra_path)
-            .arg("--version")
-            .cwd(dir)
-            .read(true)?;
-        if output.split_ascii_whitespace().last() == Some(REV) {
-            return Ok(ra_path);
-        }
+        return Ok(ra_path);
     }
 
     let file_name = if cfg!(all(target_arch = "x86_64", target_os = "windows")) {
-        "rust-analyzer-windows.exe"
+        "rust-analyzer-x86_64-pc-windows-msvc.gz"
     } else if cfg!(all(target_arch = "x86_64", target_os = "macos")) {
-        "rust-analyzer-mac"
+        "rust-analyzer-x86_64-apple-darwin.gz"
     } else if cfg!(all(target_arch = "x86_64", target_os = "linux")) {
-        "rust-analyzer-linux"
+        "rust-analyzer-x86_64-unknown-linux-gnu.gz"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "windows")) {
+        "rust-analyzer-aarch64-pc-windows-msvc.gz"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
+        "rust-analyzer-aarch64-apple-darwin.gz"
+    } else if cfg!(all(target_arch = "aarch64", target_os = "linux")) {
+        "rust-analyzer-aarch64-unknown-linux-gnu.gz"
     } else {
-        bail!("only x86_64 Windows/macOS/Linux supported");
+        bail!("only x86_64/aarch64 Windows/macOS/Linux supported");
     };
 
     let url = format!(
         "https://github.com/rust-analyzer/rust-analyzer/releases/download/{}/{}",
         TAG, file_name,
     );
-    curl(&url, &ra_path, dir, shell)?;
+    let gz = &curl(&url, dir, shell)?;
+    let ra = decode_gz(gz).with_context(|| format!("could not decode {}", file_name))?;
+    xshell::write_file(&ra_path, ra)?;
+    shell.status("Wrote", ra_path.display())?;
     chmod755(&ra_path)?;
     return Ok(ra_path);
 
-    static REV: &str = "14de9e5";
-    static TAG: &str = "2021-02-22";
+    static TAG: &str = "2021-03-29";
 
-    fn curl(url: &str, dst: &Path, cwd: &Path, shell: &mut Shell) -> anyhow::Result<()> {
+    fn curl(url: &str, cwd: &Path, shell: &mut Shell) -> anyhow::Result<Vec<u8>> {
         let curl_exe = which::which("curl").map_err(|_| anyhow!("command not found: curl"))?;
         crate::process::process(curl_exe)
-            .args(&[url, "-Lo"])
-            .arg(dst)
+            .args(&[url, "-L"])
             .cwd(cwd)
-            .exec_with_status(shell)
+            .read_bytes_with_status(shell)
+    }
+
+    fn decode_gz(data: &[u8]) -> io::Result<Vec<u8>> {
+        let mut buf = vec![];
+        libflate::gzip::Decoder::new(data)?.read_to_end(&mut buf)?;
+        Ok(buf)
     }
 
     #[cfg(unix)]
@@ -326,6 +333,8 @@ impl RaProcMacro {
         Ok(())
     }
 }
+
+// https://github.com/rust-analyzer/rust-analyzer/blob/2021-03-29/crates/proc_macro_api/src/msg.rs
 
 #[derive(Serialize)]
 enum Request {
