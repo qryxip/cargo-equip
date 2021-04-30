@@ -42,6 +42,8 @@
     42
     ```
 
+- Clones Git repositories if license files are not found in `manifest_dir`s.
+
 ### Changed
 
 - cargo-equip won't error for unresolved `extern crate` items.

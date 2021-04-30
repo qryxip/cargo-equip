@@ -1,5 +1,7 @@
+mod license;
+
 use crate::{shell::Shell, toolchain};
-use anyhow::{anyhow, bail, Context as _};
+use anyhow::{bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
 use if_chain::if_chain;
@@ -625,42 +627,7 @@ impl PackageExt for cm::Package {
     }
 
     fn read_license_text(&self) -> anyhow::Result<Option<String>> {
-        let mut license = self
-            .license
-            .as_deref()
-            .with_context(|| format!("`{}`: missing `license`", self.id))?;
-
-        if license == "MIT/Apache-2.0" {
-            license = "MIT OR Apache-2.0";
-        }
-        if license == "Apache-2.0/MIT" {
-            license = "Apache-2.0 OR MIT";
-        }
-
-        let license = spdx::Expression::parse(license).map_err(|e| {
-            anyhow!("{}", e).context(format!("`{}`: could not parse `license`", self.id))
-        })?;
-
-        let is = |name| license.evaluate(|r| r.license.id() == spdx::license_id(name));
-
-        let read_license_file = |file_names: &[&str]| -> _ {
-            let path = file_names
-                .iter()
-                .map(|name| self.manifest_path.with_file_name(name))
-                .find(|path| path.exists())
-                .with_context(|| format!("`{}`: could not find the license file", self.id))?;
-            xshell::read_file(path).map_err(anyhow::Error::from)
-        };
-
-        if is("CC0-1.0") || is("Unlicense") {
-            Ok(None)
-        } else if is("MIT") {
-            read_license_file(&["LICENSE-MIT", "LICENSE"]).map(Some)
-        } else if is("Apache-2.0") {
-            read_license_file(&["LICENSE-APACHE", "LICENSE"]).map(Some)
-        } else {
-            bail!("`{}`: unsupported license: `{}`", self.id, license);
-        }
+        license::license_file(self)
     }
 }
 

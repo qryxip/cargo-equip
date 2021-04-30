@@ -585,10 +585,18 @@ fn bundle(
                         .iter()
                         .all(|author| lib_package.authors.contains(author))
                 })
-                .flat_map(|lib_package| match lib_package.read_license_text() {
-                    Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
-                    Ok(None) => None,
-                    Err(err) => Some(Err(err)),
+                .flat_map(|lib_package| {
+                    if let Err(err) = shell.status(
+                        "Reading",
+                        format!("the license file of `{}`", lib_package.id),
+                    ) {
+                        return Some(Err(err.into()));
+                    }
+                    match lib_package.read_license_text() {
+                        Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
+                        Ok(None) => None,
+                        Err(err) => Some(Err(err)),
+                    }
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
