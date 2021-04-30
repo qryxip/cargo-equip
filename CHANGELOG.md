@@ -1,5 +1,51 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Supports `#[cfg(..)] extern crate ..;` items.
+
+    Now you can bundle [lazy\_static](https://docs.rs/crate/lazy_static/1.4.0).
+
+    ```console
+    ❯ cat >./src/main.rs <<EOF
+    heredoc> #[macro_use]
+    heredoc> extern crate lazy_static as _;
+    heredoc>
+    heredoc> fn main() {
+    heredoc>     println!("{}", *N);
+    heredoc> }
+    heredoc>
+    heredoc> lazy_static! {
+    heredoc>     static ref N: u32 = 42;
+    heredoc> }
+    heredoc> EOF
+    ❯ cargo equip \
+    >       --resolve-cfgs \
+    >       --check \
+    >       --remove docs \
+    >       --minify libs \
+    >       --rustfmt \
+    >       -o ./bundled.rs
+         Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p bundle-proconio --bin bundle-proconio`
+        Checking bundle-proconio v0.1.0 (/home/ryo/src/local/bundle-proconio)
+        Finished dev [unoptimized + debuginfo] target(s) in 0.43s
+    info: Loading save analysis from "/home/ryo/src/local/bundle-proconio/target/debug/deps/save-analysis/bundle_proconio-65ed1cd2cb2d0758.json"
+        Bundling the code
+         Reading the license file of `lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)`
+        Checking cargo-equip-check-output-7l11rus91rnoie88 v0.1.0 (/tmp/cargo-equip-check-output-7l11rus91rnoie88)
+        Finished dev [unoptimized + debuginfo] target(s) in 0.45s
+    ❯ stat -c %s ./bundled.rs
+    4353
+    ❯ rustc --edition 2018 -o /tmp/bundled ./bundled.rs && /tmp/bundled
+    42
+    ```
+
+### Changed
+
+- cargo-equip won't error for unresolved `extern crate` items.
+
 ## [0.11.1] - 2021-03-30Z
 
 ### Added

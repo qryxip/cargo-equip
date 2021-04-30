@@ -259,7 +259,7 @@ pub(crate) trait MetadataExt {
         &'a self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
-    ) -> anyhow::Result<&cm::Package>;
+    ) -> Option<&cm::Package>;
     fn libs_with_extern_crate_names(
         &self,
         package_id: &cm::PackageId,
@@ -472,7 +472,7 @@ impl MetadataExt for cm::Metadata {
         &'a self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
-    ) -> anyhow::Result<&cm::Package> {
+    ) -> Option<&cm::Package> {
         // https://docs.rs/cargo/0.47.0/src/cargo/core/resolver/resolve.rs.html#323-352
 
         let package = &self[package_id];
@@ -482,8 +482,7 @@ impl MetadataExt for cm::Metadata {
             .as_ref()
             .into_iter()
             .flat_map(|cm::Resolve { nodes, .. }| nodes)
-            .find(|cm::Node { id, .. }| id == package_id)
-            .with_context(|| format!("`{}` not found in the dependency graph", package_id))?;
+            .find(|cm::Node { id, .. }| id == package_id)?;
 
         let found_explicitly_renamed_one = package
             .dependencies
@@ -492,12 +491,14 @@ impl MetadataExt for cm::Metadata {
             .any(|rename| rename == extern_crate_name);
 
         if found_explicitly_renamed_one {
-            Ok(&self[&node
-                .deps
-                .iter()
-                .find(|cm::NodeDep { name, .. }| name == extern_crate_name)
-                .expect("found the dep in `dependencies`, not in `resolve.deps`")
-                .pkg])
+            Some(
+                &self[&node
+                    .deps
+                    .iter()
+                    .find(|cm::NodeDep { name, .. }| name == extern_crate_name)
+                    .expect("found the dep in `dependencies`, not in `resolve.deps`")
+                    .pkg],
+            )
         } else {
             node.dependencies
                 .iter()
@@ -511,12 +512,6 @@ impl MetadataExt for cm::Metadata {
                 .or_else(|| {
                     matches!(package.lib_like_target(), Some(t) if t.crate_name() == extern_crate_name)
                         .then(|| package)
-                })
-                .with_context(|| {
-                    format!(
-                        "no external library found which `extern_crate_name` is `{}`",
-                        extern_crate_name,
-                    )
                 })
         }
     }
