@@ -686,14 +686,14 @@ pub(crate) fn replace_crate_paths(
 pub(crate) fn process_extern_crates_in_lib(
     shell: &mut Shell,
     code: &str,
-    convert_extern_crate_name: impl FnMut(&syn::Ident) -> anyhow::Result<String>,
+    convert_extern_crate_name: impl FnMut(&syn::Ident) -> Option<String>,
 ) -> anyhow::Result<String> {
     struct Visitor<'a, F> {
-        replacements: &'a mut anyhow::Result<BTreeMap<(LineColumn, LineColumn), String>>,
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
         convert_extern_crate_name: F,
     }
 
-    impl<F: FnMut(&syn::Ident) -> anyhow::Result<String>> Visit<'_> for Visitor<'_, F> {
+    impl<F: FnMut(&syn::Ident) -> Option<String>> Visit<'_> for Visitor<'_, F> {
         fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
             let ItemExternCrate {
                 attrs,
@@ -704,19 +704,9 @@ pub(crate) fn process_extern_crates_in_lib(
                 ..
             } = item_use;
 
-            if ["core", "alloc", "std"].contains(&&*ident.to_string()) {
-                return;
-            }
-
-            let to = match (self.convert_extern_crate_name)(ident) {
-                Ok(to) => Ident::new(&to, Span::call_site()),
-                Err(err) => {
-                    *self.replacements = Err(err);
-                    return;
-                }
-            };
-            if let Ok(replacements) = &mut self.replacements {
-                replacements.insert(
+            if let Some(to) = (self.convert_extern_crate_name)(ident) {
+                let to = Ident::new(&to, Span::call_site());
+                self.replacements.insert(
                     (item_use.span().start(), semi_token.span().end()),
                     if let Some((_, rename)) = rename {
                         quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
@@ -750,15 +740,13 @@ pub(crate) fn process_extern_crates_in_lib(
         }
     }
 
-    let mut replacements = Ok(btreemap!());
+    let mut replacements = btreemap!();
 
     Visitor {
         replacements: &mut replacements,
         convert_extern_crate_name,
     }
     .visit_file(&file);
-
-    let replacements = replacements?;
 
     Ok(replace_ranges(code, replacements))
 }

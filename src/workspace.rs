@@ -1,5 +1,7 @@
+mod license;
+
 use crate::{shell::Shell, toolchain};
-use anyhow::{anyhow, bail, Context as _};
+use anyhow::{bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
 use if_chain::if_chain;
@@ -259,7 +261,7 @@ pub(crate) trait MetadataExt {
         &'a self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
-    ) -> anyhow::Result<&cm::Package>;
+    ) -> Option<&cm::Package>;
     fn libs_with_extern_crate_names(
         &self,
         package_id: &cm::PackageId,
@@ -472,7 +474,7 @@ impl MetadataExt for cm::Metadata {
         &'a self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
-    ) -> anyhow::Result<&cm::Package> {
+    ) -> Option<&cm::Package> {
         // https://docs.rs/cargo/0.47.0/src/cargo/core/resolver/resolve.rs.html#323-352
 
         let package = &self[package_id];
@@ -482,8 +484,7 @@ impl MetadataExt for cm::Metadata {
             .as_ref()
             .into_iter()
             .flat_map(|cm::Resolve { nodes, .. }| nodes)
-            .find(|cm::Node { id, .. }| id == package_id)
-            .with_context(|| format!("`{}` not found in the dependency graph", package_id))?;
+            .find(|cm::Node { id, .. }| id == package_id)?;
 
         let found_explicitly_renamed_one = package
             .dependencies
@@ -492,12 +493,14 @@ impl MetadataExt for cm::Metadata {
             .any(|rename| rename == extern_crate_name);
 
         if found_explicitly_renamed_one {
-            Ok(&self[&node
-                .deps
-                .iter()
-                .find(|cm::NodeDep { name, .. }| name == extern_crate_name)
-                .expect("found the dep in `dependencies`, not in `resolve.deps`")
-                .pkg])
+            Some(
+                &self[&node
+                    .deps
+                    .iter()
+                    .find(|cm::NodeDep { name, .. }| name == extern_crate_name)
+                    .expect("found the dep in `dependencies`, not in `resolve.deps`")
+                    .pkg],
+            )
         } else {
             node.dependencies
                 .iter()
@@ -511,12 +514,6 @@ impl MetadataExt for cm::Metadata {
                 .or_else(|| {
                     matches!(package.lib_like_target(), Some(t) if t.crate_name() == extern_crate_name)
                         .then(|| package)
-                })
-                .with_context(|| {
-                    format!(
-                        "no external library found which `extern_crate_name` is `{}`",
-                        extern_crate_name,
-                    )
                 })
         }
     }
@@ -630,42 +627,7 @@ impl PackageExt for cm::Package {
     }
 
     fn read_license_text(&self) -> anyhow::Result<Option<String>> {
-        let mut license = self
-            .license
-            .as_deref()
-            .with_context(|| format!("`{}`: missing `license`", self.id))?;
-
-        if license == "MIT/Apache-2.0" {
-            license = "MIT OR Apache-2.0";
-        }
-        if license == "Apache-2.0/MIT" {
-            license = "Apache-2.0 OR MIT";
-        }
-
-        let license = spdx::Expression::parse(license).map_err(|e| {
-            anyhow!("{}", e).context(format!("`{}`: could not parse `license`", self.id))
-        })?;
-
-        let is = |name| license.evaluate(|r| r.license.id() == spdx::license_id(name));
-
-        let read_license_file = |file_names: &[&str]| -> _ {
-            let path = file_names
-                .iter()
-                .map(|name| self.manifest_path.with_file_name(name))
-                .find(|path| path.exists())
-                .with_context(|| format!("`{}`: could not find the license file", self.id))?;
-            xshell::read_file(path).map_err(anyhow::Error::from)
-        };
-
-        if is("CC0-1.0") || is("Unlicense") {
-            Ok(None)
-        } else if is("MIT") {
-            read_license_file(&["LICENSE-MIT", "LICENSE"]).map(Some)
-        } else if is("Apache-2.0") {
-            read_license_file(&["LICENSE-APACHE", "LICENSE"]).map(Some)
-        } else {
-            bail!("`{}`: unsupported license: `{}`", self.id, license);
-        }
+        license::license_file(self)
     }
 }
 

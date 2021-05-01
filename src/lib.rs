@@ -422,7 +422,7 @@ fn bundle(
     let mut code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
-            Ok(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
+            Some(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
         )
     })?;
 
@@ -454,14 +454,14 @@ fn bundle(
                 let dst_package =
                     metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
                 let (_, dst_pseudo_extern_crate_name) =
-                    libs_to_bundle.get(&dst_package.id).with_context(|| {
-                        format!(
+                    libs_to_bundle.get(&dst_package.id).unwrap_or_else(|| {
+                        panic!(
                             "missing `extern_crate_name` for `{}`. generated one should be given \
                              beforehead. this is a bug",
                             dst_package.id,
-                        )
-                    })?;
-                Ok(dst_pseudo_extern_crate_name.clone())
+                        );
+                    });
+                Some(dst_pseudo_extern_crate_name.clone())
             })?;
             let content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
             let mut content = rust::insert_pseudo_extern_preludes(&content, &{
@@ -585,10 +585,18 @@ fn bundle(
                         .iter()
                         .all(|author| lib_package.authors.contains(author))
                 })
-                .flat_map(|lib_package| match lib_package.read_license_text() {
-                    Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
-                    Ok(None) => None,
-                    Err(err) => Some(Err(err)),
+                .flat_map(|lib_package| {
+                    if let Err(err) = shell.status(
+                        "Reading",
+                        format!("the license file of `{}`", lib_package.id),
+                    ) {
+                        return Some(Err(err.into()));
+                    }
+                    match lib_package.read_license_text() {
+                        Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
+                        Ok(None) => None,
+                        Err(err) => Some(Err(err)),
+                    }
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
