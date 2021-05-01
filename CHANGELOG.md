@@ -48,6 +48,10 @@
 
 - cargo-equip won't error for unresolved `extern crate` items.
 
+### Fixed
+
+- Recognizes `#[macro_export(local_inner_macros)]`.
+
 ## [0.11.1] - 2021-03-30Z
 
 ### Added

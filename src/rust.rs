@@ -788,10 +788,11 @@ pub(crate) fn modify_macros(code: &str, pseudo_extern_crate_name: &str) -> anyho
                 ..
             } = i
             {
+                // we just ignore `local_inner_macros`
                 if attrs
                     .iter()
                     .flat_map(Attribute::parse_meta)
-                    .any(|m| matches!(m, Meta::Path(p) if p.is_ident("macro_export")))
+                    .any(|m| m.path().is_ident("macro_export"))
                 {
                     self.public_macros.insert(ident.to_string());
                 }
