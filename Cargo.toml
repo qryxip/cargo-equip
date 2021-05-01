@@ -1,6 +1,6 @@
 [package]
 name = "cargo-equip"
-version = "0.11.1"
+version = "0.12.0"
 authors = ["Ryo Yamashita <qryxip@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -21,11 +21,11 @@ fixedbitset = "0.4.0"
 if_chain = "1.0.1"
 itertools = "0.10.0"
 krates = "0.7.0"
-libflate = "1.0.4"
+libflate = "1.1.0"
 maplit = "1.0.2"
 once_cell = "1.7.2"
 prettytable-rs = "0.8.0"
-proc-macro2 = { version = "1.0.24", features = ["span-locations"] }
+proc-macro2 = { version = "1.0.26", features = ["span-locations"] }
 quote = "1.0.9"
 rand = "0.8.3"
 semver = "0.11.0"
@@ -35,13 +35,13 @@ shell-escape = "0.1.5"
 smol_str = { version = "0.1.17", features = ["serde"] }
 spdx = "0.4.0"
 structopt = "0.3.21"
-syn = { version = "1.0.67", features = ["extra-traits", "full", "parsing", "visit"] }
+syn = { version = "1.0.71", features = ["extra-traits", "full", "parsing", "visit"] }
 tempfile = "3.2.0"
 termcolor = "1.1.2"
 toml = "0.5.8"
 toml_edit = "0.2.0"
 which = "4.1.0"
-xshell = "0.1.9"
+xshell = "0.1.10"
 
 [dev-dependencies]
 difference = "2.0.0"
