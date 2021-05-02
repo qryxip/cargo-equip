@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Recognizes `#[macro_export(local_inner_macros)]`.
+- Fixed a problem where `$crate`s are not replaced with `$crate::lib_name` in a certain case.
+
 ## [0.12.0] - 2021-05-01Z
 
 ### Added
@@ -47,10 +54,6 @@
 ### Changed
 
 - cargo-equip won't error for unresolved `extern crate` items.
-
-### Fixed
-
-- Recognizes `#[macro_export(local_inner_macros)]`.
 
 ## [0.11.1] - 2021-03-30Z
 
