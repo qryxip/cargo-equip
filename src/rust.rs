@@ -8,6 +8,7 @@ use maplit::{btreemap, btreeset};
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, VecDeque},
     env, fs, mem,
     ops::Range,
@@ -1248,6 +1249,12 @@ fn erase(
     code: &str,
     visit_file: fn(&mut [FixedBitSet], TokenStream) -> syn::Result<()>,
 ) -> anyhow::Result<String> {
+    let code = &if code.contains("\r\n") {
+        Cow::from(code.replace("\r\n", "\n"))
+    } else {
+        Cow::from(code)
+    };
+
     let code = if code.starts_with("#!") {
         let (_, code) = code.split_at(code.find('\n').unwrap_or_else(|| code.len()));
         code
