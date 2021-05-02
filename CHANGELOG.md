@@ -1,5 +1,60 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Recognizes `#[macro_export(local_inner_macros)]`.
+
+- Fixed a problem where `$crate`s are not replaced with `$crate::lib_name` in a certain case.
+
+- Fixed a problem where `--remove` option could not be used for CRLF code.
+
+    With the above 3 fixtures, you can bundle [proconio](https://docs.rs/crate/proconio).
+
+    ```console
+    ❯ cat <<EOF >./src/main.rs
+    heredoc> #[macro_use]
+    heredoc> extern crate proconio as _;
+    heredoc>
+    heredoc> #[fastout]
+    heredoc> fn main() {
+    heredoc>     input!(abs: [(u64, u64)]);
+    heredoc>     for (a, b) in abs {
+    heredoc>         println!("{}", a + b);
+    heredoc>     }
+    heredoc> }
+    heredoc> EOF
+    ❯ cargo equip \
+    >       --resolve-cfgs \
+    >       --remove docs \
+    >       --minify libs \
+    >       --rustfmt \
+    >       --check \
+    >       -o ./bundled.rs
+    ❯ ./run-cargo-equip.bash -o ./bundled.rs
+         Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p bundle-proconio --bin bundle-proconio`
+        Checking bundle-proconio v0.1.0 (/home/ryo/src/local/bundle-proconio)
+        Finished dev [unoptimized + debuginfo] target(s) in 0.45s
+    info: Loading save analysis from "/home/ryo/src/local/bundle-proconio/target/debug/deps/save-analysis/bundle_proconio-31a013a4acd96cad.json"
+         Running `/home/ryo/.cargo/bin/rustup run stable-x86_64-unknown-linux-gnu cargo check --message-format json -p 'bundle-proconio:0.1.0' --bin bundle-proconio`
+        Checking bundle-proconio v0.1.0 (/home/ryo/src/local/bundle-proconio)
+        Finished dev [unoptimized + debuginfo] target(s) in 0.44s
+        Spawning `/home/ryo/.cache/cargo-equip/rust-analyzer-2021-03-29 proc-macro`
+         Readied `#[derive_readable]`
+         Readied `#[fastout]`
+        Bundling the code
+    warning: found `crate` paths. replacing them with `crate::proconio`
+         Reading the license file of `lazy_static 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)`
+         Reading the license file of `proconio 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)`
+        Checking cargo-equip-check-output-fs0en4z4r1d3gd3e v0.1.0 (/tmp/cargo-equip-check-output-fs0en4z4r1d3gd3e)
+        Finished dev [unoptimized + debuginfo] target(s) in 0.19s
+    ❯ stat -c %s ./bundled.rs
+    18024
+    ```
+
+    [Submission Info #46571 - Library Checker](https://judge.yosupo.jp/submission/46571)
+
 ## [0.12.0] - 2021-05-01Z
 
 ### Added
@@ -47,10 +102,6 @@
 ### Changed
 
 - cargo-equip won't error for unresolved `extern crate` items.
-
-### Fixed
-
-- Recognizes `#[macro_export(local_inner_macros)]`.
 
 ## [0.11.1] - 2021-03-30Z
 

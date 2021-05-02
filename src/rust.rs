@@ -8,6 +8,7 @@ use maplit::{btreemap, btreeset};
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, BTreeSet, VecDeque},
     env, fs, mem,
     ops::Range,
@@ -753,13 +754,13 @@ pub(crate) fn process_extern_crates_in_lib(
 
 pub(crate) fn modify_macros(code: &str, pseudo_extern_crate_name: &str) -> anyhow::Result<String> {
     fn find_dollar_crates(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
-        for (i, (tt1, tt2)) in token_stream.into_iter().tuple_windows().enumerate() {
-            if i == 0 {
-                if let proc_macro2::TokenTree::Group(group) = &tt1 {
-                    find_dollar_crates(group.stream(), acc);
-                }
-            }
+        let mut token_stream = token_stream.into_iter().peekable();
 
+        if let Some(proc_macro2::TokenTree::Group(group)) = token_stream.peek() {
+            find_dollar_crates(group.stream(), acc);
+        }
+
+        for (tt1, tt2) in token_stream.tuple_windows() {
             if let proc_macro2::TokenTree::Group(group) = &tt2 {
                 find_dollar_crates(group.stream(), acc);
             }
@@ -1248,6 +1249,12 @@ fn erase(
     code: &str,
     visit_file: fn(&mut [FixedBitSet], TokenStream) -> syn::Result<()>,
 ) -> anyhow::Result<String> {
+    let code = &if code.contains("\r\n") {
+        Cow::from(code.replace("\r\n", "\n"))
+    } else {
+        Cow::from(code)
+    };
+
     let code = if code.starts_with("#!") {
         let (_, code) = code.split_at(code.find('\n').unwrap_or_else(|| code.len()));
         code
