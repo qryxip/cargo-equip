@@ -1,14 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [0.12.1] - 2021-05-02Z
 
 ### Fixed
 
-- Recognizes `#[macro_export(local_inner_macros)]`.
+- Recognizes `#[macro_export(local_inner_macros)]`. ([#105](https://github.com/qryxip/cargo-equip/pull/105))
 
-- Fixed a problem where `$crate`s are not replaced with `$crate::lib_name` in a certain case.
+- Fixed a problem where `$crate`s are not replaced with `$crate::lib_name` in a certain case. ([#106](https://github.com/qryxip/cargo-equip/pull/105))
 
-- Fixed a problem where `--remove` option could not be used for CRLF code.
+- Fixed a problem where `--remove` option could not be used for CRLF code. ([#106](https://github.com/qryxip/cargo-equip/pull/105))
 
     With the above 3 fixtures, you can bundle [proconio](https://docs.rs/crate/proconio).
 
