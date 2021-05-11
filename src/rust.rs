@@ -10,6 +10,7 @@ use quote::{quote, ToTokens};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, VecDeque},
+    convert::Infallible,
     env, fs, mem,
     ops::Range,
     str,
@@ -235,7 +236,7 @@ pub(crate) fn expand_proc_macros(
         if let Some((span, expansion)) = output? {
             let end = to_index(code_lines, span.end());
             let start = to_index(code_lines, span.start());
-            code.insert_str(end, &format!("*/{}", expansion));
+            code.insert_str(end, &format!("*/{}", minify_group(expansion)));
             code.insert_str(start, "/*");
 
             continue;
@@ -254,7 +255,7 @@ pub(crate) fn expand_proc_macros(
             let comma_end = comma_span.map(|comma_end| to_index(code_lines, comma_end));
             let path_range = to_range(code_lines, macro_path_span);
 
-            code.insert_str(insert_at, &expansion.to_string());
+            code.insert_str(insert_at, &minify_group(expansion));
             let end = if let Some(comma_end) = comma_end {
                 comma_end
             } else {
@@ -277,7 +278,7 @@ pub(crate) fn expand_proc_macros(
         if let Some((span, expansion)) = output? {
             let i1 = to_index(code_lines, span.end());
             let i2 = to_index(code_lines, span.start());
-            code.insert_str(i1, &format!("*/{}", expansion));
+            code.insert_str(i1, &format!("*/{}", minify_group(expansion)));
             code.insert_str(i2, "/*");
             continue;
         }
@@ -1305,7 +1306,32 @@ fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
     }
 }
 
-pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyhow::Result<String> {
+pub(crate) fn minify(
+    code: &str,
+    check: impl FnOnce(&str) -> anyhow::Result<bool>,
+) -> anyhow::Result<String> {
+    let tokens = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?
+        .into_token_stream();
+    minify_tokens(tokens, check)
+}
+
+fn minify_group(group: proc_macro2::Group) -> String {
+    minify_tokens(TokenTree::from(group).into(), |_| Ok::<_, Infallible>(true)).unwrap()
+}
+
+fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
+    tokens: TokenStream,
+    check: F,
+) -> Result<String, E> {
+    let safe = tokens.to_string();
+
+    let mut acc = "".to_owned();
+    minify(&mut acc, tokens);
+
+    return if check(&acc)? { Ok(acc) } else { Ok(safe) };
+
     fn minify(acc: &mut String, token_stream: TokenStream) {
         #[derive(PartialEq)]
         enum Prev {
@@ -1398,26 +1424,6 @@ pub(crate) fn minify(code: &str, shell: &mut Shell, name: Option<&str>) -> anyho
         if let Prev::Puncts(puncts, _) = prev {
             *acc += &puncts;
         }
-    }
-
-    let token_stream = syn::parse_file(code)
-        .map_err(|e| anyhow!("{:?}", e))
-        .with_context(|| "could not parse the code")?
-        .into_token_stream();
-
-    let safe = token_stream.to_string();
-
-    let mut acc = "".to_owned();
-    minify(&mut acc, token_stream);
-
-    if syn::parse_file(&acc).is_ok() {
-        Ok(acc)
-    } else {
-        shell.warn(format!(
-            "could not minify the code. inserting spaces{}",
-            name.map(|s| format!(": `{}`", s)).unwrap_or_default(),
-        ))?;
-        Ok(safe)
     }
 }
 
