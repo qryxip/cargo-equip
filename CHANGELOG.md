@@ -11,6 +11,8 @@
     +                                     #[cfg_attr(any()  ,rustfmt::skip)]#[allow(unused)]pub mod lib{/* ... */}
     ```
 
+- Tokens from procedural macros will be minified.
+
 ## [0.12.1] - 2021-05-02Z
 
 ### Fixed

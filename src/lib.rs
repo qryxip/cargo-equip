@@ -497,6 +497,19 @@ fn bundle(
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
+    let minify_file = &mut |content, name: Option<&_>, shell: &mut Shell| -> _ {
+        rust::minify(content, |output| {
+            let is_valid = syn::parse_file(output).is_ok();
+            if !is_valid {
+                shell.warn(format!(
+                    "could not minify the code. inserting spaces{}",
+                    name.map(|s| format!(": `{}`", s)).unwrap_or_default(),
+                ))?;
+            }
+            Ok(is_valid)
+        })
+    };
+
     if !contents.is_empty() {
         let authors = if bin_package.authors.is_empty() {
             vec![workspace::get_author(&metadata.workspace_root)?]
@@ -641,10 +654,10 @@ fn bundle(
                 code += &pseudo_extern_crate_name.to_string();
                 code += "{";
                 code += &if let Either::Left((_, content)) = contents {
-                    rust::minify(
+                    minify_file(
                         content,
-                        shell,
                         Some(&format!("crate::{}", pseudo_extern_crate_name)),
+                        shell,
                     )?
                 } else {
                     "".to_owned()
@@ -667,7 +680,7 @@ fn bundle(
     }
 
     if minify == Minify::All {
-        code = rust::minify(&code, shell, None)?;
+        code = minify_file(&code, None, shell)?;
     }
 
     if rustfmt {

@@ -79,7 +79,7 @@ fn main() {
 >       --bin sqrt_mod `# Specify the bin target` | xsel -b
 ```
 
-[Submit Info #47485 - Library-Checker](https://judge.yosupo.jp/submission/47485)
+[Submit Info #47488 - Library-Checker](https://judge.yosupo.jp/submission/47488)
 
 ## Installation
 
