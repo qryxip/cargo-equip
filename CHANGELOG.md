@@ -1,17 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## [0.12.2] - 2021-05-11Z
 
 ### Changed
 
-- Removed `#[allow(clippy::deprecated_cfg_attr)]`.
+- Removed `#[allow(clippy::deprecated_cfg_attr)]`. ([#110](https://github.com/qryxip/cargo-equip/pull/110))
 
     ```diff
     -#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]#[allow(unused)]pub mod lib{/* ... */}
     +                                     #[cfg_attr(any()  ,rustfmt::skip)]#[allow(unused)]pub mod lib{/* ... */}
     ```
 
-- Tokens from procedural macros will be minified.
+- Tokens from procedural macros will be minified. ([#111](https://github.com/qryxip/cargo-equip/pull/111))
 
 ## [0.12.1] - 2021-05-02Z
 
