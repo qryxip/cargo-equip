@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Removed `#[allow(clippy::deprecated_cfg_attr)]`.
+
+    ```diff
+    -#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]#[allow(unused)]pub mod lib{/* ... */}
+    +                                     #[cfg_attr(any()  ,rustfmt::skip)]#[allow(unused)]pub mod lib{/* ... */}
+    ```
+
 ## [0.12.1] - 2021-05-02Z
 
 ### Fixed

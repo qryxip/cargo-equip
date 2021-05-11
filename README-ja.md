@@ -20,7 +20,7 @@
 
 ```toml
 [package]
-name = "solve"
+name = "library-checker"
 version = "0.0.0"
 edition = "2018"
 
@@ -38,17 +38,14 @@ ac-library-rs-parted-scc          = { git = "https://github.com/qryxip/ac-librar
 ac-library-rs-parted-segtree      = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
 ac-library-rs-parted-string       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
 ac-library-rs-parted-twosat       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-qryxip-competitive-fastout        = { git = "https://github.com/qryxip/competitive-programming-library" }
-qryxip-competitive-input          = { git = "https://github.com/qryxip/competitive-programming-library" }
+proconio                          = { version = "0.4.3", features = ["derive"]                          }
 qryxip-competitive-tonelli-shanks = { git = "https://github.com/qryxip/competitive-programming-library" }
 # ...
 ```
 
 ```rust
 #[macro_use]
-extern crate fastout as _;
-#[macro_use]
-extern crate input as _;
+extern crate proconio as _;
 
 use acl_modint::ModInt;
 use tonelli_shanks::ModIntBaseExt as _;
@@ -73,10 +70,16 @@ fn main() {
 ↓
 
 ```console
-❯ cargo equip --resolve-cfgs --remove comments docs --rustfmt --check --bin solve | xsel -b
+❯ cargo equip \
+>       --resolve-cfgs `# #[cfg(…)]を解決` \
+>       --remove docs `# doc commentsを除去` \
+>       --minify libs `# ライブラリクレートの展開結果をそれぞれ一行にminify` \
+>       --rustfmt `# rustfmtをかける` \
+>       --check `# 最終的な生成物がちゃんとコンパイルできるかチェック` \
+>       --bin sqrt_mod `# bin targetを指定` | xsel -b
 ```
 
-[Submit Info #40609 - Library-Checker](https://judge.yosupo.jp/submission/40609)
+[Submit Info #47485 - Library-Checker](https://judge.yosupo.jp/submission/47485)
 
 ## インストール
 

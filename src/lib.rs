@@ -637,8 +637,7 @@ fn bundle(
             code += "\n";
 
             for (pseudo_extern_crate_name, contents) in &contents {
-                code += "#[allow(clippy::deprecated_cfg_attr)]#[cfg_attr(rustfmt,rustfmt::skip)]";
-                code += "#[allow(unused)]pub mod ";
+                code += "#[cfg_attr(any(),rustfmt::skip)]#[allow(unused)]pub mod ";
                 code += &pseudo_extern_crate_name.to_string();
                 code += "{";
                 code += &if let Either::Left((_, content)) = contents {
