@@ -33,8 +33,9 @@ use syn::{
     ItemTraitAlias, ItemType, ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro, Meta,
     MetaList, MetaNameValue, NestedMeta, PatBox, PatIdent, PatLit, PatMacro, PatOr, PatPath,
     PatRange, PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct, PatType,
-    PatWild, Receiver, Token, TraitItemConst, TraitItemMacro, TraitItemMethod, TraitItemType,
-    TypeParam, UseGroup, UseName, UsePath, UseRename, UseTree, Variadic, Variant, VisRestricted,
+    PatWild, PathSegment, Receiver, Token, TraitItemConst, TraitItemMacro, TraitItemMethod,
+    TraitItemType, TypeParam, UseGroup, UseName, UsePath, UseRename, UseTree, Variadic, Variant,
+    VisRestricted,
 };
 
 pub(crate) fn find_skip_attribute(code: &str) -> anyhow::Result<bool> {
@@ -64,6 +65,88 @@ pub(crate) fn find_skip_attribute(code: &str) -> anyhow::Result<bool> {
                 ) && *attr == parse_quote!(cargo_equip::skip)
             )
         }))
+}
+
+pub(crate) fn translate_abs_paths(
+    code: &str,
+    translate_extern_crate_name: impl FnMut(&str) -> Option<String>,
+) -> anyhow::Result<String> {
+    let file = &syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut replacements = btreemap!();
+    Visitor {
+        replacements: &mut replacements,
+        translate_extern_crate_name,
+    }
+    .visit_file(file);
+
+    return Ok(if replacements.is_empty() {
+        code.to_owned()
+    } else {
+        replace_ranges(code, replacements)
+    });
+
+    struct Visitor<'a, F> {
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+        translate_extern_crate_name: F,
+    }
+
+    impl<F: FnMut(&str) -> Option<String>> Visitor<'_, F> {
+        fn attempt_translate(&mut self, leading_colon: Span, extern_crate_name: &Ident) {
+            if let Some(pseudo_extern_crate_name) =
+                (self.translate_extern_crate_name)(&extern_crate_name.to_string())
+            {
+                self.replacements.insert(
+                    (leading_colon.start(), leading_colon.end()),
+                    "/*::*/crate::".to_owned(),
+                );
+
+                if extern_crate_name != &*pseudo_extern_crate_name {
+                    let span = extern_crate_name.span();
+                    self.replacements.insert(
+                        (span.start(), span.end()),
+                        format!("/*{}*/{}", extern_crate_name, pseudo_extern_crate_name),
+                    );
+                }
+            }
+        }
+    }
+
+    impl<F: FnMut(&str) -> Option<String>> Visit<'_> for Visitor<'_, F> {
+        fn visit_item_use(&mut self, i: &'_ ItemUse) {
+            if let Some(leading_colon) = i.leading_colon {
+                for extern_crate_name in extract_first_segments(&i.tree) {
+                    self.attempt_translate(leading_colon.span(), extern_crate_name);
+                }
+            }
+
+            fn extract_first_segments(tree: &UseTree) -> Vec<&Ident> {
+                match tree {
+                    UseTree::Path(UsePath { ident, .. })
+                    | UseTree::Name(UseName { ident })
+                    | UseTree::Rename(UseRename { ident, .. }) => {
+                        vec![ident]
+                    }
+                    UseTree::Glob(_) => vec![],
+                    UseTree::Group(UseGroup { items, .. }) => {
+                        items.iter().flat_map(extract_first_segments).collect()
+                    }
+                }
+            }
+        }
+
+        fn visit_path(&mut self, i: &'_ syn::Path) {
+            if let Some(leading_colon) = i.leading_colon {
+                let PathSegment { ident, .. } = i
+                    .segments
+                    .last()
+                    .expect("`syn::Path::segments` is considered not to be empty");
+                self.attempt_translate(leading_colon.span(), ident);
+            }
+        }
+    }
 }
 
 pub(crate) fn process_extern_crate_in_bin(
@@ -688,14 +771,14 @@ pub(crate) fn replace_crate_paths(
 pub(crate) fn process_extern_crates_in_lib(
     shell: &mut Shell,
     code: &str,
-    convert_extern_crate_name: impl FnMut(&syn::Ident) -> Option<String>,
+    convert_extern_crate_name: impl FnMut(&str) -> Option<String>,
 ) -> anyhow::Result<String> {
     struct Visitor<'a, F> {
         replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
         convert_extern_crate_name: F,
     }
 
-    impl<F: FnMut(&syn::Ident) -> Option<String>> Visit<'_> for Visitor<'_, F> {
+    impl<F: FnMut(&str) -> Option<String>> Visit<'_> for Visitor<'_, F> {
         fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
             let ItemExternCrate {
                 attrs,
@@ -706,7 +789,7 @@ pub(crate) fn process_extern_crates_in_lib(
                 ..
             } = item_use;
 
-            if let Some(to) = (self.convert_extern_crate_name)(ident) {
+            if let Some(to) = (self.convert_extern_crate_name)(&ident.to_string()) {
                 let to = Ident::new(&to, Span::call_site());
                 self.replacements.insert(
                     (item_use.span().start(), semi_token.span().end()),

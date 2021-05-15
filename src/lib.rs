@@ -416,9 +416,14 @@ fn bundle(
     shell.status("Bundling", "the code")?;
 
     let mut code = rust::expand_mods(&bin.src_path)?;
-    if let Some(mut macro_expander) = macro_expander {
-        code = rust::expand_proc_macros(&code, &mut macro_expander, shell)?;
+    if let Some(macro_expander) = macro_expander {
+        code = rust::expand_proc_macros(&code, &mut { macro_expander }, shell)?;
     }
+    let code = rust::translate_abs_paths(&code, |extern_crate_name| {
+        metadata
+            .dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name)
+            .map(|_| extern_crate_name.to_owned())
+    })?;
     let mut code = rust::process_extern_crate_in_bin(&code, |extern_crate_name| {
         matches!(
             metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
@@ -444,15 +449,8 @@ fn bundle(
                 .find(|cm::Node { id, .. }| *id == lib_package.id)
                 .with_context(|| "could not find the data in metadata")?;
 
-            let content = rust::expand_mods(&lib_target.src_path)?;
-            let content = match out_dirs.get(&lib_package.id) {
-                Some(out_dir) => rust::expand_includes(&content, out_dir)?,
-                None => content,
-            };
-            let content = rust::replace_crate_paths(&content, &pseudo_extern_crate_name, shell)?;
-            let content = rust::process_extern_crates_in_lib(shell, &content, |dst| {
-                let dst_package =
-                    metadata.dep_lib_by_extern_crate_name(&lib_package.id, &dst.to_string())?;
+            let translate_extern_crate_name = |dst: &_| -> _ {
+                let dst_package = metadata.dep_lib_by_extern_crate_name(&lib_package.id, dst)?;
                 let (_, dst_pseudo_extern_crate_name) =
                     libs_to_bundle.get(&dst_package.id).unwrap_or_else(|| {
                         panic!(
@@ -462,7 +460,17 @@ fn bundle(
                         );
                     });
                 Some(dst_pseudo_extern_crate_name.clone())
-            })?;
+            };
+
+            let content = rust::expand_mods(&lib_target.src_path)?;
+            let content = match out_dirs.get(&lib_package.id) {
+                Some(out_dir) => rust::expand_includes(&content, out_dir)?,
+                None => content,
+            };
+            let content = rust::replace_crate_paths(&content, &pseudo_extern_crate_name, shell)?;
+            let content = rust::translate_abs_paths(&content, translate_extern_crate_name)?;
+            let content =
+                rust::process_extern_crates_in_lib(shell, &content, translate_extern_crate_name)?;
             let content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
             let mut content = rust::insert_pseudo_extern_preludes(&content, &{
                 metadata
