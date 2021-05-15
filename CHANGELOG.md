@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.13.0] - 2021-05-15Z
 
 ### Changed
 
-- Now cargo-equip replaces paths and `use` trees that have leading semicolons.
+- Now cargo-equip replaces paths and `use` trees that have leading semicolons. ([#113](https://github.com/qryxip/cargo-equip/pull/113))
 
     ```rust
     use ::{lib1::A, lib2::B}
@@ -15,6 +15,8 @@
     ```rust
     use /*::*/crate::{/*lib1*/__lib1_0_1_0::A, /*lib2*/lib2_0_1_0::B}
     ```
+
+- Updated rust-analyzer to `2021-05-10`. ([#114](https://github.com/qryxip/cargo-equip/pull/114))
 
 ## [0.12.2] - 2021-05-11Z
 
