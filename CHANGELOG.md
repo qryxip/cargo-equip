@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Now cargo-equip replaces paths and `use` trees that have leading semicolons.
+
+    ```rust
+    use ::{lib1::A, lib2::B}
+    ```
+
+    ↓
+
+    ```rust
+    use /*::*/crate::{/*lib1*/__lib1_0_1_0::A, /*lib2*/lib2_0_1_0::B}
+    ```
+
 ## [0.12.2] - 2021-05-11Z
 
 ### Changed
