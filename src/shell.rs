@@ -1,8 +1,8 @@
 use std::{
     fmt,
-    io::{self, Write},
+    io::{self, Sink, Write},
 };
-use termcolor::{Color, ColorSpec, StandardStream, WriteColor as _};
+use termcolor::{Color, ColorSpec, NoColor, StandardStream, WriteColor};
 
 pub struct Shell {
     output: ShellOut,
@@ -15,14 +15,24 @@ impl Shell {
         }
     }
 
+    pub fn from_stdout(stdout: Box<dyn Write>) -> Shell {
+        Self {
+            output: ShellOut::write(stdout),
+        }
+    }
+
     pub(crate) fn out(&mut self) -> &mut dyn Write {
-        let ShellOut::Stream { stdout, .. } = &mut self.output;
-        stdout
+        match &mut self.output {
+            ShellOut::Stream { stdout, .. } => stdout,
+            ShellOut::Write { stdout, .. } => stdout,
+        }
     }
 
     pub fn err(&mut self) -> &mut dyn Write {
-        let ShellOut::Stream { stderr, .. } = &mut self.output;
-        stderr
+        match &mut self.output {
+            ShellOut::Stream { stderr, .. } => stderr,
+            ShellOut::Write { stderr, .. } => stderr,
+        }
     }
 
     pub(crate) fn status(
@@ -48,17 +58,31 @@ impl Shell {
         color: Color,
         justified: bool,
     ) -> io::Result<()> {
-        let ShellOut::Stream { stderr, .. } = &mut self.output;
-        stderr.set_color(ColorSpec::new().set_bold(true).set_fg(Some(color)))?;
-        if justified {
-            write!(stderr, "{:>12}", status)?;
-        } else {
-            write!(stderr, "{}", status)?;
-            stderr.set_color(ColorSpec::new().set_bold(true))?;
-            write!(stderr, ":")?;
+        return match &mut self.output {
+            ShellOut::Stream { stderr, .. } => print(stderr, status, message, color, justified),
+            ShellOut::Write { .. } => {
+                print(NoColor::new(io::sink()), status, message, color, justified)
+            }
+        };
+
+        fn print(
+            mut stderr: impl WriteColor,
+            status: impl fmt::Display,
+            message: impl fmt::Display,
+            color: Color,
+            justified: bool,
+        ) -> io::Result<()> {
+            stderr.set_color(ColorSpec::new().set_bold(true).set_fg(Some(color)))?;
+            if justified {
+                write!(stderr, "{:>12}", status)?;
+            } else {
+                write!(stderr, "{}", status)?;
+                stderr.set_color(ColorSpec::new().set_bold(true))?;
+                write!(stderr, ":")?;
+            }
+            stderr.reset()?;
+            writeln!(stderr, " {}", message)
         }
-        stderr.reset()?;
-        writeln!(stderr, " {}", message)
     }
 }
 
@@ -72,6 +96,10 @@ enum ShellOut {
     Stream {
         stdout: StandardStream,
         stderr: StandardStream,
+    },
+    Write {
+        stdout: Box<dyn Write>,
+        stderr: Sink,
     },
 }
 
@@ -88,6 +116,13 @@ impl ShellOut {
             } else {
                 termcolor::ColorChoice::Never
             }),
+        }
+    }
+
+    fn write(stdout: Box<dyn Write>) -> Self {
+        Self::Write {
+            stdout,
+            stderr: io::sink(),
         }
     }
 }
