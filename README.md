@@ -81,6 +81,19 @@ fn main() {
 
 [Submit Info #47488 - Library-Checker](https://judge.yosupo.jp/submission/47488)
 
+## Works With
+
+- [x] [fixedbitset 0.4.0](https://docs.rs/crate/fixedbitset/0.4.0)
+- [x] [lazy_static 1.4.0](https://docs.rs/crate/lazy_static/1.4.0)
+- [x] [maplit 1.0.2](https://docs.rs/crate/maplit/1.0.2)
+- [x] [multimap 0.8.3](https://docs.rs/crate/multimap/0.8.3)
+- [x] [permutohedron 0.2.4](https://docs.rs/crate/permutohedron/0.2.4)
+- [x] [proconio 0.4.3](https://docs.rs/crate/proconio/0.4.3)
+- [x] [rustc-hash 1.1.0](https://docs.rs/crate/rustc-hash/1.1.0)
+- [x] [smallvec 1.6.1](https://docs.rs/crate/smallvec/1.6.1)
+- [x] [strsim 0.10.0](https://docs.rs/crate/strsim/0.10.0)
+- [x] [whiteread 0.5.0](https://docs.rs/crate/whiteread/0.5.0)
+
 ## Installation
 
 Install a `nightly` toolchain and [cargo-udeps](https://github.com/est31/cargo-udeps) first.
