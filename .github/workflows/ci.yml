@@ -21,10 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Setup `stable-x86_64-unknown-linux-gnu`
+      - name: Set up `stable`
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable-x86_64-unknown-linux-gnu
+          toolchain: stable
           default: true
           profile: minimal
           components: rustfmt
@@ -44,7 +44,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Install `nightly`
+      - name: Set up `nightly`
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
@@ -90,16 +90,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name:
-          - stable-x86_64-pc-windows-msvc
-          - stable-x86_64-apple-darwin
-          - stable-x86_64-unknown-linux-gnu
+        target-triple:
+          - x86_64-pc-windows-msvc
+          - x86_64-apple-darwin
+          - x86_64-unknown-linux-gnu
         include:
-          - { name: stable-x86_64-pc-windows-msvc  , channel: stable, target-triple: x86_64-pc-windows-msvc   , host-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
-          - { name: stable-x86_64-apple-darwin     , channel: stable, target-triple: x86_64-apple-darwin      , host-triple: x86_64-apple-darwin     , os: macos-10.15  }
-          - { name: stable-x86_64-unknown-linux-gnu, channel: stable, target-triple: x86_64-unknown-linux-gnu , host-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
+          - { channel: stable, target-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
+          - { channel: stable, target-triple: x86_64-apple-darwin     , os: macos-10.15  }
+          - { channel: stable, target-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
 
-    name: ${{ matrix.name }}
+    name: ${{ matrix.channel }}-${{ matrix.target-triple }}
     runs-on: ${{ matrix.os }}
 
     env:
@@ -116,15 +116,18 @@ jobs:
       # Workaround for https://github.com/actions/cache/issues/403
       - name: Install GNU tar
         run: |
+          type tar
           brew install gnu-tar
+          type tar
           echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >> $GITHUB_ENV
+          type tar
         if: matrix.os == 'macos-10.15'
 
-      - name: 'Set up `${{ matrix.channel }}-${{ matrix.host-triple }}` (target: `${{ matrix.target-triple }}`)'
+      - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
         id: install-toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{ matrix.channel }}-${{ matrix.host-triple }}
+          toolchain: ${{ matrix.channel }}
           target: ${{ matrix.target-triple }}
           default: true
           profile: minimal
@@ -154,7 +157,7 @@ jobs:
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             ~/.cargo/bin/cargo-udeps
-          key: build-crates-${{ matrix.name }}-${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
+          key: build-crates-${{ matrix.channle }}-${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
 
       - name: Cache for build cache
         uses: actions/cache@v2
@@ -163,13 +166,14 @@ jobs:
             ~/.cargo/git
             ~/.cargo/registry
             ./target
-          key: build-build-${{ matrix.name }}-${{ steps.install-toolchain.outputs.rustc_hash }}-${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}-${{ hashFiles('./Cargo.*') }}
+          key: build-build-${{ matrix.channel }}-${{ matrix.target-triple }}-${{ steps.install-toolchain.outputs.rustc_hash }}-${{ hashFiles('./Cargo.*') }}
 
       - name: Install cargo-udeps v${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
-        uses: actions-rs/install@v0.1
+        uses: actions-rs/cargo@v1
         with:
-          crate: cargo-udeps
-          version: ${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
+          command: install
+          args: cargo-udeps --version '=${{ steps.resolve-version-of-cargo-udeps.outputs.version }}'
+          toolchain: stable
 
       - name: cargo-clippy
         uses: actions-rs/cargo@v1
@@ -189,13 +193,13 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: --path . --debug --locked
+          args: --path . --debug --target ${{ matrix.target-triple }} --locked
 
       - name: cargo-install
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: --path . --debug
+          args: --path . --debug --target ${{ matrix.target-triple }}
 
       - name: cargo-udeps
         uses: actions-rs/cargo@v1
@@ -213,9 +217,9 @@ jobs:
           - x86_64-apple-darwin
           - x86_64-unknown-linux-gnu
         include:
-          - { target-triple: x86_64-pc-windows-msvc  , host-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
-          - { target-triple: x86_64-apple-darwin     , host-triple: x86_64-apple-darwin     , os: macos-10.15  }
-          - { target-triple: x86_64-unknown-linux-gnu, host-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
+          - { target-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
+          - { target-triple: x86_64-apple-darwin     , os: macos-10.15  }
+          - { target-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
 
     name: Upload (${{ matrix.target-triple }})
     runs-on: ${{ matrix.os }}
@@ -229,10 +233,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: 'Setup `stable-${{ matrix.host-triple }}` (target: `${{ matrix.target-triple }}`)'
+      - name: 'Set up `stable` (target: `${{ matrix.target-triple }}`)'
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable-${{ matrix.host-triple }}
+          toolchain: stable
           target: ${{ matrix.target-triple }}
           default: true
           profile: minimal
