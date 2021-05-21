@@ -352,9 +352,16 @@ impl MetadataExt for cm::Metadata {
                 .args(&["--print", "cfg"])
                 .cwd(package.manifest_path.with_file_name(""))
                 .read(true)?;
-            cfg_expr::Expression::parse(&format!("all({})", preds.lines().format(",")))?
+
+            preds
+                .lines()
+                .flat_map(cfg_expr::Expression::parse) // https://github.com/EmbarkStudios/cfg-expr/blob/25290dba689ce3f3ab589926ba545875f048c130/src/expr/parser.rs#L180-L195
+                .collect::<Vec<_>>()
         };
-        let preds = preds.predicates().collect::<Vec<_>>();
+        let preds = preds
+            .iter()
+            .flat_map(cfg_expr::Expression::predicates)
+            .collect::<Vec<_>>();
 
         let cm::Resolve { nodes, .. } = self
             .resolve
