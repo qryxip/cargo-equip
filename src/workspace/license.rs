@@ -4,7 +4,10 @@ use cargo_metadata as cm;
 use serde::Deserialize;
 use std::path::Path;
 
-pub(super) fn license_file(package: &cm::Package) -> anyhow::Result<Option<String>> {
+pub(super) fn license_file(
+    package: &cm::Package,
+    cache_dir: &Path,
+) -> anyhow::Result<Option<String>> {
     let license = package
         .license
         .as_deref()
@@ -45,9 +48,7 @@ pub(super) fn license_file(package: &cm::Package) -> anyhow::Result<Option<Strin
 
             let sha1 = &read_git_sha1(package)?;
 
-            let cache_path = &dirs_next::cache_dir()
-                .with_context(|| "could not find the cache directory")?
-                .join("cargo-equip")
+            let cache_path = &cache_dir
                 .join("license-files")
                 .join(&package.name)
                 .join(sha1);

@@ -61,7 +61,8 @@ impl ProcessBuilder<Present> {
             .current_dir(&self.cwd)
             .stdout(stdout)
             .stderr(stderr)
-            .output()?;
+            .output()
+            .with_context(|| format!("could not execute process {}", self))?;
         if check && !output.status.success() {
             bail!("{} didn't exit successfully: {}", self, output.status);
         }

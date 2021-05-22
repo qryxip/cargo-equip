@@ -613,7 +613,7 @@ pub(crate) trait PackageExt {
     fn has_proc_macro(&self) -> bool;
     fn lib_like_target(&self) -> Option<&cm::Target>;
     fn manifest_dir(&self) -> &Utf8Path;
-    fn read_license_text(&self) -> anyhow::Result<Option<String>>;
+    fn read_license_text(&self, cache_dir: &Path) -> anyhow::Result<Option<String>>;
 }
 
 impl PackageExt for cm::Package {
@@ -639,8 +639,8 @@ impl PackageExt for cm::Package {
         self.manifest_path.parent().expect("should not be empty")
     }
 
-    fn read_license_text(&self) -> anyhow::Result<Option<String>> {
-        license::license_file(self)
+    fn read_license_text(&self, cache_dir: &Path) -> anyhow::Result<Option<String>> {
+        license::license_file(self, cache_dir)
     }
 }
 
