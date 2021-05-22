@@ -1389,7 +1389,7 @@ fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
     }
 }
 
-pub(crate) fn minify(
+pub(crate) fn minify_file(
     code: &str,
     check: impl FnOnce(&str) -> anyhow::Result<bool>,
 ) -> anyhow::Result<String> {
@@ -1397,14 +1397,14 @@ pub(crate) fn minify(
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?
         .into_token_stream();
-    minify_tokens(tokens, check)
+    minify_token_stream(tokens, check)
 }
 
 fn minify_group(group: proc_macro2::Group) -> String {
-    minify_tokens(TokenTree::from(group).into(), |_| Ok::<_, Infallible>(true)).unwrap()
+    minify_token_stream(TokenTree::from(group).into(), |_| Ok::<_, Infallible>(true)).unwrap()
 }
 
-fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
+fn minify_token_stream<F: FnOnce(&str) -> Result<bool, E>, E>(
     tokens: TokenStream,
     check: F,
 ) -> Result<String, E> {
@@ -1417,17 +1417,17 @@ fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
 
     fn minify(acc: &mut String, token_stream: TokenStream) {
         #[derive(PartialEq)]
-        enum Prev {
+        enum State {
             None,
-            IdentOrLit,
-            Puncts(String, Spacing),
+            AlnumUnderscoreQuote,
+            PunctChars(String, Spacing),
         }
 
-        let mut prev = Prev::None;
+        let mut prev = State::None;
         for tt in token_stream {
             match tt {
                 TokenTree::Group(group) => {
-                    if let Prev::Puncts(puncts, _) = mem::replace(&mut prev, Prev::None) {
+                    if let State::PunctChars(puncts, _) = mem::replace(&mut prev, State::None) {
                         *acc += &puncts;
                     }
                     let (left, right) = match group.delimiter() {
@@ -1439,26 +1439,32 @@ fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
                     acc.push(left);
                     minify(acc, group.stream());
                     acc.push(right);
-                    prev = Prev::None;
+                    prev = State::None;
                 }
                 TokenTree::Ident(ident) => {
-                    match mem::replace(&mut prev, Prev::IdentOrLit) {
-                        Prev::IdentOrLit => *acc += " ",
-                        Prev::Puncts(puncts, _) => *acc += &puncts,
+                    match mem::replace(&mut prev, State::AlnumUnderscoreQuote) {
+                        State::AlnumUnderscoreQuote => *acc += " ",
+                        State::PunctChars(puncts, _) => *acc += &puncts,
                         _ => {}
                     }
                     *acc += &ident.to_string();
                 }
                 TokenTree::Literal(literal) => {
-                    match mem::replace(&mut prev, Prev::IdentOrLit) {
-                        Prev::IdentOrLit => *acc += " ",
-                        Prev::Puncts(puncts, _) => *acc += &puncts,
+                    let literal = literal.to_string();
+                    let (literal, next) = if let Some(literal) = literal.strip_suffix('.') {
+                        (literal, State::PunctChars(".".to_owned(), Spacing::Alone))
+                    } else {
+                        (&*literal, State::AlnumUnderscoreQuote)
+                    };
+                    match mem::replace(&mut prev, next) {
+                        State::AlnumUnderscoreQuote => *acc += " ",
+                        State::PunctChars(puncts, _) => *acc += &puncts,
                         _ => {}
                     }
                     *acc += &literal.to_string();
                 }
                 TokenTree::Punct(punct) => {
-                    if let Prev::Puncts(puncts, spacing) = &mut prev {
+                    if let State::PunctChars(puncts, spacing) = &mut prev {
                         if *spacing == Spacing::Alone {
                             *acc += puncts;
                             // https://docs.rs/syn/1.0.46/syn/token/index.html
@@ -1493,18 +1499,18 @@ fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
                             {
                                 *acc += " ";
                             }
-                            prev = Prev::Puncts(punct.as_char().to_string(), punct.spacing());
+                            prev = State::PunctChars(punct.as_char().to_string(), punct.spacing());
                         } else {
                             puncts.push(punct.as_char());
                             *spacing = punct.spacing();
                         }
                     } else {
-                        prev = Prev::Puncts(punct.as_char().to_string(), punct.spacing());
+                        prev = State::PunctChars(punct.as_char().to_string(), punct.spacing());
                     }
                 }
             }
         }
-        if let Prev::Puncts(puncts, _) = prev {
+        if let State::PunctChars(puncts, _) = prev {
             *acc += &puncts;
         }
     }
@@ -1513,6 +1519,10 @@ fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
 #[cfg(test)]
 mod tests {
     use difference::assert_diff;
+    use proc_macro2::TokenStream;
+    use quote::quote;
+    use std::convert::Infallible;
+    use test_case::test_case;
 
     #[test]
     fn modify_macros() -> anyhow::Result<()> {
@@ -1687,5 +1697,22 @@ fn main() {
 }
 "#,
         )
+    }
+
+    #[test_case(quote!(a + *b)                                => "a+*b"                           ; "joint_add_deref"       )]
+    #[test_case(quote!(a + !b)                                => "a+!b"                           ; "joint_add_not"         )]
+    #[test_case(quote!(a + -b)                                => "a+-b"                           ; "joint_add_neg"         )]
+    #[test_case(quote!(a + &b)                                => "a+&b"                           ; "joint_add_reference"   )]
+    #[test_case(quote!(a && &b)                               => "a&&&b"                          ; "joint_andand_reference")]
+    #[test_case(quote!(a & &b)                                => "a& &b"                          ; "space_and_reference"   )]
+    #[test_case(quote!(a < -b)                                => "a< -b"                          ; "space_le_neg"          )]
+    #[test_case(quote!(0. ..1.)                               => "0. ..1."                        ; "space_dec_point_range" )]
+    #[test_case(quote!(println!("{}", 2 * 2 + 1))             => r#"println!("{}",2*2+1)"#        ; "println"               )]
+    #[test_case(quote!(macro_rules! m { ($($_:tt)*) => {}; }) => "macro_rules!m{($($_:tt)*)=>{};}"; "macro_rules"           )]
+    fn minify_token_stream(tokens: TokenStream) -> String {
+        crate::rust::minify_token_stream::<_, Infallible>(tokens, |o| {
+            Ok(o.parse::<TokenStream>().is_ok())
+        })
+        .unwrap()
     }
 }

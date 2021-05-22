@@ -513,7 +513,7 @@ fn bundle(
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     let minify_file = &mut |content, name: Option<&_>, shell: &mut Shell| -> _ {
-        rust::minify(content, |output| {
+        rust::minify_file(content, |output| {
             let is_valid = syn::parse_file(output).is_ok();
             if !is_valid {
                 shell.warn(format!(

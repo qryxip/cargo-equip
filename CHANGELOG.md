@@ -6,6 +6,8 @@
 
 - Fixed [the problem where `cargo +nightly equip` does not work](https://github.com/qryxip/cargo-equip/issues/118).
 
+- Enabled minifying `1. ..x` correctly.
+
 ## [0.13.0] - 2021-05-15Z
 
 ### Changed
