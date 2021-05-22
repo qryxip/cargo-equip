@@ -23,7 +23,12 @@ use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
 use maplit::hashset;
 use prettytable::{cell, format::FormatBuilder, row, Table};
-use std::{cmp, collections::BTreeMap, path::PathBuf, str::FromStr};
+use std::{
+    cmp,
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use structopt::{clap::AppSettings, StructOpt};
 
 #[derive(StructOpt, Debug)]
@@ -165,6 +170,7 @@ impl FromStr for Minify {
 
 pub struct Context<'a> {
     pub cwd: PathBuf,
+    pub cache_dir: PathBuf,
     pub shell: &'a mut Shell,
 }
 
@@ -255,7 +261,11 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude
     };
 
-    let Context { cwd, shell } = ctx;
+    let Context {
+        cwd,
+        cache_dir,
+        shell,
+    } = ctx;
 
     let manifest_path = if let Some(manifest_path) = manifest_path {
         cwd.join(manifest_path.strip_prefix(".").unwrap_or(&manifest_path))
@@ -325,6 +335,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         &remove,
         minify,
         rustfmt,
+        &cache_dir,
         shell,
     )
     .with_context(|| error_message("could not bundle the code"))?;
@@ -360,6 +371,7 @@ fn bundle(
     remove: &[Remove],
     minify: Minify,
     rustfmt: bool,
+    cache_dir: &Path,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
     let cargo_check_message_format_json = |toolchain: &str, shell: &mut Shell| -> _ {
@@ -394,12 +406,7 @@ fn bundle(
     let macro_expander = (!proc_macro_crate_dlls.is_empty())
         .then(|| {
             ProcMacroExpander::new(
-                &ra_proc_macro::dl_ra(
-                    &dirs_next::cache_dir()
-                        .with_context(|| "could not find the cache directory")?
-                        .join("cargo-equip"),
-                    shell,
-                )?,
+                &ra_proc_macro::dl_ra(cache_dir, shell)?,
                 proc_macro_crate_dlls,
                 shell,
             )
@@ -620,7 +627,7 @@ fn bundle(
                     ) {
                         return Some(Err(err.into()));
                     }
-                    match lib_package.read_license_text() {
+                    match lib_package.read_license_text(cache_dir) {
                         Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
                         Ok(None) => None,
                         Err(err) => Some(Err(err)),

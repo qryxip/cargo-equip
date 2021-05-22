@@ -14,6 +14,9 @@ fn main() {
 
         let ctx = Context {
             cwd: env::current_dir().with_context(|| "could not get the current direcotry")?,
+            cache_dir: dirs_next::cache_dir()
+                .with_context(|| "could not find the cache directory")?
+                .join("cargo-equip"),
             shell: &mut shell,
         };
 

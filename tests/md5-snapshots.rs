@@ -414,6 +414,7 @@ fn snapshot_test(src: &str, dependencies: &str) -> anyhow::Result<String> {
         ])?,
         cargo_equip::Context {
             cwd: tempdir.path().to_owned(),
+            cache_dir: tempdir.path().join("cache"),
             shell: &mut Shell::from_stdout(Box::new(Writer(stdout.clone()))),
         },
     )?;
