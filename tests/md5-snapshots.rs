@@ -386,6 +386,7 @@ fn snapshot_test(src: &str, dependencies: &str) -> anyhow::Result<String> {
         name = "snapshot"
         version = "0.0.0"
         edition = "2018"
+        authors = ["Ryo Yamashita <qryxip@gmail.com>"]
     "#}
     .parse::<toml_edit::Document>()
     .unwrap();
