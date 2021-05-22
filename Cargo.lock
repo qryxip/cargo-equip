@@ -117,7 +117,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-equip"
-version = "0.13.0"
+version = "0.13.1"
 dependencies = [
  "anyhow",
  "arrayvec 0.7.0",
