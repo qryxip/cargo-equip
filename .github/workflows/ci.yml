@@ -44,13 +44,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Set up `stable`
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+
       - name: Set up `nightly`
         uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           profile: minimal
           components: rustfmt
-          override: true
+          default: true
 
       - name: Set up Python 3.9
         uses: actions/setup-python@v2
@@ -62,10 +68,11 @@ jobs:
         run: echo "::set-output name=version::$(python ./.github/workflows/resolve-cargo-udeps.py)"
 
       - name: Install cargo-udeps v${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
-        uses: actions-rs/install@v0.1
+        uses: actions-rs/cargo@v1
         with:
-          crate: cargo-udeps
-          version: ${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
+          command: install
+          args: cargo-udeps --version '=${{ steps.resolve-version-of-cargo-udeps.outputs.version }}'
+          toolchain: stable
 
       - name: cargo-test
         uses: actions-rs/cargo@v1
