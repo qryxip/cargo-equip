@@ -16,7 +16,7 @@ use crate::{
     shell::Shell,
     workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _, TargetExt as _},
 };
-use anyhow::Context as _;
+use anyhow::{ensure, Context as _};
 use cargo_metadata as cm;
 use either::Either;
 use itertools::{iproduct, Itertools as _};
@@ -520,10 +520,17 @@ fn bundle(
 
     if !contents.is_empty() {
         let authors = if bin_package.authors.is_empty() {
-            vec![workspace::get_author(&metadata.workspace_root)?]
+            workspace::attempt_get_author(&metadata.workspace_root)?
+                .into_iter()
+                .collect()
         } else {
             bin_package.authors.clone()
         };
+
+        ensure!(
+            !authors.is_empty(),
+            "cannot know who you are. see https://github.com/qryxip/cargo-equip/issues/120",
+        );
 
         code = rust::prepend_mod_doc(&code, &{
             fn list_packages<'a>(

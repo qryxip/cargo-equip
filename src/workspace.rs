@@ -2,6 +2,7 @@ mod license;
 
 use crate::{shell::Shell, toolchain};
 use anyhow::{bail, Context as _};
+use arrayvec::ArrayVec;
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
 use if_chain::if_chain;
@@ -80,7 +81,7 @@ pub(crate) fn list_out_dirs<'cm>(
         .collect()
 }
 
-pub(crate) fn get_author(workspace_root: &Utf8Path) -> anyhow::Result<String> {
+pub(crate) fn attempt_get_author(workspace_root: &Utf8Path) -> anyhow::Result<Option<String>> {
     #[derive(Deserialize)]
     struct Manifest {
         package: ManifestPackage,
@@ -88,7 +89,8 @@ pub(crate) fn get_author(workspace_root: &Utf8Path) -> anyhow::Result<String> {
 
     #[derive(Deserialize)]
     struct ManifestPackage {
-        authors: [String; 1],
+        #[serde(default)]
+        authors: ArrayVec<String, 1>,
     }
 
     let tempdir = tempfile::Builder::new()
@@ -102,7 +104,11 @@ pub(crate) fn get_author(workspace_root: &Utf8Path) -> anyhow::Result<String> {
         .exec()?;
 
     let manifest = xshell::read_file(tempdir.path().join("a").join("Cargo.toml"))?;
-    let author = toml::from_str::<Manifest>(&manifest)?.package.authors[0].clone();
+    let author = toml::from_str::<Manifest>(&manifest)?
+        .package
+        .authors
+        .get(0)
+        .cloned();
     Ok(author)
 }
 
