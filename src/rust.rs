@@ -1389,7 +1389,7 @@ fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
     }
 }
 
-pub(crate) fn minify(
+pub(crate) fn minify_file(
     code: &str,
     check: impl FnOnce(&str) -> anyhow::Result<bool>,
 ) -> anyhow::Result<String> {
@@ -1397,14 +1397,14 @@ pub(crate) fn minify(
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?
         .into_token_stream();
-    minify_tokens(tokens, check)
+    minify_token_stream(tokens, check)
 }
 
 fn minify_group(group: proc_macro2::Group) -> String {
-    minify_tokens(TokenTree::from(group).into(), |_| Ok::<_, Infallible>(true)).unwrap()
+    minify_token_stream(TokenTree::from(group).into(), |_| Ok::<_, Infallible>(true)).unwrap()
 }
 
-fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
+fn minify_token_stream<F: FnOnce(&str) -> Result<bool, E>, E>(
     tokens: TokenStream,
     check: F,
 ) -> Result<String, E> {
@@ -1513,6 +1513,10 @@ fn minify_tokens<F: FnOnce(&str) -> Result<bool, E>, E>(
 #[cfg(test)]
 mod tests {
     use difference::assert_diff;
+    use proc_macro2::TokenStream;
+    use quote::quote;
+    use std::convert::Infallible;
+    use test_case::test_case;
 
     #[test]
     fn modify_macros() -> anyhow::Result<()> {
@@ -1687,5 +1691,21 @@ fn main() {
 }
 "#,
         )
+    }
+
+    #[test_case(quote!(a + *b)                                => "a+*b"                           ; "joint_add_deref"       )]
+    #[test_case(quote!(a + !b)                                => "a+!b"                           ; "joint_add_not"         )]
+    #[test_case(quote!(a + -b)                                => "a+-b"                           ; "joint_add_neg"         )]
+    #[test_case(quote!(a + &b)                                => "a+&b"                           ; "joint_add_reference"   )]
+    #[test_case(quote!(a && &b)                               => "a&&&b"                          ; "joint_andand_reference")]
+    #[test_case(quote!(a & &b)                                => "a& &b"                          ; "space_and_reference"   )]
+    #[test_case(quote!(a < -b)                                => "a< -b"                          ; "space_le_neg"          )]
+    #[test_case(quote!(println!("{}", 2 * 2 + 1))             => r#"println!("{}",2*2+1)"#        ; "println"               )]
+    #[test_case(quote!(macro_rules! m { ($($_:tt)*) => {}; }) => "macro_rules!m{($($_:tt)*)=>{};}"; "macro_rules"           )]
+    fn minify_token_stream(tokens: TokenStream) -> String {
+        crate::rust::minify_token_stream::<_, Infallible>(tokens, |o| {
+            Ok(o.parse::<TokenStream>().is_ok())
+        })
+        .unwrap()
     }
 }
