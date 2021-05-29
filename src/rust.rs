@@ -3,8 +3,9 @@ use anyhow::{anyhow, bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
+use indoc::formatdoc;
 use itertools::Itertools as _;
-use maplit::{btreemap, btreeset};
+use maplit::btreemap;
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{
@@ -30,12 +31,12 @@ use syn::{
     ForeignItemMacro, ForeignItemStatic, ForeignItemType, Ident, ImplItemConst, ImplItemMacro,
     ImplItemMethod, ImplItemType, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn,
     ItemForeignMod, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
-    ItemTraitAlias, ItemType, ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro, Meta,
-    MetaList, MetaNameValue, NestedMeta, PatBox, PatIdent, PatLit, PatMacro, PatOr, PatPath,
-    PatRange, PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct, PatType,
-    PatWild, PathSegment, Receiver, Token, TraitItemConst, TraitItemMacro, TraitItemMethod,
-    TraitItemType, TypeParam, UseGroup, UseName, UsePath, UseRename, UseTree, Variadic, Variant,
-    VisRestricted,
+    ItemTraitAlias, ItemType, ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro,
+    MacroDelimiter, Meta, MetaList, MetaNameValue, NestedMeta, PatBox, PatIdent, PatLit, PatMacro,
+    PatOr, PatPath, PatRange, PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct,
+    PatType, PatWild, PathSegment, Receiver, Token, TraitItemConst, TraitItemMacro,
+    TraitItemMethod, TraitItemType, TypeParam, UseGroup, UseName, UsePath, UseRename, UseTree,
+    Variadic, Variant, VisRestricted,
 };
 
 pub(crate) fn find_skip_attribute(code: &str) -> anyhow::Result<bool> {
@@ -161,22 +162,40 @@ pub(crate) fn process_extern_crate_in_bin(
     impl<F: FnMut(&str) -> bool> Visit<'_> for Visitor<'_, F> {
         fn visit_item_extern_crate(&mut self, item_use: &ItemExternCrate) {
             let ItemExternCrate {
-                vis, ident, rename, ..
+                attrs,
+                vis,
+                ident,
+                rename,
+                ..
             } = item_use;
 
             if (self.is_lib_to_bundle)(&ident.to_string()) {
+                let is_macro_use = attrs
+                    .iter()
+                    .flat_map(Attribute::parse_meta)
+                    .any(|m| m.path().is_ident("macro_use"));
                 let vis = vis.to_token_stream();
-                let to = match rename {
-                    Some((_, ident)) if ident == "_" => "".to_owned(),
-                    Some((_, rename)) => format!("{} use crate::{} as {};", vis, ident, rename),
-                    None => format!("{} use crate::{};", vis, ident),
+                let uses = match (rename, is_macro_use) {
+                    (Some((_, rename)), false) if rename == "_" => "".to_owned(),
+                    (Some((_, rename)), false) => format!("{} as {}", ident, rename),
+                    (None, false) => ident.to_string(),
+                    (Some((_, rename)), true) if rename == "_" => format!("{}::__macros::*", ident),
+                    (Some((_, rename)), true) => {
+                        format!("{}::{{self as {},__macros::*}}", ident, rename)
+                    }
+                    (None, true) => format!("{}::{{self,__macros::*}}", ident),
                 };
-                let to = to.trim_start();
+                if uses.is_empty() {
+                    return;
+                }
+                let insertion = format!("{} use crate::{};", vis, uses);
+                let insertion = insertion.trim_start();
 
                 let pos = item_use.span().start();
                 self.replacements.insert((pos, pos), "/*".to_owned());
                 let pos = item_use.span().end();
-                self.replacements.insert((pos, pos), "*/".to_owned() + to);
+                self.replacements
+                    .insert((pos, pos), "*/".to_owned() + insertion);
             }
         }
     }
@@ -679,6 +698,43 @@ pub(crate) fn expand_includes(code: &str, out_dir: &Utf8Path) -> anyhow::Result<
     Ok(replace_ranges(code, replacements))
 }
 
+pub(crate) fn check_local_inner_macros(code: &str) -> anyhow::Result<bool> {
+    let file = &syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut out = false;
+    Visitor { out: &mut out }.visit_file(file);
+    return Ok(out);
+
+    struct Visitor<'a> {
+        out: &'a mut bool,
+    }
+
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_item_macro(&mut self, i: &ItemMacro) {
+            *self.out |= i
+                .attrs
+                .iter()
+                .flat_map(Attribute::parse_meta)
+                .flat_map(|meta| match meta {
+                    Meta::List(MetaList { path, nested, .. }) => Some((path, nested)),
+                    _ => None,
+                })
+                .any(|(path, nested)| {
+                    path.is_ident("macro_export")
+                        && nested.iter().any(|meta| {
+                            matches!(
+                                meta,
+                                NestedMeta::Meta(Meta::Path(path))
+                                if path.is_ident("local_inner_macros")
+                            )
+                        })
+                });
+        }
+    }
+}
+
 pub(crate) fn replace_crate_paths(
     code: &str,
     extern_crate_name: &str,
@@ -836,17 +892,201 @@ pub(crate) fn process_extern_crates_in_lib(
     Ok(replace_ranges(code, replacements))
 }
 
-pub(crate) fn modify_macros(code: &str, pseudo_extern_crate_name: &str) -> anyhow::Result<String> {
-    fn find_dollar_crates(token_stream: TokenStream, acc: &mut BTreeSet<LineColumn>) {
+pub(crate) fn modify_declarative_macros(
+    code: &str,
+    pseudo_extern_crate_name: &str,
+    remove_docs: bool,
+) -> anyhow::Result<(String, BTreeMap<String, String>)> {
+    let file = &syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+
+    let mut contents = btreemap!();
+    let mut replacements = btreemap!();
+
+    for item_macro in collect_item_macros(file) {
+        if let ItemMacro {
+            attrs,
+            ident: Some(ident),
+            mac: Macro { tokens, .. },
+            ..
+        } = item_macro
+        {
+            if attrs
+                .iter()
+                .flat_map(Attribute::parse_meta)
+                .any(|m| m.path().is_ident("macro_export"))
+            {
+                let (rename, content) = take(
+                    item_macro,
+                    ident,
+                    pseudo_extern_crate_name,
+                    remove_docs,
+                    &mut replacements,
+                );
+                contents.insert(rename, (ident.to_string(), content));
+            } else {
+                replace_dollar_crates(tokens.clone(), pseudo_extern_crate_name, &mut replacements);
+            }
+        }
+    }
+
+    if let Some(first) = file.items.first() {
+        let pos = first.span().start();
+        replacements.entry((pos, pos)).or_default().insert_str(
+            0,
+            &if contents.is_empty() {
+                "pub mod __macros {}".to_owned()
+            } else {
+                formatdoc! {r#"
+                    pub mod __macros {{
+                        pub use crate::{}{}{};
+                    }}
+                    pub use self::__macros::*;
+                    "#,
+                    if contents.len() > 1 { "{" } else { "" },
+                    contents
+                        .iter()
+                        .map(|(rename, (name, _))| if rename == name {
+                            name.clone()
+                        } else {
+                            format!("{} as {}", rename, name)
+                        })
+                        .format(", "),
+                    if contents.len() > 1 { "}" } else { "" },
+                }
+            },
+        );
+    }
+
+    return Ok((
+        replace_ranges(code, replacements),
+        contents.into_iter().map(|(_, v)| v).collect(),
+    ));
+
+    fn collect_item_macros(file: &syn::File) -> Vec<&ItemMacro> {
+        let mut acc = vec![];
+        Visitor { acc: &mut acc }.visit_file(file);
+        return acc;
+
+        struct Visitor<'a, 'b> {
+            acc: &'b mut Vec<&'a ItemMacro>,
+        }
+
+        impl<'a, 'b> Visit<'a> for Visitor<'a, 'b> {
+            fn visit_item_macro(&mut self, i: &'a ItemMacro) {
+                self.acc.push(i);
+            }
+        }
+    }
+
+    fn take(
+        item: &ItemMacro,
+        item_ident: &syn::Ident,
+        pseudo_extern_crate_name: &str,
+        remove_docs: bool,
+        replacements: &mut BTreeMap<(LineColumn, LineColumn), String>,
+    ) -> (String, String) {
+        let ItemMacro {
+            attrs,
+            ident,
+            mac:
+                Macro {
+                    path,
+                    bang_token,
+                    tokens,
+                    delimiter,
+                },
+            semi_token,
+        } = item;
+
+        debug_assert!(ident.is_some() && path.is_ident("macro_rules"));
+
+        let pos = item.span().start();
+        replacements.insert((pos, pos), "/*".to_owned());
+        let pos = item.span().end();
+        replacements.insert((pos, pos), "*/".to_owned());
+
+        let name = if false {
+            item_ident.to_string()
+        } else {
+            format!("__macro_def_{}_{}", pseudo_extern_crate_name, item_ident)
+        };
+
+        let name_as_ident = proc_macro2::Ident::new(&name, Span::call_site());
+
+        let body = proc_macro2::Group::new(
+            match delimiter {
+                MacroDelimiter::Paren(_) => proc_macro2::Delimiter::Parenthesis,
+                MacroDelimiter::Brace(_) => proc_macro2::Delimiter::Brace,
+                MacroDelimiter::Bracket(_) => proc_macro2::Delimiter::Bracket,
+            },
+            take(
+                tokens.clone(),
+                &proc_macro2::Ident::new(pseudo_extern_crate_name, Span::call_site()),
+            ),
+        );
+
+        let attrs = attrs
+            .iter()
+            .filter(|a| {
+                !(remove_docs && matches!(a.parse_meta(), Ok(m) if m.path().is_ident("doc")))
+            })
+            .map(|a| {
+                if matches!(a.parse_meta(), Ok(m) if m.path().is_ident("macro_export")) {
+                    quote!(#[macro_export])
+                } else {
+                    a.to_token_stream()
+                }
+            });
+
+        return (
+            name,
+            minify_token_stream::<_, Infallible>(
+                quote!(#[cfg_attr(any(), rustfmt::skip)] #(#attrs)* #path#bang_token #name_as_ident #body #semi_token),
+                |o| Ok(syn::parse_str::<ItemMacro>(o).is_ok()),
+            )
+            .unwrap(),
+        );
+
+        fn take(tokens: TokenStream, pseudo_extern_crate_name: &syn::Ident) -> TokenStream {
+            let mut out = vec![];
+            for tt in tokens {
+                if let TokenTree::Group(group) = &tt {
+                    out.push(
+                        proc_macro2::Group::new(
+                            group.delimiter(),
+                            take(group.stream(), pseudo_extern_crate_name),
+                        )
+                        .into(),
+                    );
+                } else {
+                    out.push(tt);
+                    if let [.., TokenTree::Punct(punct), TokenTree::Ident(ident)] = &*out {
+                        if punct.as_char() == '$' && ident == "crate" {
+                            out.extend(quote!(::#pseudo_extern_crate_name));
+                        }
+                    }
+                }
+            }
+            out.into_iter().collect()
+        }
+    }
+
+    fn replace_dollar_crates(
+        token_stream: TokenStream,
+        pseudo_extern_crate_name: &str,
+        acc: &mut BTreeMap<(LineColumn, LineColumn), String>,
+    ) {
         let mut token_stream = token_stream.into_iter().peekable();
 
         if let Some(proc_macro2::TokenTree::Group(group)) = token_stream.peek() {
-            find_dollar_crates(group.stream(), acc);
+            replace_dollar_crates(group.stream(), pseudo_extern_crate_name, acc);
         }
 
         for (tt1, tt2) in token_stream.tuple_windows() {
             if let proc_macro2::TokenTree::Group(group) = &tt2 {
-                find_dollar_crates(group.stream(), acc);
+                replace_dollar_crates(group.stream(), pseudo_extern_crate_name, acc);
             }
 
             if matches!(
@@ -854,82 +1094,85 @@ pub(crate) fn modify_macros(code: &str, pseudo_extern_crate_name: &str) -> anyho
                 (proc_macro2::TokenTree::Punct(p), proc_macro2::TokenTree::Ident(i))
                 if p.as_char() == '$' && i == "crate"
             ) {
-                acc.insert(tt2.span().end());
+                let pos = tt2.span().end();
+                acc.insert((pos, pos), format!("::{}", pseudo_extern_crate_name));
             }
         }
     }
-
-    struct Visitor<'a> {
-        public_macros: &'a mut BTreeSet<String>,
-        dollar_crates: &'a mut BTreeSet<LineColumn>,
-    }
-
-    impl Visit<'_> for Visitor<'_> {
-        fn visit_item_macro(&mut self, i: &ItemMacro) {
-            if let ItemMacro {
-                attrs,
-                ident: Some(ident),
-                mac: Macro { tokens, .. },
-                ..
-            } = i
-            {
-                // we just ignore `local_inner_macros`
-                if attrs
-                    .iter()
-                    .flat_map(Attribute::parse_meta)
-                    .any(|m| m.path().is_ident("macro_export"))
-                {
-                    self.public_macros.insert(ident.to_string());
-                }
-                find_dollar_crates(tokens.clone(), &mut self.dollar_crates);
-            }
-        }
-    }
-
-    let file = syn::parse_file(code)
-        .map_err(|e| anyhow!("{:?}", e))
-        .with_context(|| "could not parse the code")?;
-
-    let mut public_macros = btreeset!();
-    let mut dollar_crates = btreeset!();
-
-    Visitor {
-        public_macros: &mut public_macros,
-        dollar_crates: &mut dollar_crates,
-    }
-    .visit_file(&file);
-
-    Ok(replace_ranges(
-        code,
-        dollar_crates
-            .into_iter()
-            .map(|p| ((p, p), format!("::{}", pseudo_extern_crate_name)))
-            .chain(file.items.first().map(|item| {
-                let pos = item.span().start();
-                (
-                    (pos, pos),
-                    match &*public_macros.into_iter().collect::<Vec<_>>() {
-                        [] => "".to_owned(),
-                        [name] => format!("pub use crate::{};\n", name),
-                        names => format!("pub use crate::{{{}}};\n", names.iter().format(", ")),
-                    },
-                )
-            }))
-            .collect(),
-    ))
 }
 
-pub(crate) fn insert_pseudo_extern_preludes(
+pub(crate) fn insert_pseudo_preludes(
     code: &str,
+    libs_with_local_inner_macros: &BTreeSet<&str>,
     extern_crate_name_translation: &BTreeMap<String, String>,
 ) -> anyhow::Result<String> {
-    if extern_crate_name_translation.is_empty() {
+    if extern_crate_name_translation.is_empty() && libs_with_local_inner_macros.is_empty() {
         return Ok(code.to_owned());
     }
 
     let syn::File { attrs, items, .. } = syn::parse_file(code)
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?;
+
+    let external_local_inner_macros = {
+        let macros = libs_with_local_inner_macros
+            .iter()
+            .map(|name| format!("{}::__macros::*", name))
+            .join(", ");
+        match libs_with_local_inner_macros.len() {
+            0 => None,
+            1 => Some(macros),
+            _ => Some(format!("{{{}}}", macros)),
+        }
+    };
+
+    let pseudo_extern_crates = {
+        let uses = extern_crate_name_translation
+            .iter()
+            .map(|(extern_crate_name, pseudo_extern_crate_name)| {
+                if extern_crate_name == pseudo_extern_crate_name {
+                    extern_crate_name.clone()
+                } else {
+                    format!("{} as {}", pseudo_extern_crate_name, extern_crate_name)
+                }
+            })
+            .join(", ");
+        match extern_crate_name_translation.len() {
+            0 => None,
+            1 => Some(uses),
+            _ => Some(format!("{{{}}}", uses)),
+        }
+    };
+
+    let modules = {
+        let mut modules = "".to_owned();
+        if let Some(external_local_inner_macros) = &external_local_inner_macros {
+            modules += &formatdoc! {r"
+                mod __external_local_inner_macros {{
+                    pub(super) use crate::{};
+                }}
+                ",
+                external_local_inner_macros,
+            };
+        }
+        if let Some(pseudo_extern_crates) = &pseudo_extern_crates {
+            modules += &formatdoc! {r"
+                mod __pseudo_extern_prelude {{
+                    pub(super) use crate::{};
+                }}
+                ",
+                pseudo_extern_crates,
+            };
+        }
+        modules
+    };
+
+    let uses = match (external_local_inner_macros, pseudo_extern_crates) {
+        (Some(_), Some(_)) => "{__external_local_inner_macros::*, __pseudo_extern_prelude::*}",
+        (Some(_), None) => "__external_local_inner_macros::*",
+        (None, Some(_)) => "__pseudo_extern_prelude::*",
+        (None, None) => unreachable!(),
+    };
 
     let mut replacements = btreemap!(
         {
@@ -941,26 +1184,13 @@ pub(crate) fn insert_pseudo_extern_preludes(
                 LineColumn { line: 0, column: 0 }
             };
             (pos, pos)
-        } => format!(
-            "mod __pseudo_extern_prelude {{\n    pub(super) use crate::{};\n}}\nuse self::__pseudo_extern_prelude::*;\n\n",
-            {
-                let uses = extern_crate_name_translation
-                    .iter()
-                    .map(|(extern_crate_name, pseudo_extern_crate_name)| {
-                        if extern_crate_name == pseudo_extern_crate_name {
-                            extern_crate_name.clone()
-                        } else {
-                            format!("{} as {}", pseudo_extern_crate_name, extern_crate_name)
-                        }
-                    })
-                    .join(", ");
-                if extern_crate_name_translation.len() == 1 {
-                    uses
-                } else {
-                    format!("{{{}}}", uses)
-                }
-            },
-        ),
+        } => formatdoc!{r"
+            {}
+            use self::{};
+
+            ",
+            modules, uses,
+        },
     );
 
     let mut queue = items
@@ -982,10 +1212,7 @@ pub(crate) fn insert_pseudo_extern_preludes(
         };
         replacements.insert(
             (pos, pos),
-            format!(
-                "use {}__pseudo_extern_prelude::*;\n\n",
-                "super::".repeat(depth),
-            ),
+            format!("use {}{};\n\n", "super::".repeat(depth), uses),
         );
         for item in items {
             if let Item::Mod(item_mod) = item {
@@ -1523,52 +1750,6 @@ mod tests {
     use quote::quote;
     use std::convert::Infallible;
     use test_case::test_case;
-
-    #[test]
-    fn modify_macros() -> anyhow::Result<()> {
-        fn test(input: &str, expected: &str) -> anyhow::Result<()> {
-            static EXTERN_CRATE_NAME: &str = "lib";
-            let actual = super::modify_macros(input, EXTERN_CRATE_NAME)?;
-            assert_diff!(expected, &actual, "\n", 0);
-            Ok(())
-        }
-
-        test(
-            r#"#[macro_export]
-macro_rules! hello {
-    () => {
-        $crate::__hello_inner!()
-    };
-    (0 $(,)?) => {};
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __hello_inner {
-    () => {
-        $crate::hello()
-    };
-}
-"#,
-            r#"pub use crate::{__hello_inner, hello};
-#[macro_export]
-macro_rules! hello {
-    () => {
-        $crate::lib::__hello_inner!()
-    };
-    (0 $(,)?) => {};
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __hello_inner {
-    () => {
-        $crate::lib::hello()
-    };
-}
-"#,
-        )
-    }
 
     #[test]
     fn prepend_mod_doc() -> syn::Result<()> {

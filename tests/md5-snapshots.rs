@@ -305,25 +305,26 @@ fn rustc_hash() -> anyhow::Result<()> {
     )
 }
 
-#[test]
-fn smallvec() -> anyhow::Result<()> {
-    md5_snapshot_test!(
-        "smallvec",
-        indoc! {r#"
-            #[macro_use]
-            extern crate smallvec as _;
-
-            use smallvec::SmallVec;
-
-            fn main() {
-                let _: SmallVec<[(); 1]> = smallvec![];
-            }
-        "#},
-        indoc! {r#"
-            smallvec = "=1.6.1"
-        "#},
-    )
-}
+// `#[deny(missing_docs)]`
+//#[test]
+//fn smallvec() -> anyhow::Result<()> {
+//    md5_snapshot_test!(
+//        "smallvec",
+//        indoc! {r#"
+//            #[macro_use]
+//            extern crate smallvec as _;
+//
+//            use smallvec::SmallVec;
+//
+//            fn main() {
+//                let _: SmallVec<[(); 1]> = smallvec![];
+//            }
+//        "#},
+//        indoc! {r#"
+//            smallvec = "=1.6.1"
+//        "#},
+//    )
+//}
 
 #[test]
 fn strsim() -> anyhow::Result<()> {

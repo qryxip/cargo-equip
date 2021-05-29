@@ -3,4 +3,4 @@ source: tests/md5-snapshots.rs
 expression: output
 
 ---
-4559dcc0e8699e95482853870be2f1cf
+d5b20c8f37cbda3c7d680cafd1c42b32
