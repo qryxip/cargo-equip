@@ -1516,6 +1516,51 @@ pub(crate) fn resolve_cfgs(code: &str, features: &[String]) -> anyhow::Result<St
     Ok(replace_ranges(code, replacements))
 }
 
+pub(crate) fn allow_missing_docs(code: &str) -> anyhow::Result<String> {
+    let file = syn::parse_file(code)
+        .map_err(|e| anyhow!("{:?}", e))
+        .with_context(|| "could not parse the code")?;
+    let mut replacements = btreemap!();
+    Visitor {
+        replacements: &mut replacements,
+    }
+    .visit_file(&file);
+    return Ok(if replacements.is_empty() {
+        code.to_owned()
+    } else {
+        replace_ranges(code, replacements)
+    });
+
+    struct Visitor<'a> {
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+    }
+
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_attribute(&mut self, i: &Attribute) {
+            if let Ok(Meta::List(MetaList { path, nested, .. })) = i.parse_meta() {
+                if ["warn", "deny", "forbid"]
+                    .iter()
+                    .any(|lint| path.is_ident(lint))
+                {
+                    for meta in nested {
+                        if let NestedMeta::Meta(Meta::Path(path)) = meta {
+                            if ["missing_docs", "missing_crate_level_docs"]
+                                .iter()
+                                .any(|lint| path.is_ident(lint))
+                            {
+                                let pos = path.span().start();
+                                self.replacements.insert((pos, pos), "/*".to_owned());
+                                let pos = path.span().end();
+                                self.replacements.insert((pos, pos), "*/".to_owned());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn erase_docs(code: &str) -> anyhow::Result<String> {
     struct Visitor<'a>(&'a mut [FixedBitSet]);
 

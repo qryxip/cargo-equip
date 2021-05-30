@@ -49,6 +49,8 @@ md5_snapshot_tests! {
     permutohedron;
     proconio_with_macro_use;
     rustc_hash;
+    smallvec_with_macro_use;
+    smallvec_with_use;
     strsim;
     whiteread;
 }
@@ -64,6 +66,8 @@ fn snapshot_test(name: &str, _: MutexGuard<'_, ()>) -> anyhow::Result<String> {
             &env::var("CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN")
                 .unwrap_or_else(|_| "nightly".to_owned()),
             "--resolve-cfgs",
+            "--remove",
+            "docs",
             "--minify",
             "libs",
             "--rustfmt",

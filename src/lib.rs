@@ -566,6 +566,7 @@ fn bundle(
                 content = rust::resolve_cfgs(&content, features)?;
             }
             if remove.contains(&Remove::Docs) {
+                content = rust::allow_missing_docs(&content)?;
                 content = rust::erase_docs(&content)?;
             }
             if remove.contains(&Remove::Comments) {

@@ -90,6 +90,7 @@ fn main() {
 - [x] [permutohedron 0.2.4](https://docs.rs/crate/permutohedron/0.2.4)
 - [x] [proconio 0.4.3](https://docs.rs/crate/proconio/0.4.3)
 - [x] [rustc-hash 1.1.0](https://docs.rs/crate/rustc-hash/1.1.0)
+- [x] [smallvec 1.6.1](https://docs.rs/crate/smallvec/1.6.1)
 - [x] [strsim 0.10.0](https://docs.rs/crate/strsim/0.10.0)
 - [x] [whiteread 0.5.0](https://docs.rs/crate/whiteread/0.5.0)
 
