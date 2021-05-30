@@ -315,7 +315,7 @@ pub(crate) fn indent_code(code: &str, n: usize) -> String {
 
 pub(crate) fn expand_proc_macros(
     code: &str,
-    expander: &mut ProcMacroExpander,
+    expander: &mut ProcMacroExpander<'_>,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
     let mut code = code.to_owned();
@@ -388,13 +388,13 @@ pub(crate) fn expand_proc_macros(
         return Ok(code);
     }
 
-    struct AttributeMacroVisitor<'a> {
-        expander: &'a mut ProcMacroExpander,
+    struct AttributeMacroVisitor<'a, 'msg> {
+        expander: &'a mut ProcMacroExpander<'msg>,
         output: &'a mut anyhow::Result<Option<(Span, proc_macro2::Group)>>,
         shell: &'a mut Shell,
     }
 
-    impl AttributeMacroVisitor<'_> {
+    impl AttributeMacroVisitor<'_, '_> {
         fn visit_item_with_attrs<'a, T: ToTokens + Clone + 'a>(
             &mut self,
             i: &'a T,
@@ -459,7 +459,7 @@ pub(crate) fn expand_proc_macros(
         };
     }
 
-    impl Visit<'_> for AttributeMacroVisitor<'_> {
+    impl Visit<'_> for AttributeMacroVisitor<'_, '_> {
         impl_visits! {
             fn visit_item_const       (&mut self, _: &'_ ItemConst      ) { _(_, _, _, visit::visit_item_const       ) }
             fn visit_item_enum        (&mut self, _: &'_ ItemEnum       ) { _(_, _, _, visit::visit_item_enum        ) }
@@ -481,14 +481,14 @@ pub(crate) fn expand_proc_macros(
     }
 
     #[allow(clippy::type_complexity)]
-    struct DeriveMacroVisitor<'a> {
-        expander: &'a mut ProcMacroExpander,
+    struct DeriveMacroVisitor<'a, 'msg> {
+        expander: &'a mut ProcMacroExpander<'msg>,
         output:
             &'a mut anyhow::Result<Option<(proc_macro2::Group, Span, Span, Option<LineColumn>)>>,
         shell: &'a mut Shell,
     }
 
-    impl DeriveMacroVisitor<'_> {
+    impl DeriveMacroVisitor<'_, '_> {
         fn visit_struct_enum_union(&mut self, i: impl ToTokens, attrs: &[Attribute]) {
             if !matches!(self.output, Ok(None)) {
                 return;
@@ -548,7 +548,7 @@ pub(crate) fn expand_proc_macros(
         }
     }
 
-    impl Visit<'_> for DeriveMacroVisitor<'_> {
+    impl Visit<'_> for DeriveMacroVisitor<'_, '_> {
         fn visit_item_struct(&mut self, i: &'_ ItemStruct) {
             self.visit_struct_enum_union(i, &i.attrs);
         }
@@ -562,13 +562,13 @@ pub(crate) fn expand_proc_macros(
         }
     }
 
-    struct FunctionLikeMacroVisitor<'a> {
-        expander: &'a mut ProcMacroExpander,
+    struct FunctionLikeMacroVisitor<'a, 'msg> {
+        expander: &'a mut ProcMacroExpander<'msg>,
         output: &'a mut anyhow::Result<Option<(Span, proc_macro2::Group)>>,
         shell: &'a mut Shell,
     }
 
-    impl Visit<'_> for FunctionLikeMacroVisitor<'_> {
+    impl Visit<'_> for FunctionLikeMacroVisitor<'_, '_> {
         fn visit_item_macro(&mut self, i: &'_ ItemMacro) {
             if i.ident.is_none() {
                 self.visit_macro(&i.mac);
