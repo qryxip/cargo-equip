@@ -961,7 +961,10 @@ pub(crate) fn modify_declarative_macros(
 
     return Ok((
         replace_ranges(code, replacements),
-        contents.into_iter().map(|(_, v)| v).collect(),
+        contents
+            .into_iter()
+            .map(|(name, (_, def))| (name, def))
+            .collect(),
     ));
 
     fn collect_item_macros(file: &syn::File) -> Vec<&ItemMacro> {
