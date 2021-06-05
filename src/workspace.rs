@@ -610,6 +610,7 @@ fn targets_in_ws(metadata: &cm::Metadata) -> impl Iterator<Item = (&cm::Target, 
 
 pub(crate) trait PackageExt {
     fn has_custom_build(&self) -> bool;
+    fn has_lib(&self) -> bool;
     fn has_proc_macro(&self) -> bool;
     fn lib_like_target(&self) -> Option<&cm::Target>;
     fn manifest_dir(&self) -> &Utf8Path;
@@ -618,15 +619,15 @@ pub(crate) trait PackageExt {
 
 impl PackageExt for cm::Package {
     fn has_custom_build(&self) -> bool {
-        self.targets
-            .iter()
-            .any(|cm::Target { kind, .. }| *kind == ["custom-build".to_owned()])
+        self.targets.iter().any(TargetExt::is_custom_build)
+    }
+
+    fn has_lib(&self) -> bool {
+        self.targets.iter().any(TargetExt::is_lib)
     }
 
     fn has_proc_macro(&self) -> bool {
-        self.targets
-            .iter()
-            .any(|cm::Target { kind, .. }| *kind == ["proc-macro".to_owned()])
+        self.targets.iter().any(TargetExt::is_proc_macro)
     }
 
     fn lib_like_target(&self) -> Option<&cm::Target> {
@@ -668,6 +669,9 @@ impl PackageIdExt for cm::PackageId {
 
 pub(crate) trait TargetExt {
     fn is_example(&self) -> bool;
+    fn is_custom_build(&self) -> bool;
+    fn is_lib(&self) -> bool;
+    fn is_proc_macro(&self) -> bool;
     fn crate_name(&self) -> String;
     fn target_option(&self) -> [&str; 2];
 }
@@ -675,6 +679,18 @@ pub(crate) trait TargetExt {
 impl TargetExt for cm::Target {
     fn is_example(&self) -> bool {
         self.kind == ["example".to_owned()]
+    }
+
+    fn is_custom_build(&self) -> bool {
+        self.kind == ["custom-build".to_owned()]
+    }
+
+    fn is_lib(&self) -> bool {
+        self.kind == ["lib".to_owned()]
+    }
+
+    fn is_proc_macro(&self) -> bool {
+        self.kind == ["proc-macro".to_owned()]
     }
 
     fn crate_name(&self) -> String {

@@ -17,7 +17,6 @@ camino = { version = "1.0.4", features = ["serde1"] }
 cargo_metadata = "0.13.1"
 cfg-expr = "0.7.4"
 dirs-next = "2.0.0"
-either = "1.6.1"
 fixedbitset = "0.4.0"
 if_chain = "1.0.1"
 indoc = "1.0.3"
@@ -44,7 +43,7 @@ termcolor = "1.1.2"
 toml = "0.5.8"
 toml_edit = "0.2.0"
 which = "4.1.0"
-xshell = "0.1.13"
+xshell = "0.1.14"
 
 [dev-dependencies]
 difference = "2.0.0"

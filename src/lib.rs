@@ -18,13 +18,12 @@ use crate::{
 };
 use anyhow::{ensure, Context as _};
 use cargo_metadata as cm;
-use either::Either;
-use indoc::formatdoc;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
 use maplit::{btreeset, hashmap, hashset};
 use petgraph::{graph::Graph, visit::Dfs};
 use prettytable::{cell, format::FormatBuilder, row, Table};
+use quote::quote;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -526,22 +525,43 @@ fn bundle(
     let contents = libs_to_bundle
         .iter()
         .map(|(lib_package, (lib_target, pseudo_extern_crate_name))| {
-            let lib_package = &metadata[lib_package];
+            let lib_package: &cm::Package = &metadata[lib_package];
 
             if let Some(names) = proc_macro_names.get(&lib_package.id) {
                 debug_assert_eq!(["proc-macro".to_owned()], *lib_target.kind);
+                let names = names
+                    .iter()
+                    .map(|name| {
+                        let rename = format!("__macro_def_{}_{}", pseudo_extern_crate_name, name);
+                        (name, rename)
+                    })
+                    .collect::<Vec<_>>();
                 let content = format!(
-                    "    pub mod __macros{{#![allow(non_camel_case_types)]{}}}\
-                     pub use self::__macros::*;",
+                    "pub mod __macros{{pub use crate::{}{}{};}}pub use self::__macros::*;",
+                    if names.len() == 1 { " " } else { "{" },
                     names
                         .iter()
-                        .map(|name| format!("pub enum {}{{}}", name))
-                        .collect::<String>(),
+                        .map(|(name, rename)| format!("{} as {}", rename, name))
+                        .format(","),
+                    if names.len() == 1 { "" } else { "}" },
                 );
-                return Ok((
-                    pseudo_extern_crate_name,
-                    (lib_package, content, Either::Right(names)),
-                ));
+                let macros = names
+                    .into_iter()
+                    .map(|(name, rename)| {
+                        let msg = format!(
+                            "`{}` from `{} {}` should have been expanded",
+                            name, lib_package.name, lib_package.version,
+                        );
+                        let def = format!(
+                            "#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!{}\
+                             (($(_:tt)*)=>(::std::compile_error!({});));",
+                            rename,
+                            quote!(#msg),
+                        );
+                        (rename, def)
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                return Ok((pseudo_extern_crate_name, (lib_package, content, macros)));
             }
 
             let cm::Node { features, .. } = resolve_nodes[&lib_package.id];
@@ -602,10 +622,7 @@ fn bundle(
                 content = rust::erase_comments(&content)?;
             }
 
-            Ok((
-                pseudo_extern_crate_name,
-                (lib_package, content, Either::Left(macros)),
-            ))
+            Ok((pseudo_extern_crate_name, (lib_package, content, macros)))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
@@ -697,7 +714,7 @@ fn bundle(
                 "Bundled libraries",
                 contents
                     .iter()
-                    .filter(|(_, (_, _, v))| v.is_left())
+                    .filter(|(_, (p, _, _))| p.has_lib())
                     .map(|(k, (p, _, _))| (Some(&***k), *p)),
             );
 
@@ -706,13 +723,13 @@ fn bundle(
                 "Procedural macros",
                 contents
                     .iter()
-                    .filter(|(_, (_, _, v))| v.is_right())
+                    .filter(|(_, (p, _, _))| p.has_proc_macro())
                     .map(|(_, (p, _, _))| (None, *p)),
             );
 
             let notices = contents
                 .iter()
-                .filter(|(_, (_, _, v))| v.is_left())
+                .filter(|(_, (p, _, _))| p.has_lib())
                 .map(|(_, (p, _, _))| p)
                 .filter(|lib_package| {
                     !authors
@@ -767,35 +784,6 @@ fn bundle(
         code += "// The following code was expanded by `cargo-equip`.\n";
         code += "\n";
 
-        code += &{
-            let mut uses = btreeset!();
-            let mut macros = btreeset!();
-            for (pseudo_extern_crate_name, (_, _, either)) in &contents {
-                if let Either::Right(macro_names) = either {
-                    uses.insert(pseudo_extern_crate_name);
-                    macros.extend(*macro_names);
-                }
-            }
-            if uses.is_empty() {
-                "".to_owned()
-            } else {
-                formatdoc! {r"
-                    pub use crate::{}{}{};
-                    const _: () = {{
-                        let _ = ::std::marker::PhantomData::<({})>;
-                    }};
-                    ",
-                    if uses.len() > 1 { "{" } else { "" },
-                    uses.iter().map(|s| (**s).clone() + "::*").join(","),
-                    if uses.len() > 1 { "}" } else { "" },
-                    macros.iter().map(|s| (*s).clone() + ",").collect::<String>(),
-                }
-            }
-        };
-        if !code.ends_with("\n\n") {
-            code += "\n";
-        }
-
         code += &match &*libs_with_local_inner_macros
             .values()
             .flatten()
@@ -813,8 +801,7 @@ fn bundle(
 
         let macros = contents
             .iter()
-            .flat_map(|(_, (_, _, contents))| contents.as_ref().left())
-            .flatten()
+            .flat_map(|(_, (_, _, contents))| contents)
             .collect::<BTreeMap<_, _>>();
 
         for macro_def in macros.values() {

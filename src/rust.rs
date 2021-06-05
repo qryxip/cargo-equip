@@ -1007,11 +1007,7 @@ pub(crate) fn modify_declarative_macros(
         let pos = item.span().end();
         replacements.insert((pos, pos), "*/".to_owned());
 
-        let name = if false {
-            item_ident.to_string()
-        } else {
-            format!("__macro_def_{}_{}", pseudo_extern_crate_name, item_ident)
-        };
+        let name = format!("__macro_def_{}_{}", pseudo_extern_crate_name, item_ident);
 
         let name_as_ident = proc_macro2::Ident::new(&name, Span::call_site());
 
@@ -1665,6 +1661,11 @@ pub(crate) fn minify_file(
     code: &str,
     check: impl FnOnce(&str) -> anyhow::Result<bool>,
 ) -> anyhow::Result<String> {
+    if syn::parse_file(code).is_err() {
+        println!("{}", code);
+        todo!();
+    }
+
     let tokens = syn::parse_file(code)
         .map_err(|e| anyhow!("{:?}", e))
         .with_context(|| "could not parse the code")?
