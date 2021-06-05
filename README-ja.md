@@ -89,7 +89,7 @@ fn main() {
 >       --bin sqrt_mod `# bin targetを指定` | xsel -b
 ```
 
-[Submit Info #49019 - Library-Checker](https://judge.yosupo.jp/submission/49019)
+[Submit Info #49437 - Library-Checker](https://judge.yosupo.jp/submission/49437)
 
 ## 動作するクレート
 
@@ -253,6 +253,7 @@ fn main() -> _ {
 //! # Procedural macros
 //!
 //! - `mic_impl 0.0.0 (path+████████████████████████████████████████████████████)` published in https://github.com/qryxip/mic licensed under `CC0-1.0`
+#![allow(unused_imports)]
 
 use input::input;
 use mic::answer;
@@ -281,27 +282,25 @@ fn main() {
 
 // The following code was expanded by `cargo-equip`.
 
-pub use crate::__mic_impl_0_0_0::*;
-const _: () = {
-    let _ = ::std::marker::PhantomData::<(answer, solve)>;
-};
-
-#[cfg_attr(any(),rustfmt::skip)]#[doc(hidden)]#[macro_export]macro_rules!__macro_def_input___input_inner{/* … */}
-#[cfg_attr(any(),rustfmt::skip)]#[doc(hidden)]#[macro_export]macro_rules!__macro_def_input___read{/* … */}
-#[cfg_attr(any(),rustfmt::skip)]#[doc=" A `input!` macro."]#[macro_export]macro_rules!__macro_def_input_input{/* … */}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_answer{($(_:tt)*)=>(::std::compile_error!("`answer` from `mic_impl 0.0.0` should have been expanded");)}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_solve{($(_:tt)*)=>(::std::compile_error!("`solve` from `mic_impl 0.0.0` should have been expanded");)}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_input___input_inner{(@scanner($scanner:ident),@tts())=>{};(@scanner($scanner:ident),@tts(mut$single_tt_pat:tt:$readable:tt))=>{let mut$single_tt_pat=$crate::input::__read!(from$scanner{$readable});};(@scanner($scanner:ident),@tts($single_tt_pat:tt:$readable:tt))=>{let$single_tt_pat=$crate::input::__read!(from$scanner{$readable});};(@scanner($scanner:ident),@tts(mut$single_tt_pat:tt:$readable:tt,$($rest:tt)*))=>{$crate::input::__input_inner!(@scanner($scanner),@tts(mut$single_tt_pat:$readable));$crate::input::__input_inner!(@scanner($scanner),@tts($($rest)*));};(@scanner($scanner:ident),@tts($single_tt_pat:tt:$readable:tt,$($rest:tt)*))=>{$crate::input::__input_inner!(@scanner($scanner),@tts($single_tt_pat:$readable));$crate::input::__input_inner!(@scanner($scanner),@tts($($rest)*));};}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_input___read{(from$scanner:ident{[$tt:tt]})=>{$crate::input::__read!(from$scanner{[$tt;$crate::input::__read!(from$scanner{usize})]})};(from$scanner:ident{[$tt:tt;$n:expr]})=>{(0..$n).map(|_|$crate::input::__read!(from$scanner{$tt})).collect::<Vec<_>>()};(from$scanner:ident{($($tt:tt),+)})=>{($($crate::input::__read!(from$scanner{$tt})),*)};(from$scanner:ident{{$f:expr}})=>{$crate::input::FnOnceExt::<_>::call_once_from_reader($f,&mut$scanner)};(from$scanner:ident{$ty:ty})=>{<$ty as$crate::input::Readable>::read(||$scanner.next_unwrap())};}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_input_input{(from$scanner:ident;$($tt:tt)*)=>{$crate::input::__input_inner!(@scanner($scanner),@tts($($tt)*))};($($tt:tt)*)=>{let __scanner=$crate::input::DEFAULT_SCANNER.with(|__scanner|__scanner.clone());let mut __scanner_ref=__scanner.borrow_mut();if let$crate::input::Scanner::Uninited=*__scanner_ref{*__scanner_ref=$crate::input::Scanner::stdin_auto().unwrap();}$crate::input::__input_inner!(@scanner(__scanner_ref),@tts($($tt)*));::std::mem::drop(__scanner_ref);::std::mem::drop(__scanner);};}
 
 #[allow(unused)]
 pub mod mic {
     pub mod __macros {}
-    pub use self::__macros::*;
+    // ⋮
 }
 
 #[allow(unused)]
 pub mod __mic_impl_0_0_0 {
     pub mod __macros {
-        #![allow(non_camel_case_types)]
-        pub enum answer {}
-        pub enum solve {}
+        pub use crate::{
+            __macro_def___mic_impl_0_0_0_answer as answer,
+            __macro_def___mic_impl_0_0_0_solve as solve,
+        };
     }
     pub use self::__macros::*;
 }
@@ -354,7 +353,106 @@ fn fib(n: i64) -> i64 {
 <details>
 <summary>Output</summary>
 
-TODO
+```rust
+//! # Procedural macros
+//!
+//! - `memoise 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)`         licensed under `BSD-3-Clause`
+//! - `proconio-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)` licensed under `MIT OR Apache-2.0`
+#![allow(unused_imports)]
+
+use memoise::memoise;
+use proconio_derive::fastout;
+
+/*#[fastout]
+fn main() {
+    for i in 0..=10 {
+        println!("{}", fib(i));
+    }
+}*/
+fn main() {
+    let __proconio_stdout = ::std::io::stdout();
+    let mut __proconio_stdout = ::std::io::BufWriter::new(__proconio_stdout.lock());
+    #[allow(unused_macros)]
+    macro_rules!print{($($tt:tt)*)=>{{use std::io::Write as _;::std::write!(__proconio_stdout,$($tt)*).unwrap();}};}
+    #[allow(unused_macros)]
+    macro_rules!println{($($tt:tt)*)=>{{use std::io::Write as _;::std::writeln!(__proconio_stdout,$($tt)*).unwrap();}};}
+    let __proconio_res = {
+        for i in 0..=10 {
+            println!("{}", fib(i));
+        }
+    };
+    <::std::io::BufWriter<::std::io::StdoutLock> as ::std::io::Write>::flush(
+        &mut __proconio_stdout,
+    )
+    .unwrap();
+    return __proconio_res;
+}
+
+/*#[memoise(n <= 10)]
+fn fib(n: i64) -> i64 {
+    if n == 0 || n == 1 {
+        return n;
+    }
+    fib(n - 1) + fib(n - 2)
+}*/
+thread_local!(static FIB:std::cell::RefCell<Vec<Option<i64> > > =std::cell::RefCell::new(vec![]));
+fn fib_reset() {
+    FIB.with(|cache| {
+        let mut r = cache.borrow_mut();
+        r.clear();
+    });
+}
+fn fib(n: i64) -> i64 {
+    if let Some(ret) = FIB.with(|cache| {
+        let mut bm = cache.borrow_mut();
+        if bm.len() <= (n <= 10) as usize {
+            bm.resize((n <= 10) as usize + 1, None);
+        }
+        bm[(n <= 10) as usize].clone()
+    }) {
+        return ret;
+    }
+    let ret: i64 = (|| {
+        if n == 0 || n == 1 {
+            return n;
+        }
+        fib(n - 1) + fib(n - 2)
+    })();
+    FIB.with(|cache| {
+        let mut bm = cache.borrow_mut();
+        bm[(n <= 10) as usize] = Some(ret.clone());
+    });
+    ret
+}
+
+// The following code was expanded by `cargo-equip`.
+
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_memoise_memoise{($(_:tt)*)=>(::std::compile_error!("`memoise` from `memoise 0.3.2` should have been expanded");)}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_memoise_memoise_map{($(_:tt)*)=>(::std::compile_error!("`memoise_map` from `memoise 0.3.2` should have been expanded");)}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_proconio_derive_derive_readable{($(_:tt)*)=>(::std::compile_error!("`derive_readable` from `proconio-derive 0.2.1` should have been expanded");)}
+#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_proconio_derive_fastout{($(_:tt)*)=>(::std::compile_error!("`fastout` from `proconio-derive 0.2.1` should have been expanded");)}
+
+#[allow(unused)]
+pub mod memoise {
+    pub mod __macros {
+        pub use crate::{
+            __macro_def_memoise_memoise as memoise, __macro_def_memoise_memoise_map as memoise_map,
+        };
+    }
+    pub use self::__macros::*;
+}
+
+#[allow(unused)]
+pub mod proconio_derive {
+    pub mod __macros {
+        pub use crate::{
+            __macro_def_proconio_derive_derive_readable as derive_readable,
+            __macro_def_proconio_derive_fastout as fastout,
+        };
+    }
+    pub use self::__macros::*;
+}
+```
 
 </details>
 
