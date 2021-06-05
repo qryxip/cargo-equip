@@ -653,7 +653,7 @@ fn bundle(
             "cannot know who you are. see https://github.com/qryxip/cargo-equip/issues/120",
         );
 
-        code = rust::prepend_mod_doc(&code, &{
+        code = rust::prepend_items(&code, &{
             fn list_packages<'a>(
                 doc: &mut String,
                 title: &str,

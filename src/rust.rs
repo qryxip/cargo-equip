@@ -1264,7 +1264,7 @@ fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), S
     ret
 }
 
-pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
+pub(crate) fn prepend_items(code: &str, append_doc: &str) -> syn::Result<String> {
     let syn::File { shebang, attrs, .. } = syn::parse_file(code)?;
 
     let mut code = code.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
@@ -1310,7 +1310,7 @@ pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
     }
 
     Ok(format!(
-        "{}{}{}{}\n{}\n",
+        "{}{}{}{}#![allow(unused_imports)]\n\n{}\n",
         match shebang {
             Some(shebang) => format!("{}\n", shebang),
             None => "".to_owned(),
@@ -1322,7 +1322,7 @@ pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
         } else {
             "//!\n"
         },
-        append
+        append_doc
             .lines()
             .format_with("", |l, f| f(&format_args!("//!{}\n", l))),
         code.join("\n").trim_start(),
@@ -1794,9 +1794,9 @@ mod tests {
     use test_case::test_case;
 
     #[test]
-    fn prepend_mod_doc() -> syn::Result<()> {
-        fn test(code: &str, append: &str, expected: &str) -> syn::Result<()> {
-            let actual = super::prepend_mod_doc(code, append)?;
+    fn prepend_items() -> syn::Result<()> {
+        fn test(code: &str, doc: &str, expected: &str) -> syn::Result<()> {
+            let actual = super::prepend_items(code, doc)?;
             assert_diff!(expected, &actual, "\n", 0);
             Ok(())
         }
@@ -1817,6 +1817,7 @@ fn main() {
 //! ccccccc
 //!
 //! ddddddd
+#![allow(unused_imports)]
 
 fn main() {
     todo!();
@@ -1831,6 +1832,7 @@ fn main() {
             r" dddddd
 ",
             r#"//! dddddd
+#![allow(unused_imports)]
 
 fn main() {
     todo!();
