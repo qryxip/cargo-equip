@@ -1,5 +1,48 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Scopes for macros are preserved. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
+
+    Now you can `use` macros anywhere.
+
+    ```rust
+    use proconio::input;
+
+    fn main() {
+        input! {
+            n: usize,
+        }
+    }
+    ```
+
+- Dummy macros are expanded for `proc-macro` crates. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
+
+    Now you can also `use` procedural macros.
+
+    ```rust
+    use proconio::fastout;
+
+    #[fastout]
+    fn main() {
+        println!("Hi");
+    }
+    ```
+
+- Now `#[[warn/deny/forbid](missing-(crate-level-)docs)]` attributes are removed when `--remove docs` is enabled. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
+
+    Now you can remove doc comments from [smallvec](https://docs.rs/crate/smallvec).
+
+### Changed
+
+- `#[allow(unused_imports)]` will be always inserted. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
+
+### Fixed
+
+- Fixed order of `#[macro_exported]` macros. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
+
 ## [0.13.1] - 2021-05-22Z
 
 ### Fixed
