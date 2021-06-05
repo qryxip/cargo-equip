@@ -31,12 +31,12 @@ use syn::{
     ForeignItemMacro, ForeignItemStatic, ForeignItemType, Ident, ImplItemConst, ImplItemMacro,
     ImplItemMethod, ImplItemType, Item, ItemConst, ItemEnum, ItemExternCrate, ItemFn,
     ItemForeignMod, ItemImpl, ItemMacro, ItemMacro2, ItemMod, ItemStatic, ItemStruct, ItemTrait,
-    ItemTraitAlias, ItemType, ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro,
-    MacroDelimiter, Meta, MetaList, MetaNameValue, NestedMeta, PatBox, PatIdent, PatLit, PatMacro,
-    PatOr, PatPath, PatRange, PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct,
-    PatType, PatWild, PathSegment, Receiver, Token, TraitItemConst, TraitItemMacro,
-    TraitItemMethod, TraitItemType, TypeParam, UseGroup, UseName, UsePath, UseRename, UseTree,
-    Variadic, Variant, VisRestricted,
+    ItemTraitAlias, ItemType, ItemUnion, ItemUse, LifetimeDef, Lit, LitStr, Local, Macro, Meta,
+    MetaList, MetaNameValue, NestedMeta, PatBox, PatIdent, PatLit, PatMacro, PatOr, PatPath,
+    PatRange, PatReference, PatRest, PatSlice, PatStruct, PatTuple, PatTupleStruct, PatType,
+    PatWild, PathSegment, Receiver, Token, TraitItemConst, TraitItemMacro, TraitItemMethod,
+    TraitItemType, TypeParam, UseGroup, UseName, UsePath, UseRename, UseTree, Variadic, Variant,
+    VisRestricted,
 };
 
 pub(crate) fn find_skip_attribute(code: &str) -> anyhow::Result<bool> {
@@ -995,9 +995,9 @@ pub(crate) fn modify_declarative_macros(
                     path,
                     bang_token,
                     tokens,
-                    delimiter,
+                    ..
                 },
-            semi_token,
+            ..
         } = item;
 
         debug_assert!(ident.is_some() && path.is_ident("macro_rules"));
@@ -1011,16 +1011,9 @@ pub(crate) fn modify_declarative_macros(
 
         let name_as_ident = proc_macro2::Ident::new(&name, Span::call_site());
 
-        let body = proc_macro2::Group::new(
-            match delimiter {
-                MacroDelimiter::Paren(_) => proc_macro2::Delimiter::Parenthesis,
-                MacroDelimiter::Brace(_) => proc_macro2::Delimiter::Brace,
-                MacroDelimiter::Bracket(_) => proc_macro2::Delimiter::Bracket,
-            },
-            take(
-                tokens.clone(),
-                &proc_macro2::Ident::new(pseudo_extern_crate_name, Span::call_site()),
-            ),
+        let tokens = take(
+            tokens.clone(),
+            &proc_macro2::Ident::new(pseudo_extern_crate_name, Span::call_site()),
         );
 
         let attrs = attrs
@@ -1039,7 +1032,7 @@ pub(crate) fn modify_declarative_macros(
         return (
             name,
             minify_token_stream::<_, Infallible>(
-                quote!(#[cfg_attr(any(), rustfmt::skip)] #(#attrs)* #path#bang_token #name_as_ident #body #semi_token),
+                quote!(#[cfg_attr(any(), rustfmt::skip)] #(#attrs)* #path#bang_token #name_as_ident { #tokens }),
                 |o| Ok(syn::parse_str::<ItemMacro>(o).is_ok()),
             )
             .unwrap(),

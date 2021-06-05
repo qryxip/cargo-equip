@@ -554,7 +554,7 @@ fn bundle(
                         );
                         let def = format!(
                             "#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!{}\
-                             (($(_:tt)*)=>(::std::compile_error!({});));",
+                             {{($(_:tt)*)=>(::std::compile_error!({});)}}",
                             rename,
                             quote!(#msg),
                         );
