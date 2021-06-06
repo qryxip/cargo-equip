@@ -18,14 +18,16 @@ use crate::{
 };
 use anyhow::{ensure, Context as _};
 use cargo_metadata as cm;
-use either::Either;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
-use maplit::hashset;
+use maplit::{btreeset, hashmap, hashset};
+use petgraph::{graph::Graph, visit::Dfs};
 use prettytable::{cell, format::FormatBuilder, row, Table};
+use quote::quote;
 use std::{
     cmp,
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet, HashMap},
+    iter,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -304,7 +306,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             .iter()
             .map(|(package_id, (_, pseudo_extern_crate_name))| {
                 format!(
-                    "- `{}` as `crate::{}`\n",
+                    "- `{}` as `crate::__bundled::{}`\n",
                     package_id, pseudo_extern_crate_name,
                 )
             })
@@ -413,6 +415,31 @@ fn bundle(
         })
         .transpose()?;
 
+    let proc_macro_names = macro_expander
+        .as_ref()
+        .map(|macro_expander| {
+            let mut proc_macro_names = HashMap::<_, BTreeSet<_>>::new();
+            for (pkg, macro_names) in macro_expander.macro_names() {
+                for macro_name in macro_names {
+                    proc_macro_names
+                        .entry(pkg)
+                        .or_default()
+                        .insert(macro_name.to_owned());
+                }
+            }
+            proc_macro_names
+        })
+        .unwrap_or_default();
+
+    let resolve_nodes = metadata
+        .resolve
+        .as_ref()
+        .map(|cm::Resolve { nodes, .. }| &nodes[..])
+        .unwrap_or(&[])
+        .iter()
+        .map(|node| (&node.id, node))
+        .collect::<HashMap<_, _>>();
+
     let code = xshell::read_file(&bin.src_path)?;
 
     if rust::find_skip_attribute(&code)? {
@@ -440,21 +467,106 @@ fn bundle(
 
     let contents = libs_to_bundle
         .iter()
-        .map(|(lib_package, (lib_target, pseudo_extern_crate_name))| {
-            let lib_package = &metadata[lib_package];
+        .map(|(pkg, (krate, pseudo_extern_crate_name))| {
+            let content = rust::expand_mods(&krate.src_path)?;
+            let content = match out_dirs.get(pkg) {
+                Some(out_dir) => rust::expand_includes(&content, out_dir)?,
+                None => content,
+            };
+            Ok((*pkg, (pseudo_extern_crate_name, content)))
+        })
+        .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
 
-            if *lib_target.kind == ["proc-macro".to_owned()] {
-                return Ok((pseudo_extern_crate_name, Either::Right(lib_package)));
+    let libs_with_local_inner_macros = {
+        let mut graph = Graph::new();
+        let mut indices = hashmap!();
+        for pkg in libs_to_bundle.keys() {
+            indices.insert(*pkg, graph.add_node(*pkg));
+        }
+        for (from_pkg, (from_crate, _)) in libs_to_bundle {
+            if from_crate.kind != ["proc-macro".to_owned()] {
+                for cm::NodeDep {
+                    pkg: to, dep_kinds, ..
+                } in &resolve_nodes[from_pkg].deps
+                {
+                    if *from_pkg != to
+                        && dep_kinds
+                            .iter()
+                            .any(|cm::DepKindInfo { kind, .. }| *kind == cm::DependencyKind::Normal)
+                        && libs_to_bundle.contains_key(to)
+                    {
+                        graph.add_edge(indices[to], indices[*from_pkg], ());
+                    }
+                }
+            }
+        }
+        let mut libs_with_local_inner_macros = libs_to_bundle
+            .keys()
+            .map(|pkg| (*pkg, btreeset!()))
+            .collect::<HashMap<_, _>>();
+        for (goal, (_, pseudo_extern_crate_name)) in libs_to_bundle {
+            let (_, code) = &contents[goal];
+            if rust::check_local_inner_macros(code)? {
+                libs_with_local_inner_macros
+                    .get_mut(*goal)
+                    .unwrap()
+                    .insert(&**pseudo_extern_crate_name);
+                let mut dfs = Dfs::new(&graph, indices[goal]);
+                while let Some(next) = dfs.next(&graph) {
+                    libs_with_local_inner_macros
+                        .get_mut(graph[next])
+                        .unwrap()
+                        .insert(&**pseudo_extern_crate_name);
+                }
+            }
+        }
+        libs_with_local_inner_macros
+    };
+
+    let contents = libs_to_bundle
+        .iter()
+        .map(|(lib_package, (lib_target, pseudo_extern_crate_name))| {
+            let lib_package: &cm::Package = &metadata[lib_package];
+
+            if let Some(names) = proc_macro_names.get(&lib_package.id) {
+                debug_assert_eq!(["proc-macro".to_owned()], *lib_target.kind);
+                let names = names
+                    .iter()
+                    .map(|name| {
+                        let rename = format!("__macro_def_{}_{}", pseudo_extern_crate_name, name);
+                        (name, rename)
+                    })
+                    .collect::<Vec<_>>();
+                let content = format!(
+                    "pub mod __macros{{pub use crate::{}{}{};}}\
+                     pub use self::__macros::*;",
+                    if names.len() == 1 { " " } else { "{" },
+                    names
+                        .iter()
+                        .map(|(name, rename)| format!("{} as {}", rename, name))
+                        .format(","),
+                    if names.len() == 1 { "" } else { "}" },
+                );
+                let macros = names
+                    .into_iter()
+                    .map(|(name, rename)| {
+                        let msg = format!(
+                            "`{}` from `{} {}` should have been expanded",
+                            name, lib_package.name, lib_package.version,
+                        );
+                        let def = format!(
+                            "#[macro_export]macro_rules!{}\
+                             {{($(_:tt)*)=>(::std::compile_error!({});)}}",
+                            rename,
+                            quote!(#msg),
+                        );
+                        (rename, def)
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                return Ok((pseudo_extern_crate_name, (lib_package, content, macros)));
             }
 
-            let cm::Node { features, .. } = metadata
-                .resolve
-                .as_ref()
-                .map(|cm::Resolve { nodes, .. }| &nodes[..])
-                .unwrap_or(&[])
-                .iter()
-                .find(|cm::Node { id, .. }| *id == lib_package.id)
-                .with_context(|| "could not find the data in metadata")?;
+            let cm::Node { features, .. } = resolve_nodes[&lib_package.id];
 
             let translate_extern_crate_name = |dst: &_| -> _ {
                 let dst_package = metadata.dep_lib_by_extern_crate_name(&lib_package.id, dst)?;
@@ -469,46 +581,50 @@ fn bundle(
                 Some(dst_pseudo_extern_crate_name.clone())
             };
 
-            let content = rust::expand_mods(&lib_target.src_path)?;
-            let content = match out_dirs.get(&lib_package.id) {
-                Some(out_dir) => rust::expand_includes(&content, out_dir)?,
-                None => content,
-            };
-            let content = rust::replace_crate_paths(&content, &pseudo_extern_crate_name, shell)?;
+            let (_, content) = &contents[&&lib_package.id];
+            let content = rust::replace_crate_paths(content, &pseudo_extern_crate_name, shell)?;
             let content = rust::translate_abs_paths(&content, translate_extern_crate_name)?;
             let content =
                 rust::process_extern_crates_in_lib(shell, &content, translate_extern_crate_name)?;
-            let content = rust::modify_macros(&content, &pseudo_extern_crate_name)?;
-            let mut content = rust::insert_pseudo_extern_preludes(&content, &{
-                metadata
-                    .libs_with_extern_crate_names(
-                        &lib_package.id,
-                        &libs_to_bundle.keys().copied().collect(),
-                    )?
-                    .into_iter()
-                    .map(|(package_id, extern_crate_name)| {
-                        let (_, pseudo_extern_crate_name) =
-                            libs_to_bundle.get(package_id).with_context(|| {
-                                "could not translate pseudo extern crate names. this is a bug"
-                            })?;
-                        Ok((extern_crate_name, pseudo_extern_crate_name.clone()))
-                    })
-                    .collect::<anyhow::Result<_>>()?
-            })?;
+
+            let (content, macros) = rust::modify_declarative_macros(
+                &content,
+                &pseudo_extern_crate_name,
+                remove.contains(&Remove::Docs),
+            )?;
+
+            let mut content = rust::insert_pseudo_preludes(
+                &content,
+                &libs_with_local_inner_macros[&lib_package.id],
+                &{
+                    metadata
+                        .libs_with_extern_crate_names(
+                            &lib_package.id,
+                            &libs_to_bundle.keys().copied().collect(),
+                        )?
+                        .into_iter()
+                        .map(|(package_id, extern_crate_name)| {
+                            let (_, pseudo_extern_crate_name) =
+                                libs_to_bundle.get(package_id).with_context(|| {
+                                    "could not translate pseudo extern crate names. this is a bug"
+                                })?;
+                            Ok((extern_crate_name, pseudo_extern_crate_name.clone()))
+                        })
+                        .collect::<anyhow::Result<_>>()?
+                },
+            )?;
             if resolve_cfgs {
                 content = rust::resolve_cfgs(&content, features)?;
             }
             if remove.contains(&Remove::Docs) {
+                content = rust::allow_missing_docs(&content)?;
                 content = rust::erase_docs(&content)?;
             }
             if remove.contains(&Remove::Comments) {
                 content = rust::erase_comments(&content)?;
             }
 
-            Ok((
-                pseudo_extern_crate_name,
-                Either::Left((lib_package, content)),
-            ))
+            Ok((pseudo_extern_crate_name, (lib_package, content, macros)))
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
 
@@ -539,7 +655,9 @@ fn bundle(
             "cannot know who you are. see https://github.com/qryxip/cargo-equip/issues/120",
         );
 
-        code = rust::prepend_mod_doc(&code, &{
+        code = rust::insert_prelude_for_main_crate(&code)?;
+
+        code = rust::prepend_items(&code, &{
             fn list_packages<'a>(
                 doc: &mut String,
                 title: &str,
@@ -575,7 +693,10 @@ fn bundle(
                     });
 
                     if let Some(pseudo_extern_crate_name) = pseudo_extern_crate_name {
-                        row.add_cell(cell!(format!("as `crate::{}`", pseudo_extern_crate_name)));
+                        row.add_cell(cell!(format!(
+                            "as `crate::__bundled::{}`",
+                            pseudo_extern_crate_name,
+                        )));
                     }
 
                     table.add_row(row);
@@ -600,7 +721,8 @@ fn bundle(
                 "Bundled libraries",
                 contents
                     .iter()
-                    .flat_map(|(k, v)| v.as_ref().left().map(|(p, _)| (Some(&***k), *p))),
+                    .filter(|(_, (p, _, _))| p.has_lib())
+                    .map(|(k, (p, _, _))| (Some(&***k), *p)),
             );
 
             list_packages(
@@ -608,13 +730,14 @@ fn bundle(
                 "Procedural macros",
                 contents
                     .iter()
-                    .flat_map(|(_, v)| v.as_ref().right().map(|p| (None, *p))),
+                    .filter(|(_, (p, _, _))| p.has_proc_macro())
+                    .map(|(_, (p, _, _))| (None, *p)),
             );
 
             let notices = contents
                 .iter()
-                .flat_map(|(_, contents)| contents.as_ref().left())
-                .map(|(p, _)| p)
+                .filter(|(_, (p, _, _))| p.has_lib())
+                .map(|(_, (p, _, _))| p)
                 .filter(|lib_package| {
                     !authors
                         .iter()
@@ -668,37 +791,81 @@ fn bundle(
         code += "// The following code was expanded by `cargo-equip`.\n";
         code += "\n";
 
-        if minify == Minify::Libs {
-            code += "\n";
+        let prelude_for_main_crate = {
+            let prelude_for_main_crate = libs_with_local_inner_macros
+                .values()
+                .flatten()
+                .unique()
+                .sorted()
+                .map(|name| format!("{}::__macros::*", name))
+                .chain(iter::once("*".to_owned()))
+                .collect::<Vec<_>>();
 
-            for (pseudo_extern_crate_name, contents) in &contents {
-                code += "#[cfg_attr(any(),rustfmt::skip)]#[allow(unused)]pub mod ";
+            let multiple = prelude_for_main_crate.len() > 1;
+
+            format!(
+                "{}{}{}",
+                if multiple { "{" } else { "" },
+                prelude_for_main_crate.iter().join(","),
+                if multiple { "}" } else { "" },
+            )
+        };
+
+        code += "#[macro_export]\n";
+        code += &format!(
+            "macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::{};));\n",
+            prelude_for_main_crate,
+        );
+        code += "\n";
+
+        let macros = contents
+            .iter()
+            .flat_map(|(_, (_, _, contents))| contents)
+            .collect::<BTreeMap<_, _>>();
+
+        if !macros.is_empty() {
+            code += "#[cfg_attr(any(), rustfmt::skip)]\n";
+            code += "const _: () = {\n";
+            for macro_def in macros.values() {
+                code += "    ";
+                code += macro_def;
+                code += "\n";
+            }
+            code += "};\n";
+            code += "\n";
+        }
+        code += "\n";
+
+        if minify == Minify::Libs {
+            code += "#[rustfmt::skip]\n";
+        }
+        code += "#[allow(unused)]\n";
+        code += "pub mod __bundled {\n";
+        if minify == Minify::Libs {
+            for (pseudo_extern_crate_name, (_, content, _)) in &contents {
+                code += "    pub mod ";
                 code += &pseudo_extern_crate_name.to_string();
                 code += "{";
-                code += &if let Either::Left((_, content)) = contents {
-                    minify_file(
-                        content,
-                        Some(&format!("crate::{}", pseudo_extern_crate_name)),
-                        shell,
-                    )?
-                } else {
-                    "".to_owned()
-                };
+                code += &minify_file(
+                    content,
+                    Some(&format!("crate::__bundled::{}", pseudo_extern_crate_name)),
+                    shell,
+                )?;
                 code += "}\n";
             }
         } else {
-            for (pseudo_extern_crate_name, contents) in &contents {
-                code += "\n#[allow(unused)]\npub mod ";
+            for (i, (pseudo_extern_crate_name, (_, content, _))) in contents.iter().enumerate() {
+                if i > 0 {
+                    code += "\n";
+                }
+                code += "    pub mod ";
                 code += pseudo_extern_crate_name;
                 code += " {\n";
-                code += &if let Either::Left((_, content)) = contents {
-                    rust::indent_code(content, 1)
-                } else {
-                    "    // This is a `proc-macro`.\n".to_owned()
-                };
+                code += &rust::indent_code(content, 2);
                 code += "}\n";
             }
         }
+        code += "}\n";
     }
 
     if minify == Minify::All {

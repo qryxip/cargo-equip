@@ -3,14 +3,12 @@ mod tt;
 use anyhow::{anyhow, bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
-use itertools::Itertools as _;
 use maplit::btreemap;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     env,
     io::{self, BufRead as _, BufReader, Read as _, Write as _},
-    ops::Deref,
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
@@ -87,7 +85,7 @@ pub(crate) fn dl_ra(dir: &Path, shell: &mut Shell) -> anyhow::Result<PathBuf> {
 pub(crate) fn list_proc_macro_dlls<P: FnMut(&cm::PackageId) -> bool>(
     cargo_messages: &[cm::Message],
     mut filter: P,
-) -> HashSet<&Utf8Path> {
+) -> BTreeMap<&cm::PackageId, &Utf8Path> {
     cargo_messages
         .iter()
         .flat_map(|message| match message {
@@ -96,21 +94,27 @@ pub(crate) fn list_proc_macro_dlls<P: FnMut(&cm::PackageId) -> bool>(
         })
         .filter(|cm::Artifact { target, .. }| *target.kind == ["proc-macro".to_owned()])
         .filter(|cm::Artifact { package_id, .. }| filter(package_id))
-        .flat_map(|cm::Artifact { filenames, .. }| filenames.get(0).map(Deref::deref))
+        .flat_map(
+            |cm::Artifact {
+                 package_id,
+                 filenames,
+                 ..
+             }| filenames.get(0).map(|filename| (package_id, &**filename)),
+        )
         .collect()
 }
 
-pub(crate) struct ProcMacroExpander {
+pub(crate) struct ProcMacroExpander<'msg> {
     ra: RaProcMacro,
-    func_like: BTreeMap<String, Utf8PathBuf>,
-    attr: BTreeMap<String, Utf8PathBuf>,
-    custom_derive: BTreeMap<String, Utf8PathBuf>,
+    func_like: BTreeMap<String, (&'msg cm::PackageId, &'msg Utf8Path)>,
+    attr: BTreeMap<String, (&'msg cm::PackageId, &'msg Utf8Path)>,
+    custom_derive: BTreeMap<String, (&'msg cm::PackageId, &'msg Utf8Path)>,
 }
 
-impl ProcMacroExpander {
+impl<'msg> ProcMacroExpander<'msg> {
     pub(crate) fn new(
         rust_analyzer_exe: &Path,
-        dll_paths: &HashSet<&Utf8Path>,
+        dll_paths: &BTreeMap<&'msg cm::PackageId, &'msg Utf8Path>,
         shell: &mut Shell,
     ) -> anyhow::Result<Self> {
         shell.status(
@@ -125,7 +129,7 @@ impl ProcMacroExpander {
             custom_derive: btreemap!(),
         };
 
-        for dll in dll_paths.iter().copied().sorted() {
+        for (package_id, dll) in dll_paths {
             for (name, kind) in this.ra.list_macro(dll, |msg| {
                 shell.warn(format!("error from RA: {}", msg))?;
                 Ok(())
@@ -134,7 +138,7 @@ impl ProcMacroExpander {
                     ProcMacroKind::CustomDerive => {
                         if this
                             .custom_derive
-                            .insert(name.clone(), dll.to_owned())
+                            .insert(name.clone(), (*package_id, *dll))
                             .is_some()
                         {
                             bail!("duplicated `#[derive({})]`", name);
@@ -143,14 +147,18 @@ impl ProcMacroExpander {
                     ProcMacroKind::FuncLike => {
                         if this
                             .func_like
-                            .insert(name.clone(), dll.to_owned())
+                            .insert(name.clone(), (*package_id, *dll))
                             .is_some()
                         {
                             bail!("duplicated `{}!`", name);
                         }
                     }
                     ProcMacroKind::Attr => {
-                        if this.attr.insert(name.clone(), dll.to_owned()).is_some() {
+                        if this
+                            .attr
+                            .insert(name.clone(), (*package_id, *dll))
+                            .is_some()
+                        {
                             bail!("duplicated `#[{}]`", name);
                         }
                     }
@@ -171,14 +179,30 @@ impl ProcMacroExpander {
         Ok(this)
     }
 
+    pub(crate) fn macro_names(
+        &self,
+    ) -> impl Iterator<Item = (&'msg cm::PackageId, BTreeSet<&str>)> {
+        let mut names = BTreeMap::<_, BTreeSet<_>>::new();
+        for (name, (pkg, _)) in self
+            .func_like
+            .iter()
+            .chain(&self.attr)
+            .chain(&self.custom_derive)
+        {
+            names.entry(*pkg).or_default().insert(&**name);
+        }
+        names.into_iter()
+    }
+
     pub(crate) fn expand_func_like_macro(
         &mut self,
         name: &str,
         body: impl FnOnce() -> proc_macro2::TokenStream,
         on_error: impl FnMut(&str) -> anyhow::Result<()>,
     ) -> anyhow::Result<Option<proc_macro2::Group>> {
-        if let Some(dll) = self.func_like.get(name).cloned() {
-            self.expand(&dll, name, body(), None, on_error).map(Some)
+        if let Some((_, dll)) = self.func_like.get(name) {
+            let dll = *dll;
+            self.expand(dll, name, body(), None, on_error).map(Some)
         } else {
             Ok(None)
         }
@@ -191,8 +215,9 @@ impl ProcMacroExpander {
         attr: impl FnOnce() -> proc_macro2::Group,
         on_error: impl FnMut(&str) -> anyhow::Result<()>,
     ) -> anyhow::Result<Option<proc_macro2::Group>> {
-        if let Some(dll) = self.attr.get(name).cloned() {
-            self.expand(&dll, name, body(), Some(attr()), on_error)
+        if let Some((_, dll)) = self.attr.get(name) {
+            let dll = *dll;
+            self.expand(dll, name, body(), Some(attr()), on_error)
                 .map(Some)
         } else {
             Ok(None)
@@ -205,8 +230,9 @@ impl ProcMacroExpander {
         body: impl FnOnce() -> proc_macro2::TokenStream,
         on_error: impl FnMut(&str) -> anyhow::Result<()>,
     ) -> anyhow::Result<Option<proc_macro2::Group>> {
-        if let Some(dll) = self.custom_derive.get(name).cloned() {
-            self.expand(&dll, name, body(), None, on_error).map(Some)
+        if let Some((_, dll)) = self.custom_derive.get(name) {
+            let dll = *dll;
+            self.expand(dll, name, body(), None, on_error).map(Some)
         } else {
             Ok(None)
         }
