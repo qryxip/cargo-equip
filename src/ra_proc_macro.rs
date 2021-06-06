@@ -53,7 +53,7 @@ pub(crate) fn dl_ra(dir: &Path, shell: &mut Shell) -> anyhow::Result<PathBuf> {
     chmod755(&ra_path)?;
     return Ok(ra_path);
 
-    static TAG: &str = "2021-05-10";
+    static TAG: &str = "2021-05-31";
 
     fn curl(url: &str, cwd: &Path, shell: &mut Shell) -> anyhow::Result<Vec<u8>> {
         let curl_exe = which::which("curl").map_err(|_| anyhow!("command not found: curl"))?;

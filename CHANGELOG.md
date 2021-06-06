@@ -53,6 +53,8 @@
 
 - `#[allow(unused_imports)]` will be always inserted. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
 
+- Updated rust-analyzer to `2021-05-31`.
+
 ### Fixed
 
 - Fixed order of `#[macro_exported]` macros. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
