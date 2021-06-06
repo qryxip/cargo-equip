@@ -92,6 +92,7 @@ mod sub {
 - [x] [fixedbitset 0.4.0](https://docs.rs/crate/fixedbitset/0.4.0)
 - [x] [lazy_static 1.4.0](https://docs.rs/crate/lazy_static/1.4.0)
 - [x] [maplit 1.0.2](https://docs.rs/crate/maplit/1.0.2)
+- [x] [memoise 0.3.2](https://docs.rs/crate/memoise/0.3.2)
 - [x] [multimap 0.8.3](https://docs.rs/crate/multimap/0.8.3)
 - [x] [permutohedron 0.2.4](https://docs.rs/crate/permutohedron/0.2.4)
 - [x] [proconio 0.4.3](https://docs.rs/crate/proconio/0.4.3)
@@ -423,20 +424,19 @@ fn fib(n: i64) -> i64 {
     }
     fib(n - 1) + fib(n - 2)
 }*/
-thread_local!(static FIB:std::cell::RefCell<Vec<Option<i64> > > =std::cell::RefCell::new(vec![]));
+thread_local!(static FIB:std::cell::RefCell<Vec<Option<i64> > > =std::cell::RefCell::new(vec![None;11usize]));
 fn fib_reset() {
     FIB.with(|cache| {
         let mut r = cache.borrow_mut();
-        r.clear();
+        for r in r.iter_mut() {
+            *r = None
+        }
     });
 }
 fn fib(n: i64) -> i64 {
     if let Some(ret) = FIB.with(|cache| {
         let mut bm = cache.borrow_mut();
-        if bm.len() <= (n <= 10) as usize {
-            bm.resize((n <= 10) as usize + 1, None);
-        }
-        bm[(n <= 10) as usize].clone()
+        bm[(n) as usize].clone()
     }) {
         return ret;
     }
@@ -448,7 +448,7 @@ fn fib(n: i64) -> i64 {
     })();
     FIB.with(|cache| {
         let mut bm = cache.borrow_mut();
-        bm[(n <= 10) as usize] = Some(ret.clone());
+        bm[(n) as usize] = Some(ret.clone());
     });
     ret
 }
