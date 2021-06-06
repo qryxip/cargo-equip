@@ -19,6 +19,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
+name = "memoise"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04d4bedd9ad829dc571ce57e21d6b270a62646889bc045f265eb92183d6599db"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "multimap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -88,6 +99,7 @@ dependencies = [
  "fixedbitset",
  "lazy_static",
  "maplit",
+ "memoise",
  "multimap",
  "permutohedron",
  "proconio",

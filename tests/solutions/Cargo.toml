@@ -9,6 +9,7 @@ publish = false
 fixedbitset = "0.4.0"
 lazy_static = "1.4.0"
 maplit = "1.0.2"
+memoise = "0.3.2"
 multimap = { version = "0.8.3", default-features = false }
 permutohedron = "0.2.4"
 proconio = { version = "0.4.3", features = ["derive"] }

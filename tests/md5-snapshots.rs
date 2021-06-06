@@ -44,10 +44,13 @@ md5_snapshot_tests! {
     lazy_static_with_use;
     maplit_with_macro_use;
     maplit_with_use;
+    memoise_with_macro_use;
+    memoise_with_use;
     multimap_with_macro_use;
     multimap_with_use;
     permutohedron;
     proconio_with_macro_use;
+    proconio_with_use;
     rustc_hash;
     smallvec_with_macro_use;
     smallvec_with_use;

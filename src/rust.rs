@@ -424,12 +424,12 @@ pub(crate) fn expand_proc_macros(
                                 i.to_token_stream()
                             },
                             || {
-                                syn::parse2(attr.tokens.clone()).unwrap_or_else(|_| {
-                                    proc_macro2::Group::new(
-                                        proc_macro2::Delimiter::None,
-                                        attr.tokens.clone(),
-                                    )
-                                })
+                                proc_macro2::Group::new(
+                                    proc_macro2::Delimiter::None,
+                                    syn::parse2::<proc_macro2::Group>(attr.tokens.clone())
+                                        .map(|attr| attr.stream())
+                                        .unwrap_or_default(),
+                                )
                             },
                             |msg| {
                                 shell.warn(format!("error from RA: {}", msg))?;
