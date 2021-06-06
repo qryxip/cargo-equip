@@ -4,7 +4,7 @@
 
 ### Added
 
-- Scopes for macros are preserved. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
+- Scopes for macros are now preserved. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
 
     Now you can `use` macros anywhere.
 
@@ -18,7 +18,7 @@
     }
     ```
 
-- Dummy macros are expanded for `proc-macro` crates. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
+- Dummy macros are now expanded for `proc-macro` crates. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
 
     Now you can also `use` procedural macros.
 
@@ -35,7 +35,21 @@
 
     Now you can remove doc comments from [smallvec](https://docs.rs/crate/smallvec).
 
+- Modules in main crates are now supported.
+
+    ```rust
+    mod sub {
+        use smallvec::{smallvec, SmallVec};
+
+        pub(crate) fn f() {
+            let _: SmallVec<[(); 0]> = smallvec![];
+        }
+    }
+    ```
+
 ### Changed
+
+- Dropped the support for Rust 2015. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
 
 - `#[allow(unused_imports)]` will be always inserted. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
 

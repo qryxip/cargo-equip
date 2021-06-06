@@ -38,19 +38,8 @@ version = "0.0.0"
 edition = "2018"
 
 [dependencies]
-ac-library-rs-parted-convolution  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-dsu          = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-fenwicktree  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-lazysegtree  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-math         = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-maxflow      = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-mincostflow  = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-modint       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-scc          = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-segtree      = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-string       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-ac-library-rs-parted-twosat       = { git = "https://github.com/qryxip/ac-library-rs-parted"            }
-proconio                          = { version = "0.4.3", features = ["derive"]                          }
+ac-library-rs-parted-modint = { git = "https://github.com/qryxip/ac-library-rs-parted" }
+proconio = { version = "0.4.3", features = ["derive"] }
 qryxip-competitive-tonelli-shanks = { git = "https://github.com/qryxip/competitive-programming-library" }
 # ...
 ```
@@ -75,21 +64,28 @@ fn main() {
         }
     }
 }
+
+mod sub {
+    // You can also `use` the crate in submodules.
+
+    #[allow(unused_imports)]
+    use proconio::input as _;
+}
 ```
 
 ↓
 
 ```console
 ❯ cargo equip \
->       --resolve-cfgs `# #[cfg(…)]を解決` \
->       --remove docs `# doc commentsを除去` \
->       --minify libs `# ライブラリクレートの展開結果をそれぞれ一行にminify` \
->       --rustfmt `# rustfmtをかける` \
->       --check `# 最終的な生成物がちゃんとコンパイルできるかチェック` \
->       --bin sqrt_mod `# bin targetを指定` | xsel -b
+>       --resolve-cfgs `# Resolve #[cfg(…)]` \
+>       --remove docs `# Remove doc comments` \
+>       --minify libs `# Minify each library` \
+>       --rustfmt `# Apply rustfmt` \
+>       --check `# Check the output` \
+>       --bin sqrt_mod `# Specify the bin target` | xsel -b
 ```
 
-[Submit Info #49437 - Library-Checker](https://judge.yosupo.jp/submission/49437)
+[Submit Info #49478 - Library-Checker](https://judge.yosupo.jp/submission/49478)
 
 ## 動作するクレート
 
@@ -161,7 +157,12 @@ fn main() {
     +use super::foo::Foo;
     ```
 
-5. 可能な限りライブラリを小さなクレートに分割する。
+5. 可能な限り[glob import](https://doc.rust-lang.org/book/ch07-04-bringing-paths-into-scope-with-the-use-keyword.html#the-glob-operator)を使わない。
+
+    cargo-equipは[extern prelude](https://doc.rust-lang.org/reference/names/preludes.html#extern-prelude)や[`#[macro_use]`](https://doc.rust-lang.org/reference/macros-by-example.html#the-macro_use-attribute)を再現するためにglob importを挿入します。
+    glob importを使うとこれと衝突する可能性があります。
+
+6. 可能な限りライブラリを小さなクレートに分割する。
 
     cargo-equipは「クレート内のアイテムの依存関係」を調べることはしません。
     AtCoder以外に参加する場合は、出力結果を制限内(たいてい64KiB程度)に収めるためにできるだけ小さなクレートに分割してください。
@@ -205,7 +206,6 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
 準備ができたらコードを書いてください。
 `bin`/`example`側の制約は以下の2つです。
 
-
 1. 手続き型マクロを利用する場合、マクロ名が被らないように`proc-macro`クレートを選択する。
 
     Rustのモジュールグラフを解析することは困難極まるため、手続き型マクロについてはプレフィックス抜きのマクロ名のみを頼りに展開します。
@@ -214,7 +214,23 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
     もし`use`することで問題が起きるなら、`#[macro_use] extern crate crate_name as _;`でインポートすることで、
     これは`use crate::crate_name::__macros::*;`に置き換えられます。
 
-2. `bin`/`example`内に`mod`を作る場合、その中では[extern prelude](https://doc.rust-lang.org/reference/items/extern-crates.html#extern-prelude)から展開予定のライブラリの名前を解決しない。
+    cargo-equipは[extern prelude](https://doc.rust-lang.org/reference/names/preludes.html#extern-prelude)や[`#[macro_use]`](https://doc.rust-lang.org/reference/macros-by-example.html#the-macro_use-attribute)を再現するためにglob importを挿入します。
+    glob importを使うとこれと衝突する可能性があります。
+
+2. 可能な限りglob importを使わない。
+
+    ライブラリ同様にglob importを挿入します。
+
+    ```rust
+    __prelude_for_main_crate!();
+
+    mod sub {
+        crate::__prelude_for_main_crate!();
+    }
+
+    #[macro_export]
+    macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
+    ```
 
 ```rust
 use input::input;
@@ -246,14 +262,16 @@ fn main() -> _ {
 ```rust
 //! # Bundled libraries
 //!
-//! - `mic 0.0.0 (path+███████████████████████████████████████████)`                                                                                      published in https://github.com/qryxip/mic licensed under `CC0-1.0` as `crate::mic`
-//! - `qryxip-competitive-input 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                                      licensed under `CC0-1.0` as `crate::input`
-//! - `qryxip-competitive-partition-point 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                            licensed under `CC0-1.0` as `crate::partition_point`
+//! - `mic 0.0.0 (path+███████████████████████████████████████████)`                                                                                      published in https://github.com/qryxip/mic licensed under `CC0-1.0` as `crate::__bundled::mic`
+//! - `qryxip-competitive-input 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                                      licensed under `CC0-1.0` as `crate::__bundled::input`
+//! - `qryxip-competitive-partition-point 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                            licensed under `CC0-1.0` as `crate::__bundled::partition_point`
 //!
 //! # Procedural macros
 //!
 //! - `mic_impl 0.0.0 (path+████████████████████████████████████████████████████)` published in https://github.com/qryxip/mic licensed under `CC0-1.0`
 #![allow(unused_imports)]
+
+__prelude_for_main_crate!();
 
 use input::input;
 use mic::answer;
@@ -269,58 +287,66 @@ fn main() -> _ {
 }*/
 fn main() {
     #[allow(unused_imports)]
-    use crate::mic::__YouCannotRecurseIfTheOutputTypeIsInferred as main;
+    use crate::__bundled::mic::__YouCannotRecurseIfTheOutputTypeIsInferred as main;
     let __mic_ans = (move || -> _ {
         input! {a:[u64],}
         a.into_iter()
             .map(|a| (1u64..1_000_000_000).partition_point(|ans| ans.pow(2) < a))
     })();
-    let __mic_ans =
-        {#[allow(unused_imports)]use/*::*/crate::mic::functions::*;(join("\n"))(__mic_ans)};
+    let __mic_ans = {#[allow(unused_imports)]use/*::*/crate::__bundled::mic::functions::*;(join("\n"))(__mic_ans)};
     ::std::println!("{}", __mic_ans);
 }
 
 // The following code was expanded by `cargo-equip`.
 
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_answer{($(_:tt)*)=>(::std::compile_error!("`answer` from `mic_impl 0.0.0` should have been expanded");)}
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_solve{($(_:tt)*)=>(::std::compile_error!("`solve` from `mic_impl 0.0.0` should have been expanded");)}
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_input___input_inner{(@scanner($scanner:ident),@tts())=>{};(@scanner($scanner:ident),@tts(mut$single_tt_pat:tt:$readable:tt))=>{let mut$single_tt_pat=$crate::input::__read!(from$scanner{$readable});};(@scanner($scanner:ident),@tts($single_tt_pat:tt:$readable:tt))=>{let$single_tt_pat=$crate::input::__read!(from$scanner{$readable});};(@scanner($scanner:ident),@tts(mut$single_tt_pat:tt:$readable:tt,$($rest:tt)*))=>{$crate::input::__input_inner!(@scanner($scanner),@tts(mut$single_tt_pat:$readable));$crate::input::__input_inner!(@scanner($scanner),@tts($($rest)*));};(@scanner($scanner:ident),@tts($single_tt_pat:tt:$readable:tt,$($rest:tt)*))=>{$crate::input::__input_inner!(@scanner($scanner),@tts($single_tt_pat:$readable));$crate::input::__input_inner!(@scanner($scanner),@tts($($rest)*));};}
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_input___read{(from$scanner:ident{[$tt:tt]})=>{$crate::input::__read!(from$scanner{[$tt;$crate::input::__read!(from$scanner{usize})]})};(from$scanner:ident{[$tt:tt;$n:expr]})=>{(0..$n).map(|_|$crate::input::__read!(from$scanner{$tt})).collect::<Vec<_>>()};(from$scanner:ident{($($tt:tt),+)})=>{($($crate::input::__read!(from$scanner{$tt})),*)};(from$scanner:ident{{$f:expr}})=>{$crate::input::FnOnceExt::<_>::call_once_from_reader($f,&mut$scanner)};(from$scanner:ident{$ty:ty})=>{<$ty as$crate::input::Readable>::read(||$scanner.next_unwrap())};}
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_input_input{(from$scanner:ident;$($tt:tt)*)=>{$crate::input::__input_inner!(@scanner($scanner),@tts($($tt)*))};($($tt:tt)*)=>{let __scanner=$crate::input::DEFAULT_SCANNER.with(|__scanner|__scanner.clone());let mut __scanner_ref=__scanner.borrow_mut();if let$crate::input::Scanner::Uninited=*__scanner_ref{*__scanner_ref=$crate::input::Scanner::stdin_auto().unwrap();}$crate::input::__input_inner!(@scanner(__scanner_ref),@tts($($tt)*));::std::mem::drop(__scanner_ref);::std::mem::drop(__scanner);};}
+#[macro_export]
+macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
+
+#[cfg_attr(any(), rustfmt::skip)]
+const _: () = {
+    #[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_answer{($(_:tt)*)=>(::std::compile_error!("`answer` from `mic_impl 0.0.0` should have been expanded");)}
+    #[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_solve{($(_:tt)*)=>(::std::compile_error!("`solve` from `mic_impl 0.0.0` should have been expanded");)}
+    #[macro_export]macro_rules!__macro_def_input___input_inner{/* … */}
+    #[macro_export]macro_rules!__macro_def_input___read{/* … */}
+    #[macro_export]macro_rules!__macro_def_input_input{/* … */}
+};
 
 #[allow(unused)]
-pub mod mic {
-    pub mod __macros {}
-    // ⋮
-}
-
-#[allow(unused)]
-pub mod __mic_impl_0_0_0 {
-    pub mod __macros {
-        pub use crate::{
-            __macro_def___mic_impl_0_0_0_answer as answer,
-            __macro_def___mic_impl_0_0_0_solve as solve,
-        };
+pub mod __bundled {
+    #[allow(unused)]
+    pub mod mic {
+        pub mod __macros {}
+        // ⋮
     }
-    pub use self::__macros::*;
-}
 
-#[allow(unused)]
-pub mod input {
-    pub mod __macros {
-        pub use crate::{
-            __macro_def_input___input_inner as __input_inner, __macro_def_input___read as __read,
-            __macro_def_input_input as input,
-        };
+    #[allow(unused)]
+    pub mod __mic_impl_0_0_0 {
+        pub mod __macros {
+            pub use crate::{
+                __macro_def___mic_impl_0_0_0_answer as answer,
+                __macro_def___mic_impl_0_0_0_solve as solve,
+            };
+        }
+        pub use self::__macros::*;
     }
-    pub use self::__macros::*;
-    // ⋮
-}
 
-#[allow(unused)]
-pub mod partition_point {
-    pub mod __macros {}
-    // ⋮
+    #[allow(unused)]
+    pub mod input {
+        pub mod __macros {
+            pub use crate::{
+                __macro_def_input___input_inner as __input_inner, __macro_def_input___read as __read,
+                __macro_def_input_input as input,
+            };
+        }
+        pub use self::__macros::*;
+        // ⋮
+    }
+
+    #[allow(unused)]
+    pub mod partition_point {
+        pub mod __macros {}
+        // ⋮
+    }
 }
 ```
 
@@ -359,6 +385,8 @@ fn fib(n: i64) -> i64 {
 //! - `memoise 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)`         licensed under `BSD-3-Clause`
 //! - `proconio-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)` licensed under `MIT OR Apache-2.0`
 #![allow(unused_imports)]
+
+__prelude_for_main_crate!();
 
 use memoise::memoise;
 use proconio_derive::fastout;
@@ -427,30 +455,38 @@ fn fib(n: i64) -> i64 {
 
 // The following code was expanded by `cargo-equip`.
 
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_memoise_memoise{($(_:tt)*)=>(::std::compile_error!("`memoise` from `memoise 0.3.2` should have been expanded");)}
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_memoise_memoise_map{($(_:tt)*)=>(::std::compile_error!("`memoise_map` from `memoise 0.3.2` should have been expanded");)}
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_proconio_derive_derive_readable{($(_:tt)*)=>(::std::compile_error!("`derive_readable` from `proconio-derive 0.2.1` should have been expanded");)}
-#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!__macro_def_proconio_derive_fastout{($(_:tt)*)=>(::std::compile_error!("`fastout` from `proconio-derive 0.2.1` should have been expanded");)}
+#[macro_export]
+macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
+
+#[cfg_attr(any(), rustfmt::skip)]
+const _: () = {
+    #[macro_export]macro_rules!__macro_def_memoise_memoise{($(_:tt)*)=>(::std::compile_error!("`memoise` from `memoise 0.3.2` should have been expanded");)}
+    #[macro_export]macro_rules!__macro_def_memoise_memoise_map{($(_:tt)*)=>(::std::compile_error!("`memoise_map` from `memoise 0.3.2` should have been expanded");)}
+    #[macro_export]macro_rules!__macro_def_proconio_derive_derive_readable{($(_:tt)*)=>(::std::compile_error!("`derive_readable` from `proconio-derive 0.2.1` should have been expanded");)}
+    #[macro_export]macro_rules!__macro_def_proconio_derive_fastout{($(_:tt)*)=>(::std::compile_error!("`fastout` from `proconio-derive 0.2.1` should have been expanded");)}
+};
 
 #[allow(unused)]
-pub mod memoise {
-    pub mod __macros {
-        pub use crate::{
-            __macro_def_memoise_memoise as memoise, __macro_def_memoise_memoise_map as memoise_map,
-        };
+pub mod __bundled {
+    pub mod memoise {
+        pub mod __macros {
+            pub use crate::{
+                __macro_def_memoise_memoise as memoise,
+                __macro_def_memoise_memoise_map as memoise_map,
+            };
+        }
+        pub use self::__macros::*;
     }
-    pub use self::__macros::*;
-}
 
-#[allow(unused)]
-pub mod proconio_derive {
-    pub mod __macros {
-        pub use crate::{
-            __macro_def_proconio_derive_derive_readable as derive_readable,
-            __macro_def_proconio_derive_fastout as fastout,
-        };
+    pub mod proconio_derive {
+        pub mod __macros {
+            pub use crate::{
+                __macro_def_proconio_derive_derive_readable as derive_readable,
+                __macro_def_proconio_derive_fastout as fastout,
+            };
+        }
+        pub use self::__macros::*;
     }
-    pub use self::__macros::*;
 }
 ```
 

@@ -27,6 +27,7 @@ use quote::quote;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap},
+    iter,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -305,7 +306,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             .iter()
             .map(|(package_id, (_, pseudo_extern_crate_name))| {
                 format!(
-                    "- `{}` as `crate::{}`\n",
+                    "- `{}` as `crate::__bundled::{}`\n",
                     package_id, pseudo_extern_crate_name,
                 )
             })
@@ -537,7 +538,8 @@ fn bundle(
                     })
                     .collect::<Vec<_>>();
                 let content = format!(
-                    "pub mod __macros{{pub use crate::{}{}{};}}pub use self::__macros::*;",
+                    "pub mod __macros{{pub use crate::{}{}{};}}\
+                     pub use self::__macros::*;",
                     if names.len() == 1 { " " } else { "{" },
                     names
                         .iter()
@@ -553,7 +555,7 @@ fn bundle(
                             name, lib_package.name, lib_package.version,
                         );
                         let def = format!(
-                            "#[cfg_attr(any(),rustfmt::skip)]#[macro_export]macro_rules!{}\
+                            "#[macro_export]macro_rules!{}\
                              {{($(_:tt)*)=>(::std::compile_error!({});)}}",
                             rename,
                             quote!(#msg),
@@ -653,6 +655,8 @@ fn bundle(
             "cannot know who you are. see https://github.com/qryxip/cargo-equip/issues/120",
         );
 
+        code = rust::insert_prelude_for_main_crate(&code)?;
+
         code = rust::prepend_items(&code, &{
             fn list_packages<'a>(
                 doc: &mut String,
@@ -689,7 +693,10 @@ fn bundle(
                     });
 
                     if let Some(pseudo_extern_crate_name) = pseudo_extern_crate_name {
-                        row.add_cell(cell!(format!("as `crate::{}`", pseudo_extern_crate_name)));
+                        row.add_cell(cell!(format!(
+                            "as `crate::__bundled::{}`",
+                            pseudo_extern_crate_name,
+                        )));
                     }
 
                     table.add_row(row);
@@ -784,57 +791,81 @@ fn bundle(
         code += "// The following code was expanded by `cargo-equip`.\n";
         code += "\n";
 
-        code += &match &*libs_with_local_inner_macros
-            .values()
-            .flatten()
-            .unique()
-            .map(|name| format!("{}::__macros::*", name))
-            .collect::<Vec<_>>()
-        {
-            [] => "".to_owned(),
-            [name] => format!("#[allow(unused_imports)]use crate::{};\n\n", name),
-            names => format!(
-                "#[allow(unused_imports)]use crate::{{{}}};\n\n",
-                names.iter().join(","),
-            ),
+        let prelude_for_main_crate = {
+            let prelude_for_main_crate = libs_with_local_inner_macros
+                .values()
+                .flatten()
+                .unique()
+                .sorted()
+                .map(|name| format!("{}::__macros::*", name))
+                .chain(iter::once("*".to_owned()))
+                .collect::<Vec<_>>();
+
+            let multiple = prelude_for_main_crate.len() > 1;
+
+            format!(
+                "{}{}{}",
+                if multiple { "{" } else { "" },
+                prelude_for_main_crate.iter().join(","),
+                if multiple { "}" } else { "" },
+            )
         };
+
+        code += "#[macro_export]\n";
+        code += &format!(
+            "macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::{};));\n",
+            prelude_for_main_crate,
+        );
+        code += "\n";
 
         let macros = contents
             .iter()
             .flat_map(|(_, (_, _, contents))| contents)
             .collect::<BTreeMap<_, _>>();
 
-        for macro_def in macros.values() {
-            code += macro_def;
-            code += "\n";
-        }
         if !macros.is_empty() {
+            code += "#[cfg_attr(any(), rustfmt::skip)]\n";
+            code += "const _: () = {\n";
+            for macro_def in macros.values() {
+                code += "    ";
+                code += macro_def;
+                code += "\n";
+            }
+            code += "};\n";
             code += "\n";
         }
+        code += "\n";
 
         if minify == Minify::Libs {
-            code += "\n";
-
+            code += "#[rustfmt::skip]\n";
+        }
+        code += "#[allow(unused)]\n";
+        code += "pub mod __bundled {\n";
+        if minify == Minify::Libs {
             for (pseudo_extern_crate_name, (_, content, _)) in &contents {
-                code += "#[rustfmt::skip]#[allow(unused)]pub mod ";
+                code += "    pub mod ";
                 code += &pseudo_extern_crate_name.to_string();
                 code += "{";
                 code += &minify_file(
                     content,
-                    Some(&format!("crate::{}", pseudo_extern_crate_name)),
+                    Some(&format!("crate::__bundled::{}", pseudo_extern_crate_name)),
                     shell,
                 )?;
                 code += "}\n";
             }
         } else {
-            for (pseudo_extern_crate_name, (_, content, _)) in &contents {
-                code += "\n#[allow(unused)]\npub mod ";
+            for (i, (pseudo_extern_crate_name, (_, content, _))) in contents.iter().enumerate() {
+                if i > 0 {
+                    code += "\n";
+                }
+                code += "    pub mod ";
                 code += pseudo_extern_crate_name;
                 code += " {\n";
-                code += &rust::indent_code(content, 1);
+                code += &rust::indent_code(content, 2);
                 code += "}\n";
             }
         }
+        code += "}\n";
     }
 
     if minify == Minify::All {

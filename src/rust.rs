@@ -101,7 +101,7 @@ pub(crate) fn translate_abs_paths(
             {
                 self.replacements.insert(
                     (leading_colon.start(), leading_colon.end()),
-                    "/*::*/crate::".to_owned(),
+                    "/*::*/crate::__bundled::".to_owned(),
                 );
 
                 if extern_crate_name != &*pseudo_extern_crate_name {
@@ -188,7 +188,7 @@ pub(crate) fn process_extern_crate_in_bin(
                 if uses.is_empty() {
                     return;
                 }
-                let insertion = format!("{} use crate::{};", vis, uses);
+                let insertion = format!("{} use crate::__bundled::{};", vis, uses);
                 let insertion = insertion.trim_start();
 
                 let pos = item_use.span().start();
@@ -748,8 +748,10 @@ pub(crate) fn replace_crate_paths(
     impl Visitor<'_> {
         fn insert(&mut self, crate_token: &Ident) {
             let pos = crate_token.span().end();
-            self.replacements
-                .insert((pos, pos), format!("::{}", self.extern_crate_name));
+            self.replacements.insert(
+                (pos, pos),
+                format!("::__bundled::{}", self.extern_crate_name),
+            );
         }
     }
 
@@ -850,9 +852,9 @@ pub(crate) fn process_extern_crates_in_lib(
                 self.replacements.insert(
                     (item_use.span().start(), semi_token.span().end()),
                     if let Some((_, rename)) = rename {
-                        quote!(#(#attrs)* #vis use crate::#to as #rename;).to_string()
+                        quote!(#(#attrs)* #vis use crate::__bundled::#to as #rename;).to_string()
                     } else {
-                        quote!(#(#attrs)* #vis use crate::#to as #ident;).to_string()
+                        quote!(#(#attrs)* #vis use crate::__bundled::#to as #ident;).to_string()
                     },
                 );
             }
@@ -1035,7 +1037,7 @@ pub(crate) fn modify_declarative_macros(
         return (
             name,
             minify_token_stream::<_, Infallible>(
-                quote!(#[cfg_attr(any(), rustfmt::skip)] #(#attrs)* #path#bang_token #name_as_ident { #tokens }),
+                quote!(#(#attrs)* #path#bang_token #name_as_ident { #tokens }),
                 |o| Ok(syn::parse_str::<ItemMacro>(o).is_ok()),
             )
             .unwrap(),
@@ -1056,7 +1058,7 @@ pub(crate) fn modify_declarative_macros(
                     out.push(tt);
                     if let [.., TokenTree::Punct(punct), TokenTree::Ident(ident)] = &*out {
                         if punct.as_char() == '$' && ident == "crate" {
-                            out.extend(quote!(::#pseudo_extern_crate_name));
+                            out.extend(quote!(::__bundled::#pseudo_extern_crate_name));
                         }
                     }
                 }
@@ -1087,7 +1089,10 @@ pub(crate) fn modify_declarative_macros(
                 if p.as_char() == '$' && i == "crate"
             ) {
                 let pos = tt2.span().end();
-                acc.insert((pos, pos), format!("::{}", pseudo_extern_crate_name));
+                acc.insert(
+                    (pos, pos),
+                    format!("::__bundled::{}", pseudo_extern_crate_name),
+                );
             }
         }
     }
@@ -1141,7 +1146,7 @@ pub(crate) fn insert_pseudo_preludes(
         if let Some(external_local_inner_macros) = &external_local_inner_macros {
             modules += &formatdoc! {r"
                 mod __external_local_inner_macros {{
-                    pub(super) use crate::{};
+                    pub(super) use crate::__bundled::{};
                 }}
                 ",
                 external_local_inner_macros,
@@ -1150,7 +1155,7 @@ pub(crate) fn insert_pseudo_preludes(
         if let Some(pseudo_extern_crates) = &pseudo_extern_crates {
             modules += &formatdoc! {r"
                 mod __pseudo_extern_prelude {{
-                    pub(super) use crate::{};
+                    pub(super) use crate::__bundled::{};
                 }}
                 ",
                 pseudo_extern_crates,
@@ -1217,6 +1222,9 @@ pub(crate) fn insert_pseudo_preludes(
 }
 
 fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), String>) -> String {
+    if replacements.is_empty() {
+        return code.to_owned();
+    }
     let replacements = replacements.into_iter().collect::<Vec<_>>();
     let mut replacements = &*replacements;
     let mut skip_until = None;
@@ -1262,6 +1270,52 @@ fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), S
     debug_assert!(syn::parse_file(&code).is_ok());
 
     ret
+}
+
+pub(crate) fn insert_prelude_for_main_crate(code: &str) -> syn::Result<String> {
+    let file = &syn::parse_file(code)?;
+    let mut replacements = btreemap!();
+    Visitor {
+        replacements: &mut replacements,
+    }
+    .visit_file(file);
+    return Ok(replace_ranges(code, replacements));
+
+    struct Visitor<'a> {
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+    }
+
+    impl Visitor<'_> {
+        fn visit_items(&mut self, items: &[Item], crate_root: bool) {
+            if let Some(first) = items.first() {
+                let pos = first.span().start();
+                self.replacements.insert(
+                    (pos, pos),
+                    format!(
+                        "{}__prelude_for_main_crate!();\n\n",
+                        if crate_root { "" } else { "crate::" },
+                    ),
+                );
+            }
+            for item in items {
+                if let Item::Mod(item) = item {
+                    self.visit_item_mod(item);
+                }
+            }
+        }
+    }
+
+    impl Visit<'_> for Visitor<'_> {
+        fn visit_file(&mut self, i: &syn::File) {
+            self.visit_items(&i.items, true);
+        }
+
+        fn visit_item_mod(&mut self, i: &ItemMod) {
+            if let Some((_, items)) = &i.content {
+                self.visit_items(items, false);
+            }
+        }
+    }
 }
 
 pub(crate) fn prepend_items(code: &str, append_doc: &str) -> syn::Result<String> {
