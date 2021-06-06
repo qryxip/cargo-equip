@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.14.0] - 2021-06-06Z
 
 ### Added
 
@@ -35,7 +35,7 @@
 
     Now you can remove doc comments from [smallvec](https://docs.rs/crate/smallvec).
 
-- Modules in main crates are now supported.
+- Modules in main crates are now supported. ([#129](https://github.com/qryxip/cargo-equip/pull/129))
 
     ```rust
     mod sub {
@@ -53,13 +53,13 @@
 
 - `#[allow(unused_imports)]` will be always inserted. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
 
-- Updated rust-analyzer to `2021-05-31`.
+- Updated rust-analyzer to `2021-05-31`. ([#130](https://github.com/qryxip/cargo-equip/pull/130))
 
 ### Fixed
 
 - Fixed order of `#[macro_exported]` macros. ([#126](https://github.com/qryxip/cargo-equip/pull/126))
 
-- Fixed [a problem where `attr`s for attribute macros contain parentheses](https://github.com/qryxip/cargo-equip/issues/128).
+- Fixed [a problem where `attr`s for attribute macros contain parentheses](https://github.com/qryxip/cargo-equip/issues/128). ([#130](https://github.com/qryxip/cargo-equip/pull/130))
 
     ```rust
     #[memoise(n <= 10)]
