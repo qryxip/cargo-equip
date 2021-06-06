@@ -123,13 +123,8 @@ jobs:
         uses: actions/checkout@v2
 
       # Workaround for https://github.com/actions/cache/issues/403
-      - name: Install GNU tar
-        run: |
-          type tar
-          brew install gnu-tar
-          type tar
-          echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >> $GITHUB_ENV
-          type tar
+      - name: Use GNU tar
+        run: echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >> $GITHUB_ENV
         if: matrix.os == 'macos-10.15'
 
       - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
@@ -166,7 +161,7 @@ jobs:
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             ~/.cargo/bin/cargo-udeps
-          key: build-crates-${{ matrix.channle }}-${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
+          key: build-crates-${{ matrix.os }}-${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
 
       - name: Cache for build cache
         uses: actions/cache@v2
