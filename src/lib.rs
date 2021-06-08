@@ -110,6 +110,9 @@ pub enum Opt {
         )]
         oneline: Minify,
 
+        #[structopt(long)]
+        allow_unused_imports: bool,
+
         /// Format the output before emitting
         #[structopt(long)]
         rustfmt: bool,
@@ -242,6 +245,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         remove,
         minify,
         oneline,
+        allow_unused_imports,
         rustfmt,
         check,
         output,
@@ -336,6 +340,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         resolve_cfgs,
         &remove,
         minify,
+        allow_unused_imports,
         rustfmt,
         &cache_dir,
         shell,
@@ -372,6 +377,7 @@ fn bundle(
     resolve_cfgs: bool,
     remove: &[Remove],
     minify: Minify,
+    allow_unused_imports: bool,
     rustfmt: bool,
     cache_dir: &Path,
     shell: &mut Shell,
@@ -785,7 +791,7 @@ fn bundle(
             }
 
             doc
-        })?;
+        }, allow_unused_imports)?;
 
         code += "\n";
         code += "// The following code was expanded by `cargo-equip`.\n";

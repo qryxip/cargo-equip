@@ -1318,7 +1318,11 @@ pub(crate) fn insert_prelude_for_main_crate(code: &str) -> syn::Result<String> {
     }
 }
 
-pub(crate) fn prepend_items(code: &str, append_doc: &str) -> syn::Result<String> {
+pub(crate) fn prepend_items(
+    code: &str,
+    append_doc: &str,
+    allow_unused_imports: bool,
+) -> syn::Result<String> {
     let syn::File { shebang, attrs, .. } = syn::parse_file(code)?;
 
     let mut code = code.lines().map(ToOwned::to_owned).collect::<Vec<_>>();
@@ -1364,7 +1368,7 @@ pub(crate) fn prepend_items(code: &str, append_doc: &str) -> syn::Result<String>
     }
 
     Ok(format!(
-        "{}{}{}{}#![allow(unused_imports)]\n\n{}\n",
+        "{}{}{}{}{}\n\n{}\n",
         match shebang {
             Some(shebang) => format!("{}\n", shebang),
             None => "".to_owned(),
@@ -1379,6 +1383,12 @@ pub(crate) fn prepend_items(code: &str, append_doc: &str) -> syn::Result<String>
         append_doc
             .lines()
             .format_with("", |l, f| f(&format_args!("//!{}\n", l))),
+        // insert#![allow(unused_imports)]
+        if allow_unused_imports {
+            "#![allow(unused_imports)]"
+        } else {
+            "".into()
+        },
         code.join("\n").trim_start(),
     ))
 }
@@ -1850,7 +1860,7 @@ mod tests {
     #[test]
     fn prepend_items() -> syn::Result<()> {
         fn test(code: &str, doc: &str, expected: &str) -> syn::Result<()> {
-            let actual = super::prepend_items(code, doc)?;
+            let actual = super::prepend_items(code, doc, true)?;
             assert_diff!(expected, &actual, "\n", 0);
             Ok(())
         }
@@ -1915,7 +1925,7 @@ struct Foo;
 "#,
             r#"fn main() {}
 
-         
+
 struct Foo;
 "#,
         )?;
@@ -1950,18 +1960,18 @@ fn main() {
 // ggggg
 "#,
             r#"fn main() {
-            
-             println!("Hi!");         
-            
+
+             println!("Hi!");
+
 }
-        
+
 "#,
         )?;
 
         test(
             r#"/* aaaaa */ type A = (i64, i64, i64); // bbbbb
 "#,
-            r#"type A = (i64, i64, i64);         
+            r#"type A = (i64, i64, i64);
 "#,
         )?;
 
@@ -1972,7 +1982,7 @@ fn main() {
 }
 "#,
             r#"fn foo() {
-    let _ = 1 + 1;         
+    let _ = 1 + 1;
 }
 "#,
         )
