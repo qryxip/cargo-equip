@@ -110,6 +110,7 @@ pub enum Opt {
         )]
         oneline: Minify,
 
+        /// Insert `#![allow(unused_imports)]`
         #[structopt(long)]
         allow_unused_imports: bool,
 
