@@ -663,135 +663,140 @@ fn bundle(
 
         code = rust::insert_prelude_for_main_crate(&code)?;
 
-        code = rust::prepend_items(&code, &{
-            fn list_packages<'a>(
-                doc: &mut String,
-                title: &str,
-                contents: impl Iterator<Item = (Option<&'a str>, &'a cm::Package)>,
-            ) {
-                let mut table = Table::new();
+        code = rust::prepend_items(
+            &code,
+            &{
+                fn list_packages<'a>(
+                    doc: &mut String,
+                    title: &str,
+                    contents: impl Iterator<Item = (Option<&'a str>, &'a cm::Package)>,
+                ) {
+                    let mut table = Table::new();
 
-                *table.get_format() = FormatBuilder::new()
-                    .column_separator(' ')
-                    .borders(' ')
-                    .build();
+                    *table.get_format() = FormatBuilder::new()
+                        .column_separator(' ')
+                        .borders(' ')
+                        .build();
 
-                let contents = contents.collect::<Vec<_>>();
-                let any_from_local_filesystem = contents.iter().any(|(_, p)| p.source.is_none());
+                    let contents = contents.collect::<Vec<_>>();
+                    let any_from_local_filesystem =
+                        contents.iter().any(|(_, p)| p.source.is_none());
 
-                for (pseudo_extern_crate_name, package) in contents {
-                    let mut row = row![format!("- `{}`", package.id.mask_path())];
+                    for (pseudo_extern_crate_name, package) in contents {
+                        let mut row = row![format!("- `{}`", package.id.mask_path())];
 
-                    if any_from_local_filesystem {
-                        row.add_cell(if package.source.is_some() {
-                            cell!("")
-                        } else if let Some(repository) = &package.repository {
-                            cell!(format!("published in {}", repository))
+                        if any_from_local_filesystem {
+                            row.add_cell(if package.source.is_some() {
+                                cell!("")
+                            } else if let Some(repository) = &package.repository {
+                                cell!(format!("published in {}", repository))
+                            } else {
+                                cell!("published in **missing**")
+                            });
+                        }
+
+                        row.add_cell(if let Some(license) = &package.license {
+                            cell!(format!("licensed under `{}`", license))
                         } else {
-                            cell!("published in **missing**")
+                            cell!("licensed under **missing**")
                         });
+
+                        if let Some(pseudo_extern_crate_name) = pseudo_extern_crate_name {
+                            row.add_cell(cell!(format!(
+                                "as `crate::__bundled::{}`",
+                                pseudo_extern_crate_name,
+                            )));
+                        }
+
+                        table.add_row(row);
                     }
 
-                    row.add_cell(if let Some(license) = &package.license {
-                        cell!(format!("licensed under `{}`", license))
-                    } else {
-                        cell!("licensed under **missing**")
-                    });
-
-                    if let Some(pseudo_extern_crate_name) = pseudo_extern_crate_name {
-                        row.add_cell(cell!(format!(
-                            "as `crate::__bundled::{}`",
-                            pseudo_extern_crate_name,
-                        )));
-                    }
-
-                    table.add_row(row);
-                }
-
-                if !table.is_empty() {
-                    if !doc.is_empty() {
-                        *doc += "\n";
-                    }
-                    *doc += &format!(" # {}\n\n", title);
-                    for line in table.to_string().lines() {
-                        *doc += line.trim_end();
-                        *doc += "\n";
+                    if !table.is_empty() {
+                        if !doc.is_empty() {
+                            *doc += "\n";
+                        }
+                        *doc += &format!(" # {}\n\n", title);
+                        for line in table.to_string().lines() {
+                            *doc += line.trim_end();
+                            *doc += "\n";
+                        }
                     }
                 }
-            }
 
-            let mut doc = "".to_owned();
+                let mut doc = "".to_owned();
 
-            list_packages(
-                &mut doc,
-                "Bundled libraries",
-                contents
+                list_packages(
+                    &mut doc,
+                    "Bundled libraries",
+                    contents
+                        .iter()
+                        .filter(|(_, (p, _, _))| p.has_lib())
+                        .map(|(k, (p, _, _))| (Some(&***k), *p)),
+                );
+
+                list_packages(
+                    &mut doc,
+                    "Procedural macros",
+                    contents
+                        .iter()
+                        .filter(|(_, (p, _, _))| p.has_proc_macro())
+                        .map(|(_, (p, _, _))| (None, *p)),
+                );
+
+                let notices = contents
                     .iter()
                     .filter(|(_, (p, _, _))| p.has_lib())
-                    .map(|(k, (p, _, _))| (Some(&***k), *p)),
-            );
+                    .map(|(_, (p, _, _))| p)
+                    .filter(|lib_package| {
+                        !authors
+                            .iter()
+                            .all(|author| lib_package.authors.contains(author))
+                    })
+                    .flat_map(|lib_package| {
+                        if let Err(err) = shell.status(
+                            "Reading",
+                            format!("the license file of `{}`", lib_package.id),
+                        ) {
+                            return Some(Err(err.into()));
+                        }
+                        match lib_package.read_license_text(cache_dir) {
+                            Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
+                            Ok(None) => None,
+                            Err(err) => Some(Err(err)),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
 
-            list_packages(
-                &mut doc,
-                "Procedural macros",
-                contents
-                    .iter()
-                    .filter(|(_, (p, _, _))| p.has_proc_macro())
-                    .map(|(_, (p, _, _))| (None, *p)),
-            );
-
-            let notices = contents
-                .iter()
-                .filter(|(_, (p, _, _))| p.has_lib())
-                .map(|(_, (p, _, _))| p)
-                .filter(|lib_package| {
-                    !authors
-                        .iter()
-                        .all(|author| lib_package.authors.contains(author))
-                })
-                .flat_map(|lib_package| {
-                    if let Err(err) = shell.status(
-                        "Reading",
-                        format!("the license file of `{}`", lib_package.id),
-                    ) {
-                        return Some(Err(err.into()));
-                    }
-                    match lib_package.read_license_text(cache_dir) {
-                        Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
-                        Ok(None) => None,
-                        Err(err) => Some(Err(err)),
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-
-            if !notices.is_empty() {
-                doc += "\n # License and Copyright Notices\n";
-                for (package_id, license_text) in notices {
-                    doc += &format!("\n - `{}`\n\n", package_id);
-                    let backquotes = {
-                        let (mut n, mut m) = (2, None);
-                        for c in license_text.chars() {
-                            if c == '`' {
-                                m = Some(m.unwrap_or(0) + 1);
-                            } else if let Some(m) = m.take() {
-                                n = cmp::max(n, m);
+                if !notices.is_empty() {
+                    doc += "\n # License and Copyright Notices\n";
+                    for (package_id, license_text) in notices {
+                        doc += &format!("\n - `{}`\n\n", package_id);
+                        let backquotes = {
+                            let (mut n, mut m) = (2, None);
+                            for c in license_text.chars() {
+                                if c == '`' {
+                                    m = Some(m.unwrap_or(0) + 1);
+                                } else if let Some(m) = m.take() {
+                                    n = cmp::max(n, m);
+                                }
+                            }
+                            "`".repeat(cmp::max(n, m.unwrap_or(0)) + 1)
+                        };
+                        doc += &format!("     {}text\n", backquotes);
+                        for line in license_text.lines() {
+                            match line {
+                                "" => doc += "\n",
+                                line => doc += &format!("     {}\n", line),
                             }
                         }
-                        "`".repeat(cmp::max(n, m.unwrap_or(0)) + 1)
-                    };
-                    doc += &format!("     {}text\n", backquotes);
-                    for line in license_text.lines() {
-                        match line {
-                            "" => doc += "\n",
-                            line => doc += &format!("     {}\n", line),
-                        }
+                        doc += &format!("     {}\n", backquotes);
                     }
-                    doc += &format!("     {}\n", backquotes);
                 }
-            }
 
-            doc
-        }, allow_unused_imports)?;
+                doc
+            },
+            allow_unused_imports,
+        )?;
 
         code += "\n";
         code += "// The following code was expanded by `cargo-equip`.\n";
