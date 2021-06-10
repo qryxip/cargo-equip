@@ -1318,6 +1318,79 @@ pub(crate) fn insert_prelude_for_main_crate(code: &str) -> syn::Result<String> {
     }
 }
 
+pub(crate) fn allow_unused_imports_for_seemingly_proc_macros(
+    code: &str,
+    mut seemingly_proc_macro: impl FnMut(&str, &str) -> bool,
+) -> syn::Result<String> {
+    let file = &syn::parse_file(code)?;
+    let mut replacements = btreemap!();
+    Visitor {
+        replacements: &mut replacements,
+        seemingly_proc_macro: &mut seemingly_proc_macro,
+    }
+    .visit_file(file);
+    return Ok(if replacements.is_empty() {
+        code.to_owned()
+    } else {
+        replace_ranges(code, replacements)
+    });
+
+    struct Visitor<'a, P> {
+        replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+        seemingly_proc_macro: P,
+    }
+
+    impl<P: FnMut(&str, &str) -> bool> Visit<'_> for Visitor<'_, P> {
+        fn visit_item_use(&mut self, i: &ItemUse) {
+            if let UseTree::Path(UsePath { ident, tree, .. }) = &i.tree {
+                match &**tree {
+                    UseTree::Name(name)
+                        if (self.seemingly_proc_macro)(
+                            &ident.to_string(),
+                            &name.ident.to_string(),
+                        ) =>
+                    {
+                        self.replacements.insert(
+                            (i.span().start(), i.span().start()),
+                            "#[allow(unused_imports)]\n".to_owned(),
+                        );
+                    }
+                    UseTree::Group(UseGroup { items, .. }) => {
+                        for pair in items.pairs() {
+                            let item = pair.value();
+                            if let UseTree::Name(name) = item {
+                                if (self.seemingly_proc_macro)(
+                                    &ident.to_string(),
+                                    &name.ident.to_string(),
+                                ) {
+                                    self.replacements.insert(
+                                        (pair.span().start(), pair.span().start()),
+                                        "/*".to_owned(),
+                                    );
+                                    self.replacements.insert(
+                                        (pair.span().end(), pair.span().end()),
+                                        "*/".to_owned(),
+                                    );
+                                    self.replacements.insert(
+                                        (i.span().end(), i.span().end()),
+                                        format!(
+                                            "\n#[allow(unused_imports)]\n{}use {}::{};",
+                                            (i.vis.to_token_stream().to_string() + " ").trim(),
+                                            ident,
+                                            name.ident,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
     let syn::File { shebang, attrs, .. } = syn::parse_file(code)?;
 
