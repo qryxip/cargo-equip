@@ -657,7 +657,7 @@ fn bundle(
 
         code = rust::insert_prelude_for_main_crate(&code)?;
 
-        code = rust::prepend_items(&code, &{
+        code = rust::prepend_mod_doc(&code, &{
             fn list_packages<'a>(
                 doc: &mut String,
                 title: &str,
