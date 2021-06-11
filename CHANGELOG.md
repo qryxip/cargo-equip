@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- cargo-equip now inserts `#[allow(unused_imports)]` for only **seemingly** procedural macros.
+
+    ```rust
+    use proconio::{fastout, input};
+    ```
+
+    ```rust
+    use proconio::{/*fastout*/, input};
+    #[allow(unused_imports)]
+    use proconio::fastout;
+    ```
+
 ## [0.14.0] - 2021-06-06Z
 
 ### Added

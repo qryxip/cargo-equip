@@ -1,3 +1,5 @@
+#![deny(unused_imports)]
+
 use multimap::{multimap, MultiMap};
 
 fn main() {

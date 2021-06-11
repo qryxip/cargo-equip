@@ -1,3 +1,5 @@
+#![deny(unused_imports)]
+
 use smallvec::{smallvec, SmallVec};
 
 fn main() {

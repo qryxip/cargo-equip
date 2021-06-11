@@ -21,12 +21,15 @@ use cargo_metadata as cm;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
 use maplit::{btreeset, hashmap, hashset};
-use petgraph::{graph::Graph, visit::Dfs};
+use petgraph::{
+    graph::{Graph, NodeIndex},
+    visit::Dfs,
+};
 use prettytable::{cell, format::FormatBuilder, row, Table};
 use quote::quote;
 use std::{
     cmp,
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     iter,
     path::{Path, PathBuf},
     str::FromStr,
@@ -477,29 +480,37 @@ fn bundle(
         })
         .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
 
-    let libs_with_local_inner_macros = {
-        let mut graph = Graph::new();
-        let mut indices = hashmap!();
-        for pkg in libs_to_bundle.keys() {
-            indices.insert(*pkg, graph.add_node(*pkg));
+    let (graph, indices) = normal_non_host_dep_graph(&resolve_nodes, libs_to_bundle);
+
+    let libs_using_proc_macros = {
+        let mut crates_using_proc_macros = BTreeMap::<_, HashSet<_>>::new();
+        for (pkg, names) in &proc_macro_names {
+            let (_, pseudo_extern_crate_name) = &libs_to_bundle[pkg];
+            for name in names {
+                crates_using_proc_macros
+                    .entry(&**name)
+                    .or_default()
+                    .insert(&**pseudo_extern_crate_name);
+            }
         }
-        for (from_pkg, (from_crate, _)) in libs_to_bundle {
-            if from_crate.kind != ["proc-macro".to_owned()] {
-                for cm::NodeDep {
-                    pkg: to, dep_kinds, ..
-                } in &resolve_nodes[from_pkg].deps
-                {
-                    if *from_pkg != to
-                        && dep_kinds
-                            .iter()
-                            .any(|cm::DepKindInfo { kind, .. }| *kind == cm::DependencyKind::Normal)
-                        && libs_to_bundle.contains_key(to)
-                    {
-                        graph.add_edge(indices[to], indices[*from_pkg], ());
+        for goal in libs_to_bundle.keys() {
+            if metadata[goal].has_proc_macro() {
+                let mut dfs = Dfs::new(&graph, indices[goal]);
+                while let Some(next) = dfs.next(&graph) {
+                    let (_, pseudo_extern_crate_name) = &libs_to_bundle[graph[next]];
+                    for name in &proc_macro_names[goal] {
+                        crates_using_proc_macros
+                            .entry(name)
+                            .or_default()
+                            .insert(pseudo_extern_crate_name);
                     }
                 }
             }
         }
+        crates_using_proc_macros
+    };
+
+    let libs_with_local_inner_macros = {
         let mut libs_with_local_inner_macros = libs_to_bundle
             .keys()
             .map(|pkg| (*pkg, btreeset!()))
@@ -657,7 +668,15 @@ fn bundle(
 
         code = rust::insert_prelude_for_main_crate(&code)?;
 
-        code = rust::prepend_items(&code, &{
+        code =
+            rust::allow_unused_imports_for_seemingly_proc_macros(&code, |mod_name, item_name| {
+                matches!(
+                    libs_using_proc_macros.get(item_name), Some(pseudo_extern_crate_names)
+                    if pseudo_extern_crate_names.contains(mod_name)
+                )
+            })?;
+
+        code = rust::prepend_mod_doc(&code, &{
             fn list_packages<'a>(
                 doc: &mut String,
                 title: &str,
@@ -877,4 +896,36 @@ fn bundle(
     }
 
     Ok(code)
+}
+
+fn normal_non_host_dep_graph<'cm>(
+    resolve_nodes: &HashMap<&'cm cm::PackageId, &cm::Node>,
+    libs_to_bundle: &BTreeMap<&'cm cm::PackageId, (&cm::Target, String)>,
+) -> (
+    Graph<&'cm cm::PackageId, ()>,
+    HashMap<&'cm cm::PackageId, NodeIndex>,
+) {
+    let mut graph = Graph::new();
+    let mut indices = hashmap!();
+    for pkg in libs_to_bundle.keys() {
+        indices.insert(*pkg, graph.add_node(*pkg));
+    }
+    for (from_pkg, (from_crate, _)) in libs_to_bundle {
+        if from_crate.is_lib() {
+            for cm::NodeDep {
+                pkg: to, dep_kinds, ..
+            } in &resolve_nodes[from_pkg].deps
+            {
+                if *from_pkg != to
+                    && dep_kinds
+                        .iter()
+                        .any(|cm::DepKindInfo { kind, .. }| *kind == cm::DependencyKind::Normal)
+                    && libs_to_bundle.contains_key(to)
+                {
+                    graph.add_edge(indices[to], indices[*from_pkg], ());
+                }
+            }
+        }
+    }
+    (graph, indices)
 }

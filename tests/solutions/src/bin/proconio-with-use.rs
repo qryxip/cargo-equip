@@ -1,3 +1,5 @@
+#![deny(unused_imports)]
+
 use proconio::{fastout, input};
 
 #[fastout]
