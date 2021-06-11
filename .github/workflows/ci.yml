@@ -104,9 +104,9 @@ jobs:
           - x86_64-apple-darwin
           - x86_64-unknown-linux-gnu
         include:
-          - { channel: stable, target-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
-          - { channel: stable, target-triple: x86_64-apple-darwin     , os: macos-10.15  }
-          - { channel: stable, target-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
+          - { channel: stable, target-triple: x86_64-pc-windows-msvc  , exe-suffix: .exe, os: windows-2019 }
+          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-10.15  }
+          - { channel: stable, target-triple: x86_64-unknown-linux-gnu, exe-suffix: ''  , os: ubuntu-20.04 }
 
     name: ${{ matrix.channel }}-${{ matrix.target-triple }}
     runs-on: ${{ matrix.os }}
@@ -160,7 +160,7 @@ jobs:
           path: |
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
-            ~/.cargo/bin/cargo-udeps
+            ~/.cargo/bin/cargo-udeps${{ matrix.exe-suffix }}
           key: build-crates-${{ matrix.os }}-${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
 
       - name: Cache for build cache
