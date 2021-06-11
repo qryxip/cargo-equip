@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.15.0] - 2021-06-11Z
 
 ### Changed
 
@@ -10,8 +10,10 @@
     use proconio::{fastout, input};
     ```
 
+    ↓
+
     ```rust
-    use proconio::{/*fastout*/, input};
+    use proconio::{/*fastout,*/ input};
     #[allow(unused_imports)]
     use proconio::fastout;
     ```
