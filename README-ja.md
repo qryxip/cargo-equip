@@ -85,7 +85,7 @@ mod sub {
 >       --bin sqrt_mod `# Specify the bin target` | xsel -b
 ```
 
-[Submit Info #49478 - Library-Checker](https://judge.yosupo.jp/submission/49478)
+[Submit Info #50014 - Library-Checker](https://judge.yosupo.jp/submission/50014)
 
 ## 動作するクレート
 

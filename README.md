@@ -86,7 +86,7 @@ mod sub {
 >       --bin sqrt_mod `# Specify the bin target` | xsel -b
 ```
 
-[Submit Info #49478 - Library-Checker](https://judge.yosupo.jp/submission/49478)
+[Submit Info #50014 - Library-Checker](https://judge.yosupo.jp/submission/50014)
 
 ## Works With
 
@@ -258,11 +258,11 @@ It gives tentative `extern_crate_name`s like `__package_name_0_1_0` to dependenc
 //! # Procedural macros
 //!
 //! - `mic_impl 0.0.0 (path+████████████████████████████████████████████████████)` published in https://github.com/qryxip/mic licensed under `CC0-1.0`
-#![allow(unused_imports)]
 
 __prelude_for_main_crate!();
 
 use input::input;
+#[allow(unused_imports)]
 use mic::answer;
 use partition_point::RangeBoundsExt as _;
 
@@ -373,10 +373,10 @@ fn fib(n: i64) -> i64 {
 //!
 //! - `memoise 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)`         licensed under `BSD-3-Clause`
 //! - `proconio-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)` licensed under `MIT OR Apache-2.0`
-#![allow(unused_imports)]
 
 __prelude_for_main_crate!();
 
+#[allow(unused_imports)]
 use memoise::memoise;
 use proconio_derive::fastout;
 
