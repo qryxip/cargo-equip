@@ -1,3 +1,5 @@
+#![deny(unused_imports)]
+
 use maplit::{btreemap, btreeset, convert_args, hashmap, hashset};
 
 fn main() {
