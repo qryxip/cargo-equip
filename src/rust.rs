@@ -1416,14 +1416,12 @@ pub(crate) fn prepend_mod_doc(code: &str, append: &str) -> syn::Result<String> {
     {
         doc.push(val);
 
+        let i = span.start().line - 1;
+        let l = span.start().column;
         if span.start().line == span.end().line {
-            let i = span.start().line - 1;
-            let l = span.start().column;
             let r = span.end().column;
             code[i] = format!("{}{}{}", &code[i][..l], " ".repeat(r - l), &code[i][r..]);
         } else {
-            let i = span.start().line - 1;
-            let l = span.start().column;
             code[i] = format!("{}{}", &code[i][..l], code[i].len() - l);
 
             for line in &mut code[span.start().line..span.end().line - 2] {
@@ -1762,13 +1760,12 @@ fn erase(
 }
 
 fn set_span(mask: &mut [FixedBitSet], span: Span, p: bool) {
+    let i1 = span.start().line - 1;
     if span.start().line == span.end().line {
-        let i = span.start().line - 1;
         let l = span.start().column;
         let r = span.end().column;
-        mask[i].set_range(l..r, p);
+        mask[i1].set_range(l..r, p);
     } else {
-        let i1 = span.start().line - 1;
         let i2 = span.end().line - 1;
         let l = span.start().column;
         mask[i1].insert_range(l..);
