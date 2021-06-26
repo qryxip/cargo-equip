@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `--resolve-cfgs` `--rustfmt` `--check` by default.
+
+    Instead, added `--no-resolve-cfgs`, `--no-rustfmt`, and `--no-check`.
+
+    ```console
+    ❯ cargo-equip --resolve-cfgs --rustfmt --check
+    warning: `--resolve-cfgs` is deprecated. `#[cfg(..)]`s are resolved by default
+    warning: `--rustfmt` is deprecated. the output is formatted by default
+    warning: `--check` is deprecated. the output is checked by default
+    ```
+
+- Removed the warning message for `pub(crate)` in libraries. ([#138](https://github.com/qryxip/cargo-equip/pull/138))
+
 ## [0.15.0] - 2021-06-11Z
 
 ### Changed

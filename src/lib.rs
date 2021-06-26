@@ -88,9 +88,13 @@ pub enum Opt {
         #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
         toolchain: String,
 
-        /// Remove `cfg(..)`s as possible
-        #[structopt(long)]
+        /// No-op. Deprecated
+        #[structopt(long, conflicts_with("no_resolve_cfgs"))]
         resolve_cfgs: bool,
+
+        /// Do not resolve `cfg(..)`s
+        #[structopt(long)]
+        no_resolve_cfgs: bool,
 
         /// Remove some part
         #[structopt(long, value_name("REMOVE"), possible_values(Remove::VARIANTS))]
@@ -114,13 +118,21 @@ pub enum Opt {
         )]
         oneline: Minify,
 
-        /// Format the output before emitting
-        #[structopt(long)]
+        /// No-op. Deprecated
+        #[structopt(long, conflicts_with("no_rustfmt"))]
         rustfmt: bool,
 
-        /// Check the output before emitting
+        /// Do not format the output before emitting
         #[structopt(long)]
+        no_rustfmt: bool,
+
+        /// Check the output before emitting
+        #[structopt(long, conflicts_with("no_check"))]
         check: bool,
+
+        /// Do not check the output before emitting
+        #[structopt(long)]
+        no_check: bool,
 
         /// Write to the file instead of STDOUT
         #[structopt(short, long, value_name("PATH"))]
@@ -242,16 +254,19 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude_atcoder_crates,
         exclude_codingame_crates,
         toolchain,
-        resolve_cfgs,
+        resolve_cfgs: deprecated_resolve_cfgs_flag,
+        no_resolve_cfgs,
         remove,
         minify,
-        oneline,
-        rustfmt,
-        check,
+        oneline: deprecated_oneline_opt,
+        rustfmt: deprecated_rustfmt_flag,
+        no_rustfmt,
+        check: deprecated_check_flag,
+        no_check,
         output,
     } = opt;
 
-    let minify = match (minify, oneline) {
+    let minify = match (minify, deprecated_oneline_opt) {
         (Minify::None, oneline) => oneline,
         (minify, _) => minify,
     };
@@ -272,6 +287,16 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         cache_dir,
         shell,
     } = ctx;
+
+    if deprecated_resolve_cfgs_flag {
+        shell.warn("`--resolve-cfgs` is deprecated. `#[cfg(..)]`s are resolved by default")?;
+    }
+    if deprecated_rustfmt_flag {
+        shell.warn("`--rustfmt` is deprecated. the output is formatted by default")?;
+    }
+    if deprecated_check_flag {
+        shell.warn("`--check` is deprecated. the output is checked by default")?;
+    }
 
     let manifest_path = if let Some(manifest_path) = manifest_path {
         cwd.join(manifest_path.strip_prefix(".").unwrap_or(&manifest_path))
@@ -337,16 +362,16 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         &bin_package,
         &bin,
         &libs_to_bundle,
-        resolve_cfgs,
+        !no_resolve_cfgs,
         &remove,
         minify,
-        rustfmt,
+        !no_rustfmt,
         &cache_dir,
         shell,
     )
     .with_context(|| error_message("could not bundle the code"))?;
 
-    if check {
+    if !no_check {
         workspace::cargo_check_using_current_lockfile_and_cache(
             &metadata,
             &bin_package,

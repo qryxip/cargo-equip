@@ -22,10 +22,10 @@
 - 一部のクレートを除外 (`--exclude(-atcoder-crates, codingame-crates)`)
 - 手続き型マクロの展開 (`bin`内のみ)
 - `#[macro_export]`のスコープを保持
-- `#[cfg(..)]`の解決 (`--resolve-cfgs`)
+- `#[cfg(..)]`の解決
 - コメントおよびdocコメントの削除 (`--remove`)
 - minify機能 (`--minify`)
-- 生成物をコンパイルが通るかチェック (`--check`)
+- 生成物をコンパイルが通るかチェック
 
 ## 例
 
@@ -77,12 +77,9 @@ mod sub {
 
 ```console
 ❯ cargo equip \
->       --resolve-cfgs `# Resolve #[cfg(…)]` \
->       --remove docs `# Remove doc comments` \
->       --minify libs `# Minify each library` \
->       --rustfmt `# Apply rustfmt` \
->       --check `# Check the output` \
->       --bin sqrt_mod `# Specify the bin target` | xsel -b
+>       --remove docs `# doc commentを除去` \
+>       --minify libs `# ライブラリをそれぞれ一行にminify` \
+>       --bin sqrt_mod `# binクレートを指定` | xsel -b
 ```
 
 [Submit Info #50014 - Library-Checker](https://judge.yosupo.jp/submission/50014)
@@ -254,7 +251,7 @@ fn main() -> _ {
 ただし`default-run`には未対応です。
 
 ```console
-❯ cargo equip --resolve-cfgs --rustfmt --check --bin "$name"
+❯ cargo equip --bin "$name"
 ```
 
 コードはこのように展開されます。
@@ -349,6 +346,54 @@ pub mod __bundled {
         // ⋮
     }
 }
+```
+
+## `#[cfg(…)]`の解決
+
+cargo-equipはデフォルトで
+
+1. `#[cfg(恒真)]` (e.g. `cfg(feature = "enabled-feature")`)のアトリビュートを消去します。
+2. `#[cfg(恒偽)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`)のアトリビュートが付いたアイテムを消去します。
+
+これは次の割り当てで判定されます。
+
+- [`test`](https://doc.rust-lang.org/reference/conditional-compilation.html#test): `false`
+- [`proc_macro`](https://doc.rust-lang.org/reference/conditional-compilation.html#proc_macro): `false`
+- `cargo_equip`: `true`
+- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `bin`/`example`側から見て有効化されているもののみ`true`
+- それ以外: 不明
+
+```rust
+#[allow(dead_code)]
+pub mod a {
+    pub struct A;
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn it_works() {
+            assert_eq!(2 + 2, 4);
+        }
+    }
+}
+```
+
+↓
+
+```rust
+#[allow(dead_code)]
+pub mod a {
+    pub struct A;
+}
+```
+
+## 出力を`cargo check`
+
+cargo-equipはデフォルトでバンドルしたコードを出力する前にtarget directoryを共有した一時パッケージを作り、それの上で`cargo check`します。
+
+```console
+    Checking cargo-equip-check-output-6j2i3j3tgtugeaqm v0.1.0 (/tmp/cargo-equip-check-output-6j2i3j3tgtugeaqm)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.11s
 ```
 
 ## 手続き型マクロの展開
@@ -499,42 +544,9 @@ pub mod __bundled {
 
 ## オプション
 
-### `--resolve-cfgs`
+### `--no-resolve-cfgs`
 
-1. `#[cfg(恒真)]` (e.g. `cfg(feature = "enabled-feature")`)のアトリビュートを消去します。
-2. `#[cfg(恒偽)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`)のアトリビュートが付いたアイテムを消去します。
-
-これは次の割り当てで判定されます。
-
-- [`test`](https://doc.rust-lang.org/reference/conditional-compilation.html#test): `false`
-- [`proc_macro`](https://doc.rust-lang.org/reference/conditional-compilation.html#proc_macro): `false`
-- `cargo_equip`: `true`
-- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `bin`/`example`側から見て有効化されているもののみ`true`
-- それ以外: 不明
-
-```rust
-#[allow(dead_code)]
-pub mod a {
-    pub struct A;
-
-    #[cfg(test)]
-    mod tests {
-        #[test]
-        fn it_works() {
-            assert_eq!(2 + 2, 4);
-        }
-    }
-}
-```
-
-↓
-
-```rust
-#[allow(dead_code)]
-pub mod a {
-    pub struct A;
-}
-```
+`#[cfg(…)]`を解決しません。
 
 ### `--remove <REMOVE>...`
 
@@ -569,26 +581,13 @@ pub mod a {
 
 ただ現段階では実装が適当なのでいくつか余計なスペースが挟まる場合があります。
 
-### `--rustfmt`
+### `--no-rustfmt`
 
-出力をRustfmtでフォーマットします。
+出力をRustfmtでフォーマットするのをスキップします。
 
-### `--check`
+### `--no-check`
 
-バンドルしたコードを出力する前にtarget directoryを共有した一時パッケージを作り、それの上で`cargo check`します。
-
-`#![cfg_attr(cargo_equip, cargo_equip::skip)]`でスキップした場合も有効です。
-
-```console
-❯ cargo equip --check -o /dev/null
-     Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
-    Checking solve v0.0.0 (/home/ryo/src/local/a/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.13s
-info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-4eea33c8603d6001.json"
-    Bundling the code
-    Checking cargo-equip-check-output-6j2i3j3tgtugeaqm v0.1.0 (/tmp/cargo-equip-check-output-6j2i3j3tgtugeaqm)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.11s
-```
+出力を`cargo check`にかけるのをスキップします。
 
 ## ライセンス
 

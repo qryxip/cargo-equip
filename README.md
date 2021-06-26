@@ -23,10 +23,10 @@ cargo-equip can
 - exclude certain crates (`--exclude(-atcoder-crates, codingame-crates)`),
 - expand procedural macros,
 - preserve scopes for `#[macro_export]`ed macros,
-- resolve `#[cfg(..)]` (`--resolve-cfgs`),
+- resolve `#[cfg(..)]`,
 - remove comments and doc comments (`--remove`),
 - minify code (`--minify`),
-- and check the output (`--check`).
+- and check the output.
 
 ## Example
 
@@ -78,12 +78,9 @@ mod sub {
 
 ```console
 ❯ cargo equip \
->       --resolve-cfgs `# Resolve #[cfg(…)]` \
 >       --remove docs `# Remove doc comments` \
 >       --minify libs `# Minify each library` \
->       --rustfmt `# Apply rustfmt` \
->       --check `# Check the output` \
->       --bin sqrt_mod `# Specify the bin target` | xsel -b
+>       --bin sqrt_mod `# Specify the bin crate` | xsel -b
 ```
 
 [Submit Info #50014 - Library-Checker](https://judge.yosupo.jp/submission/50014)
@@ -242,7 +239,7 @@ fn main() -> _ {
 Then execute `cargo-equip`.
 
 ```console
-❯ cargo equip --resolve-cfgs --rustfmt --check --bin "$name"
+❯ cargo equip --bin "$name"
 ```
 
 cargo-equip outputs code like this.
@@ -337,6 +334,54 @@ pub mod __bundled {
         // ⋮
     }
 }
+```
+
+## Resolving `#[cfg(…)]`
+
+By default, cargo-equip
+
+1. Removes `#[cfg(always_true_predicate)]` (e.g. `cfg(feature = "enabled-feature")`).
+2. Removes items with `#[cfg(always_false_preducate)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`).
+
+Predicates are evaluated according to this rule.
+
+- [`test`](https://doc.rust-lang.org/reference/conditional-compilation.html#test): `false`
+- [`proc_macro`](https://doc.rust-lang.org/reference/conditional-compilation.html#proc_macro): `false`
+- `cargo_equip`: `true`
+- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `true` for those enabled
+- Otherwise: unknown
+
+```rust
+#[allow(dead_code)]
+pub mod a {
+    pub struct A;
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn it_works() {
+            assert_eq!(2 + 2, 4);
+        }
+    }
+}
+```
+
+↓
+
+```rust
+#[allow(dead_code)]
+pub mod a {
+    pub struct A;
+}
+```
+
+## Checking the output
+
+By default, cargo-equip creates a temporary package that shares the current target directory and execute `cargo check` before outputting.
+
+```console
+    Checking cargo-equip-check-output-6j2i3j3tgtugeaqm v0.1.0 (/tmp/cargo-equip-check-output-6j2i3j3tgtugeaqm)
+    Finished dev [unoptimized + debuginfo] target(s) in 0.11s
 ```
 
 ## Expanding procedural macros
@@ -487,42 +532,9 @@ pub mod __bundled {
 
 ## Options
 
-### `--resolve-cfgs`
+### `--no-resolve-cfgs`
 
-1. Removes `#[cfg(always_true_predicate)]` (e.g. `cfg(feature = "enabled-feature")`).
-2. Removes items with `#[cfg(always_false_preducate)]` (e.g. `cfg(test)`, `cfg(feature = "disable-feature")`).
-
-Predicates are evaluated according to this rule.
-
-- [`test`](https://doc.rust-lang.org/reference/conditional-compilation.html#test): `false`
-- [`proc_macro`](https://doc.rust-lang.org/reference/conditional-compilation.html#proc_macro): `false`
-- `cargo_equip`: `true`
-- [`feature`](https://doc.rust-lang.org/cargo/reference/features.html): `true` for those enabled
-- Otherwise: unknown
-
-```rust
-#[allow(dead_code)]
-pub mod a {
-    pub struct A;
-
-    #[cfg(test)]
-    mod tests {
-        #[test]
-        fn it_works() {
-            assert_eq!(2 + 2, 4);
-        }
-    }
-}
-```
-
-↓
-
-```rust
-#[allow(dead_code)]
-pub mod a {
-    pub struct A;
-}
-```
+Do not resolve `#[cfg(…)]`.
 
 ### `--remove <REMOVE>...`
 
@@ -560,26 +572,13 @@ Minifies
 Not that the minification function is incomplete.
 Unnecessary spaces may be inserted.
 
-### `--rustfmt`
+### `--no-rustfmt`
 
-Formats the output with Rustfmt.
+Do not format the output.
 
-### `--check`
+### `--no-check`
 
-Creates a temporary package that shares the current target directory and execute `cargo check` before outputting.
-
-This flag works even if bundling was skipped by `#![cfg_attr(cargo_equip, cargo_equip::skip)]`.
-
-```console
-❯ cargo equip --check -o /dev/null
-     Running `/home/ryo/.cargo/bin/rustup run nightly cargo udeps --output json -p solve --bin solve`
-    Checking solve v0.0.0 (/home/ryo/src/local/a/solve)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.13s
-info: Loading save analysis from "/home/ryo/src/local/a/solve/target/debug/deps/save-analysis/solve-4eea33c8603d6001.json"
-    Bundling the code
-    Checking cargo-equip-check-output-6j2i3j3tgtugeaqm v0.1.0 (/tmp/cargo-equip-check-output-6j2i3j3tgtugeaqm)
-    Finished dev [unoptimized + debuginfo] target(s) in 0.11s
-```
+Do not check the output.
 
 ## License
 
