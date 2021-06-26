@@ -28,6 +28,9 @@ macro_rules! md5_snapshot_tests {
         $(
             #[test]
             fn $name() -> anyhow::Result<()> {
+                // workaround for grcov
+                env::remove_var("RUSTFLAGS");
+
                 let output = format!("{:x}", md5::compute(snapshot_test(&stringify!($name).replace('_', "-"), LOCK.lock().unwrap())?));
                 assert_snapshot!(stringify!($name), output);
                 Ok(())
