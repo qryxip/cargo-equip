@@ -4,7 +4,7 @@
 
 ### Changed
 
-- `--resolve-cfgs` `--rustfmt` `--check` by default.
+- `--resolve-cfgs` `--rustfmt` `--check` by default ([#139](https://github.com/qryxip/cargo-equip/pull/139)).
 
     Instead, added `--no-resolve-cfgs`, `--no-rustfmt`, and `--no-check`.
 
@@ -16,6 +16,10 @@
     ```
 
 - Removed the warning message for `pub(crate)` in libraries. ([#138](https://github.com/qryxip/cargo-equip/pull/138))
+
+- Added `…#proconio:0.3.8` to `--exclude-atcoder-crates`.
+
+- Updated `--exclude-codingame-crates`.
 
 ## [0.15.0] - 2021-06-11Z
 
