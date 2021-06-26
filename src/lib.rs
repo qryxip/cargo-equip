@@ -80,7 +80,7 @@ pub enum Opt {
         #[structopt(long)]
         exclude_atcoder_crates: bool,
 
-        /// Alias for `--exclude https://github.com/rust-lang/crates.io-index#chrono:0.4.9 ..`
+        /// Alias for `--exclude https://github.com/rust-lang/crates.io-index#chrono:0.4.19 ..`
         #[structopt(long)]
         exclude_codingame_crates: bool,
 
@@ -222,6 +222,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         "https://github.com/rust-lang/crates.io-index#petgraph:0.5.0",
         "https://github.com/rust-lang/crates.io-index#proconio:0.3.6",
         "https://github.com/rust-lang/crates.io-index#proconio:0.3.7",
+        "https://github.com/rust-lang/crates.io-index#proconio:0.3.8",
         "https://github.com/rust-lang/crates.io-index#rand:0.7.3",
         "https://github.com/rust-lang/crates.io-index#rand_chacha:0.2.2",
         "https://github.com/rust-lang/crates.io-index#rand_core:0.5.1",
@@ -237,12 +238,12 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     ];
 
     static CODINGAME_CRATES: &[&str] = &[
-        "https://github.com/rust-lang/crates.io-index#chrono:0.4.9",
-        "https://github.com/rust-lang/crates.io-index#itertools:0.8.0",
-        "https://github.com/rust-lang/crates.io-index#libc:0.2.62",
-        "https://github.com/rust-lang/crates.io-index#rand:0.7.2",
-        "https://github.com/rust-lang/crates.io-index#regex:1.3.0",
-        "https://github.com/rust-lang/crates.io-index#time:0.1.42",
+        "https://github.com/rust-lang/crates.io-index#chrono:0.4.19",
+        "https://github.com/rust-lang/crates.io-index#itertools:0.10.0",
+        "https://github.com/rust-lang/crates.io-index#libc:0.2.93",
+        "https://github.com/rust-lang/crates.io-index#rand:0.8.3",
+        "https://github.com/rust-lang/crates.io-index#regex:1.4.5",
+        "https://github.com/rust-lang/crates.io-index#time:0.2.26",
     ];
 
     let Opt::Equip {
