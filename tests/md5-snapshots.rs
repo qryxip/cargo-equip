@@ -68,13 +68,10 @@ fn snapshot_test(name: &str, _: MutexGuard<'_, ()>) -> anyhow::Result<String> {
             "--toolchain",
             &env::var("CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN")
                 .unwrap_or_else(|_| "nightly".to_owned()),
-            "--resolve-cfgs",
             "--remove",
             "docs",
             "--minify",
             "libs",
-            "--rustfmt",
-            "--check",
             "--bin",
             &name.replace('_', "-"),
         ])?,
