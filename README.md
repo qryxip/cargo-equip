@@ -20,7 +20,7 @@ cargo-equip can
 
 - bundle multiple crates,
 - bundle only used crates,
-- exclude certain crates (`--exclude(-atcoder-crates, codingame-crates)`),
+- exclude certain crates (`--exclude-{atcoder, codingame}-crates`),
 - expand procedural macros,
 - preserve scopes for `#[macro_export]`ed macros,
 - resolve `#[cfg(..)]`,
