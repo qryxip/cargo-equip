@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [0.16.0] - 2021-06-26Z
 
 ### Changed
 
@@ -21,7 +21,7 @@
 
     Added `…#proconio:0.3.8` to `--exclude-atcoder-crates`.
 
-- Updated rust-analyzer to `2021-06-21`.
+- Updated rust-analyzer to `2021-06-21`. ([#141](https://github.com/qryxip/cargo-equip/pull/141))
 
 ## [0.15.0] - 2021-06-11Z
 
