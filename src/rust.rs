@@ -160,7 +160,7 @@ pub(crate) fn insert_prelude_for_main_crate(code: &str) -> syn::Result<String> {
                 self.replacements.insert(
                     (pos, pos),
                     format!(
-                        "{}__cargo_equip::prelude_for!(crate);\n\n",
+                        "pub use {}__cargo_equip::prelude::*;\n\n",
                         if crate_root { "" } else { "crate::" },
                     ),
                 );
@@ -1559,14 +1559,14 @@ impl CodeEdit {
         let mut prelude = "".to_owned();
         if let Some(external_local_inner_macros) = &external_local_inner_macros {
             prelude += &format!(
-                "pub(in crate::__cargo_equip::crates::{}) use crate::__cargo_equip::macros::{};",
-                pseudo_extern_crate_name, external_local_inner_macros,
+                "pub(in crate::__cargo_equip) use crate::__cargo_equip::macros::{};",
+                external_local_inner_macros,
             );
         }
         if let Some(pseudo_extern_crates) = &pseudo_extern_crates {
             prelude += &format!(
-                "pub(in crate::__cargo_equip::crates::{}) use crate::__cargo_equip::crates::{};",
-                pseudo_extern_crate_name, pseudo_extern_crates,
+                "pub(in crate::__cargo_equip) use crate::__cargo_equip::crates::{};",
+                pseudo_extern_crates,
             );
         }
 
@@ -1582,7 +1582,7 @@ impl CodeEdit {
                 (pos, pos)
             },
             format!(
-                "crate::__cargo_equip::prelude_for!(crate::__cargo_equip::crates::{});",
+                "use crate::__cargo_equip::preludes::{}::*;",
                 pseudo_extern_crate_name,
             ),
         );
@@ -1607,7 +1607,7 @@ impl CodeEdit {
             self.replacements.insert(
                 (pos, pos),
                 format!(
-                    "crate::__cargo_equip::prelude_for!(crate::__cargo_equip::crates::{});",
+                    "use crate::__cargo_equip::preludes::{}::*;",
                     pseudo_extern_crate_name,
                 ),
             );

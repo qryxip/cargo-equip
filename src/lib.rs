@@ -32,7 +32,6 @@ use quote::quote;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
-    iter,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -691,8 +690,8 @@ fn bundle(
                             lib_package,
                             crate_mod_content,
                             macro_mod_content,
-                            macro_defs,
                             "".to_owned(),
+                            macro_defs,
                         ),
                     ));
                 }
@@ -720,7 +719,7 @@ fn bundle(
                     &pseudo_extern_crate_name,
                     remove.contains(&Remove::Docs),
                 )?;
-                let pseudo_prelude = edit.resolve_pseudo_prelude(
+                let prelude_mod_content = edit.resolve_pseudo_prelude(
                     pseudo_extern_crate_name,
                     &libs_with_local_inner_macros[&lib_package.id],
                     &{
@@ -759,8 +758,8 @@ fn bundle(
                         lib_package,
                         crate_mod_content,
                         macro_mod_content,
+                        prelude_mod_content,
                         macro_defs,
-                        pseudo_prelude,
                     ),
                 ))
             },
@@ -772,13 +771,13 @@ fn bundle(
                     &cm::Package,
                     String,
                     String,
-                    BTreeMap<String, String>,
                     String,
+                    BTreeMap<String, String>,
                 ),
             )>,
         >>()?;
 
-    let minify_file = &mut |content, name: Option<&_>, shell: &mut Shell| -> _ {
+    let minify_file = |content: &_, name: Option<&_>, shell: &mut Shell| -> _ {
         rust::minify_file(content, |output| {
             let is_valid = syn::parse_file(output).is_ok();
             if !is_valid {
@@ -947,7 +946,7 @@ fn bundle(
         code += "// The following code was expanded by `cargo-equip`.\n";
         code += "\n";
 
-        let local_macro_uses_in_main_crate = {
+        let prelude_for_main = {
             let local_macro_uses_in_main_crate = libs_with_local_inner_macros
                 .values()
                 .flatten()
@@ -956,15 +955,12 @@ fn bundle(
                 .map(|name| format!("{}::*", name))
                 .collect::<Vec<_>>();
 
-            match &*local_macro_uses_in_main_crate {
+            let local_macro_uses_in_main_crate = match &*local_macro_uses_in_main_crate {
                 [] => None,
                 [part] => Some(part.clone()),
                 parts => Some(format!("{{{}}}", parts.iter().format(","))),
-            }
-        };
+            };
 
-        let prelude_for = iter::once((
-            "crate".to_owned(),
             format!(
                 "pub use crate::__cargo_equip::{};",
                 if let Some(local_macro_uses_in_main_crate) = local_macro_uses_in_main_crate {
@@ -972,21 +968,27 @@ fn bundle(
                 } else {
                     "crates::*".to_owned()
                 }
-            ),
-        ))
-        .chain(libs.iter().map(
-            move |(pseudo_extern_crate_name, (_, _, _, _, pseudo_prelude))| {
-                (
-                    format!("crate::__cargo_equip::crates::{}", pseudo_extern_crate_name),
-                    pseudo_prelude.clone(),
-                )
-            },
-        ))
-        .collect::<Vec<_>>();
+            )
+        };
+
+        let crate_mods = libs
+            .iter()
+            .map(|(name, (_, content, _, _, _))| (*name, &**content))
+            .collect::<Vec<_>>();
+
+        let macro_mods = libs
+            .iter()
+            .map(|(name, (_, _, content, _, _))| (*name, &**content))
+            .collect::<Vec<_>>();
+
+        let prelude_mods = libs
+            .iter()
+            .map(|(name, (_, _, _, content, _))| (*name, &**content))
+            .collect::<Vec<_>>();
 
         let macro_defs = libs
             .iter()
-            .flat_map(|(_, (_, _, _, macro_defs, _))| macro_defs)
+            .flat_map(|(_, (_, _, _, _, macro_defs))| macro_defs)
             .collect::<BTreeMap<_, _>>();
 
         if !macro_defs.is_empty() {
@@ -1002,94 +1004,61 @@ fn bundle(
         }
         code += "\n";
 
+        let mut render_mods = |code: &mut String, mods: &[(&str, &str)]| -> anyhow::Result<()> {
+            if minify == Minify::Libs {
+                for (pseudo_extern_crate_name, mod_content) in mods {
+                    *code += "        pub mod ";
+                    *code += &pseudo_extern_crate_name.to_string();
+                    *code += "{";
+                    *code += &minify_file(
+                        mod_content,
+                        Some(&format!(
+                            "crate::__cargo_equip::macros::{}",
+                            pseudo_extern_crate_name,
+                        )),
+                        shell,
+                    )?;
+                    *code += "}\n";
+                }
+            } else {
+                for (i, (pseudo_extern_crate_name, mod_content)) in mods.iter().enumerate() {
+                    if i > 0 {
+                        *code += "\n";
+                    }
+                    *code += "        pub mod ";
+                    *code += pseudo_extern_crate_name;
+                    *code += " {\n";
+                    *code += &rust::indent_code(mod_content, 3);
+                    *code += "    }\n";
+                }
+            }
+            Ok(())
+        };
+
         if minify == Minify::Libs {
             code += "#[rustfmt::skip]\n";
         }
         code += "#[allow(unused)]\n";
         code += "pub mod __cargo_equip {\n";
         code += "    pub mod crates {\n";
-        if minify == Minify::Libs {
-            for (pseudo_extern_crate_name, (_, crate_mod_content, _, _, _)) in &libs {
-                code += "        pub mod ";
-                code += &pseudo_extern_crate_name.to_string();
-                code += "{";
-                code += &minify_file(
-                    crate_mod_content,
-                    Some(&format!(
-                        "crate::__cargo_equip::crates::{}",
-                        pseudo_extern_crate_name
-                    )),
-                    shell,
-                )?;
-                code += "}\n";
-            }
-        } else {
-            for (i, (pseudo_extern_crate_name, (_, crate_mod_content, _, _, _))) in
-                libs.iter().enumerate()
-            {
-                if i > 0 {
-                    code += "\n";
-                }
-                code += "        pub mod ";
-                code += pseudo_extern_crate_name;
-                code += " {\n";
-                code += &rust::indent_code(crate_mod_content, 3);
-                code += "    }\n";
-            }
-        }
+        render_mods(&mut code, &crate_mods)?;
         code += "    }\n";
         code += "\n";
         code += "    pub mod macros {\n";
-        // TODO: this is almost copy-and-paste
-        if minify == Minify::Libs {
-            for (pseudo_extern_crate_name, (_, _, mod_content, _, _)) in &libs {
-                code += "        pub mod ";
-                code += &pseudo_extern_crate_name.to_string();
-                code += "{";
-                code += &minify_file(
-                    mod_content,
-                    Some(&format!(
-                        "crate::__cargo_equip::macros::{}",
-                        pseudo_extern_crate_name,
-                    )),
-                    shell,
-                )?;
-                code += "}\n";
-            }
-        } else {
-            for (i, (pseudo_extern_crate_name, (_, _, mod_content, _, _))) in
-                libs.iter().enumerate()
-            {
-                if i > 0 {
-                    code += "\n";
-                }
-                code += "        pub mod ";
-                code += pseudo_extern_crate_name;
-                code += " {\n";
-                code += &rust::indent_code(mod_content, 3);
-                code += "    }\n";
-            }
-        }
+        render_mods(&mut code, &macro_mods)?;
         code += "    }\n";
         code += "\n";
+        code += "    pub(crate)";
         code += &if minify == Minify::Libs {
-            format!(
-                "    macro_rules! prelude_for({});\n",
-                prelude_for
-                    .iter()
-                    .map(|(k, v)| format!("({})=>({})", k, v))
-                    .format(";")
-            )
+            format!("mod prelude{{{}", prelude_for_main)
         } else {
-            format!(
-                "    macro_rules! prelude_for {{\n{}    }}\n",
-                prelude_for
-                    .iter()
-                    .map(|(k, v)| format!("        ({}) => ({});\n", k, v))
-                    .format("")
-            )
+            format!(" mod prelude {{\n    {}\n    ", prelude_for_main)
         };
-        code += "    pub(crate) use prelude_for;\n";
+        code += "}\n";
+        code += "\n";
+        code += "    mod preludes {\n";
+        render_mods(&mut code, &prelude_mods)?;
+        code += "    }\n";
         code += "}\n";
     }
 
