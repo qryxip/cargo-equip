@@ -532,10 +532,6 @@ pub mod __bundled {
 
 ## Options
 
-### `--no-resolve-cfgs`
-
-Do not resolve `#[cfg(…)]`.
-
 ### `--remove <REMOVE>...`
 
 Removes
@@ -571,6 +567,10 @@ Minifies
 
 Not that the minification function is incomplete.
 Unnecessary spaces may be inserted.
+
+### `--no-resolve-cfgs`
+
+Do not resolve `#[cfg(…)]`.
 
 ### `--no-rustfmt`
 
