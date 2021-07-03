@@ -1039,12 +1039,12 @@ fn bundle(
             code += "#[rustfmt::skip]\n";
         }
         code += "#[allow(unused)]\n";
-        code += "pub mod __cargo_equip {\n";
-        code += "    pub mod crates {\n";
+        code += "mod __cargo_equip {\n";
+        code += "    pub(crate) mod crates {\n";
         render_mods(&mut code, &crate_mods)?;
         code += "    }\n";
         code += "\n";
-        code += "    pub mod macros {\n";
+        code += "    pub(crate) mod macros {\n";
         render_mods(&mut code, &macro_mods)?;
         code += "    }\n";
         code += "\n";
