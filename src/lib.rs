@@ -88,14 +88,6 @@ pub enum Opt {
         #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
         toolchain: String,
 
-        /// No-op. Deprecated
-        #[structopt(long, conflicts_with("no_resolve_cfgs"))]
-        resolve_cfgs: bool,
-
-        /// Do not resolve `cfg(..)`s
-        #[structopt(long)]
-        no_resolve_cfgs: bool,
-
         /// Remove some part
         #[structopt(long, value_name("REMOVE"), possible_values(Remove::VARIANTS))]
         remove: Vec<Remove>,
@@ -109,26 +101,13 @@ pub enum Opt {
         )]
         minify: Minify,
 
-        /// Alias for `--minify`. Deprecated
-        #[structopt(
-            long,
-            value_name("MINIFY"),
-            possible_values(Minify::VARIANTS),
-            default_value("none")
-        )]
-        oneline: Minify,
-
-        /// No-op. Deprecated
-        #[structopt(long, conflicts_with("no_rustfmt"))]
-        rustfmt: bool,
+        /// Do not resolve `cfg(..)`s
+        #[structopt(long)]
+        no_resolve_cfgs: bool,
 
         /// Do not format the output before emitting
         #[structopt(long)]
         no_rustfmt: bool,
-
-        /// Check the output before emitting
-        #[structopt(long, conflicts_with("no_check"))]
-        check: bool,
 
         /// Do not check the output before emitting
         #[structopt(long)]
@@ -137,6 +116,27 @@ pub enum Opt {
         /// Write to the file instead of STDOUT
         #[structopt(short, long, value_name("PATH"))]
         output: Option<PathBuf>,
+
+        /// [Deprecated] Alias for `--minify`
+        #[structopt(
+            long,
+            value_name("MINIFY"),
+            possible_values(Minify::VARIANTS),
+            default_value("none")
+        )]
+        oneline: Minify,
+
+        /// [Deprecated] No-op
+        #[structopt(long, conflicts_with("no_resolve_cfgs"))]
+        resolve_cfgs: bool,
+
+        /// [Deprecated] No-op
+        #[structopt(long, conflicts_with("no_rustfmt"))]
+        rustfmt: bool,
+
+        /// [Deprecated] No-op
+        #[structopt(long, conflicts_with("no_check"))]
+        check: bool,
     },
 }
 
@@ -255,16 +255,16 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude_atcoder_crates,
         exclude_codingame_crates,
         toolchain,
-        resolve_cfgs: deprecated_resolve_cfgs_flag,
-        no_resolve_cfgs,
         remove,
         minify,
-        oneline: deprecated_oneline_opt,
-        rustfmt: deprecated_rustfmt_flag,
+        no_resolve_cfgs,
         no_rustfmt,
-        check: deprecated_check_flag,
         no_check,
         output,
+        oneline: deprecated_oneline_opt,
+        resolve_cfgs: deprecated_resolve_cfgs_flag,
+        rustfmt: deprecated_rustfmt_flag,
+        check: deprecated_check_flag,
     } = opt;
 
     let minify = match (minify, deprecated_oneline_opt) {
