@@ -124,16 +124,60 @@ pub enum Opt {
         #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
         toolchain: String,
 
-        /// Remove some part
-        #[structopt(long, value_name("REMOVE"), possible_values(Remove::VARIANTS))]
+        /// Remove some part [possible values: docs, comments]
+        #[structopt(
+            long,
+            value_name("REMOVE"),
+            possible_values(Remove::VARIANTS),
+            hide_possible_values(true),
+            long_help(concat!(
+                indoc! {r#"
+                    Removes
+                    * doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`) with `--remove docs`.
+                    * comments (`// ..`, `/* .. */`) with `--remove comments`.
+
+                    ```
+                    #[allow(dead_code)]
+                    pub mod a {
+                        //! A.
+
+                        /// A.
+                        pub struct A; // aaaaa
+                    }
+                    ```
+
+                    ↓
+
+                    ```
+                    #[allow(dead_code)]
+                    pub mod a {
+                        pub struct A;
+                    }
+                    ```
+                "#},
+                ' ',
+            ))
+        )]
         remove: Vec<Remove>,
 
-        /// Minify part of the output before emitting
+        /// Minify part of the output before emitting [default: none]  [possible values: none, libs, all]
         #[structopt(
             long,
             value_name("MINIFY"),
             possible_values(Minify::VARIANTS),
-            default_value("none")
+            hide_possible_values(true),
+            default_value("none"),
+            hide_default_value(true),
+            long_help(concat!(
+                indoc! {r#"
+                    Minifies
+                    - each expaned library with `--minify lib`.
+                    - the whole code with `--minify all`.
+
+                    Not that the minification function is incomplete. Unnecessary spaces may be inserted.
+                "#},
+                ' ',
+            ))
         )]
         minify: Minify,
 
