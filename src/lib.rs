@@ -19,6 +19,7 @@ use crate::{
 };
 use anyhow::{ensure, Context as _};
 use cargo_metadata as cm;
+use indoc::indoc;
 use itertools::{iproduct, Itertools as _};
 use krates::PkgSpec;
 use maplit::{btreeset, hashmap, hashset};
@@ -37,16 +38,24 @@ use std::{
 };
 use structopt::{clap::AppSettings, StructOpt};
 
+// We need to prepend " " to `long_help`s.
+// https://github.com/BurntSushi/ripgrep/blob/9eddb71b8e86a04d7048b920b9b50a2e97068d03/crates/core/app.rs#L533-L539
+
 #[derive(StructOpt, Debug)]
 #[structopt(
-    about,
     author,
+    about("Please run as `cargo equip`, not `cargo-equip`."),
     bin_name("cargo"),
     global_settings(&[AppSettings::DeriveDisplayOrder, AppSettings::UnifiedHelpMessage])
 )]
 pub enum Opt {
     #[structopt(
-        about,
+        about(indoc! {r#"
+
+            A Cargo subcommand to bundle your code into one `.rs` file for competitive programming.
+
+            Use -h for short descriptions and --help for more detials.
+        "#}),
         author,
         usage(
             r#"cargo equip [OPTIONS]
@@ -56,8 +65,17 @@ pub enum Opt {
         )
     )]
     Equip {
-        /// Path the main source file of the bin target
-        #[structopt(long, value_name("PATH"), conflicts_with_all(&["bin", "example"]))]
+        /// Path to the main source file of the bin target
+        #[structopt(
+            long,
+            value_name("PATH"),
+            conflicts_with_all(&["bin", "example"]),
+            long_help(indoc! {r#"
+                Path to the main source file of the bin target.
+
+                This option is intended to be used from editors such as VSCode. Use `--bin` or `--example` for normal usage.
+            "#})
+        )]
         src: Option<PathBuf>,
 
         /// Name of the bin target
@@ -76,59 +94,100 @@ pub enum Opt {
         #[structopt(long, value_name("SPEC"))]
         exclude: Vec<PkgSpec>,
 
-        /// Alias for `--exclude https://github.com/rust-lang/crates.io-index#alga:0.9.3 ..`
-        #[structopt(long)]
+        /// Alias for `--exclude {crates available on AtCoder}`
+        #[structopt(
+            long,
+            long_help(Box::leak(
+                format!(
+                    "Alias for:\n--exclude {}\n ",
+                    ATCODER_CRATES.iter().format("\n          "),
+                )
+                .into_boxed_str(),
+            ))
+        )]
         exclude_atcoder_crates: bool,
 
-        /// Alias for `--exclude https://github.com/rust-lang/crates.io-index#chrono:0.4.19 ..`
-        #[structopt(long)]
+        /// Alias for `--exclude {crates available on CodinGame}`
+        #[structopt(
+            long,
+            long_help(Box::leak(
+                format!(
+                    "Alias for:\n--exclude {}\n ",
+                    CODINGAME_CRATES.iter().format("\n          "),
+                )
+                .into_boxed_str(),
+            ))
+        )]
         exclude_codingame_crates: bool,
 
         /// `nightly` toolchain for `cargo-udeps`
         #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
         toolchain: String,
 
-        /// No-op. Deprecated
-        #[structopt(long, conflicts_with("no_resolve_cfgs"))]
-        resolve_cfgs: bool,
+        /// Remove some part [possible values: docs, comments]
+        #[structopt(
+            long,
+            value_name("REMOVE"),
+            possible_values(Remove::VARIANTS),
+            hide_possible_values(true),
+            long_help(concat!(
+                indoc! {r#"
+                    Removes
+                    * doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`) with `--remove docs`.
+                    * comments (`// ..`, `/* .. */`) with `--remove comments`.
+
+                    ```
+                    #[allow(dead_code)]
+                    pub mod a {
+                        //! A.
+
+                        /// A.
+                        pub struct A; // aaaaa
+                    }
+                    ```
+
+                    ↓
+
+                    ```
+                    #[allow(dead_code)]
+                    pub mod a {
+                        pub struct A;
+                    }
+                    ```
+                "#},
+                ' ',
+            ))
+        )]
+        remove: Vec<Remove>,
+
+        /// Minify part of the output before emitting [default: none]  [possible values: none, libs, all]
+        #[structopt(
+            long,
+            value_name("MINIFY"),
+            possible_values(Minify::VARIANTS),
+            hide_possible_values(true),
+            default_value("none"),
+            hide_default_value(true),
+            long_help(concat!(
+                indoc! {r#"
+                    Minifies
+                    - each expaned library with `--minify lib`.
+                    - the whole code with `--minify all`.
+
+                    Not that the minification function is incomplete. Unnecessary spaces may be inserted.
+                "#},
+                ' ',
+            ))
+        )]
+        minify: Minify,
 
         /// Do not resolve `cfg(..)`s
         #[structopt(long)]
         no_resolve_cfgs: bool,
 
-        /// Remove some part
-        #[structopt(long, value_name("REMOVE"), possible_values(Remove::VARIANTS))]
-        remove: Vec<Remove>,
-
-        /// Minify part of the output before emitting
-        #[structopt(
-            long,
-            value_name("MINIFY"),
-            possible_values(Minify::VARIANTS),
-            default_value("none")
-        )]
-        minify: Minify,
-
-        /// Alias for `--minify`. Deprecated
-        #[structopt(
-            long,
-            value_name("MINIFY"),
-            possible_values(Minify::VARIANTS),
-            default_value("none")
-        )]
-        oneline: Minify,
-
-        /// No-op. Deprecated
-        #[structopt(long, conflicts_with("no_rustfmt"))]
-        rustfmt: bool,
-
         /// Do not format the output before emitting
         #[structopt(long)]
         no_rustfmt: bool,
-
-        /// Check the output before emitting
-        #[structopt(long, conflicts_with("no_check"))]
-        check: bool,
 
         /// Do not check the output before emitting
         #[structopt(long)]
@@ -137,6 +196,27 @@ pub enum Opt {
         /// Write to the file instead of STDOUT
         #[structopt(short, long, value_name("PATH"))]
         output: Option<PathBuf>,
+
+        /// [Deprecated] Alias for `--minify`
+        #[structopt(
+            long,
+            value_name("MINIFY"),
+            possible_values(Minify::VARIANTS),
+            default_value("none")
+        )]
+        oneline: Minify,
+
+        /// [Deprecated] No-op
+        #[structopt(long, conflicts_with("no_resolve_cfgs"))]
+        resolve_cfgs: bool,
+
+        /// [Deprecated] No-op
+        #[structopt(long, conflicts_with("no_rustfmt"))]
+        rustfmt: bool,
+
+        /// [Deprecated] No-op
+        #[structopt(long, conflicts_with("no_check"))]
+        check: bool,
     },
 }
 
@@ -192,60 +272,60 @@ pub struct Context<'a> {
     pub shell: &'a mut Shell,
 }
 
+static ATCODER_CRATES: &[&str] = &[
+    "https://github.com/rust-lang/crates.io-index#alga:0.9.3",
+    "https://github.com/rust-lang/crates.io-index#ascii:1.0.0",
+    "https://github.com/rust-lang/crates.io-index#bitset-fixed:0.1.0",
+    "https://github.com/rust-lang/crates.io-index#either:1.5.3",
+    "https://github.com/rust-lang/crates.io-index#fixedbitset:0.2.0",
+    "https://github.com/rust-lang/crates.io-index#getrandom:0.1.14",
+    "https://github.com/rust-lang/crates.io-index#im-rc:14.3.0",
+    "https://github.com/rust-lang/crates.io-index#indexmap:1.3.2",
+    "https://github.com/rust-lang/crates.io-index#itertools:0.9.0",
+    "https://github.com/rust-lang/crates.io-index#itertools-num:0.1.3",
+    "https://github.com/rust-lang/crates.io-index#lazy_static:1.4.0",
+    "https://github.com/rust-lang/crates.io-index#libm:0.2.1",
+    "https://github.com/rust-lang/crates.io-index#maplit:1.0.2",
+    "https://github.com/rust-lang/crates.io-index#nalgebra:0.20.0",
+    "https://github.com/rust-lang/crates.io-index#ndarray:0.13.0",
+    "https://github.com/rust-lang/crates.io-index#num:0.2.1",
+    "https://github.com/rust-lang/crates.io-index#num-bigint:0.2.6",
+    "https://github.com/rust-lang/crates.io-index#num-complex:0.2.4",
+    "https://github.com/rust-lang/crates.io-index#num-derive:0.3.0",
+    "https://github.com/rust-lang/crates.io-index#num-integer:0.1.42",
+    "https://github.com/rust-lang/crates.io-index#num-iter:0.1.40",
+    "https://github.com/rust-lang/crates.io-index#num-rational:0.2.4",
+    "https://github.com/rust-lang/crates.io-index#num-traits:0.2.11",
+    "https://github.com/rust-lang/crates.io-index#ordered-float:1.0.2",
+    "https://github.com/rust-lang/crates.io-index#permutohedron:0.2.4",
+    "https://github.com/rust-lang/crates.io-index#petgraph:0.5.0",
+    "https://github.com/rust-lang/crates.io-index#proconio:0.3.6",
+    "https://github.com/rust-lang/crates.io-index#proconio:0.3.7",
+    "https://github.com/rust-lang/crates.io-index#proconio:0.3.8",
+    "https://github.com/rust-lang/crates.io-index#rand:0.7.3",
+    "https://github.com/rust-lang/crates.io-index#rand_chacha:0.2.2",
+    "https://github.com/rust-lang/crates.io-index#rand_core:0.5.1",
+    "https://github.com/rust-lang/crates.io-index#rand_distr:0.2.2",
+    "https://github.com/rust-lang/crates.io-index#rand_hc:0.2.0",
+    "https://github.com/rust-lang/crates.io-index#rand_pcg:0.2.1",
+    "https://github.com/rust-lang/crates.io-index#regex:1.3.6",
+    "https://github.com/rust-lang/crates.io-index#rustc-hash:1.1.0",
+    "https://github.com/rust-lang/crates.io-index#smallvec:1.2.0",
+    "https://github.com/rust-lang/crates.io-index#superslice:1.0.0",
+    "https://github.com/rust-lang/crates.io-index#text_io:0.1.8",
+    "https://github.com/rust-lang/crates.io-index#whiteread:0.5.0",
+];
+
+static CODINGAME_CRATES: &[&str] = &[
+    "https://github.com/rust-lang/crates.io-index#chrono:0.4.19",
+    "https://github.com/rust-lang/crates.io-index#itertools:0.10.0",
+    "https://github.com/rust-lang/crates.io-index#libc:0.2.93",
+    "https://github.com/rust-lang/crates.io-index#rand:0.8.3",
+    "https://github.com/rust-lang/crates.io-index#regex:1.4.5",
+    "https://github.com/rust-lang/crates.io-index#time:0.2.26",
+];
+
 pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
-    static ATCODER_CRATES: &[&str] = &[
-        "https://github.com/rust-lang/crates.io-index#alga:0.9.3",
-        "https://github.com/rust-lang/crates.io-index#ascii:1.0.0",
-        "https://github.com/rust-lang/crates.io-index#bitset-fixed:0.1.0",
-        "https://github.com/rust-lang/crates.io-index#either:1.5.3",
-        "https://github.com/rust-lang/crates.io-index#fixedbitset:0.2.0",
-        "https://github.com/rust-lang/crates.io-index#getrandom:0.1.14",
-        "https://github.com/rust-lang/crates.io-index#im-rc:14.3.0",
-        "https://github.com/rust-lang/crates.io-index#indexmap:1.3.2",
-        "https://github.com/rust-lang/crates.io-index#itertools:0.9.0",
-        "https://github.com/rust-lang/crates.io-index#itertools-num:0.1.3",
-        "https://github.com/rust-lang/crates.io-index#lazy_static:1.4.0",
-        "https://github.com/rust-lang/crates.io-index#libm:0.2.1",
-        "https://github.com/rust-lang/crates.io-index#maplit:1.0.2",
-        "https://github.com/rust-lang/crates.io-index#nalgebra:0.20.0",
-        "https://github.com/rust-lang/crates.io-index#ndarray:0.13.0",
-        "https://github.com/rust-lang/crates.io-index#num:0.2.1",
-        "https://github.com/rust-lang/crates.io-index#num-bigint:0.2.6",
-        "https://github.com/rust-lang/crates.io-index#num-complex:0.2.4",
-        "https://github.com/rust-lang/crates.io-index#num-derive:0.3.0",
-        "https://github.com/rust-lang/crates.io-index#num-integer:0.1.42",
-        "https://github.com/rust-lang/crates.io-index#num-iter:0.1.40",
-        "https://github.com/rust-lang/crates.io-index#num-rational:0.2.4",
-        "https://github.com/rust-lang/crates.io-index#num-traits:0.2.11",
-        "https://github.com/rust-lang/crates.io-index#ordered-float:1.0.2",
-        "https://github.com/rust-lang/crates.io-index#permutohedron:0.2.4",
-        "https://github.com/rust-lang/crates.io-index#petgraph:0.5.0",
-        "https://github.com/rust-lang/crates.io-index#proconio:0.3.6",
-        "https://github.com/rust-lang/crates.io-index#proconio:0.3.7",
-        "https://github.com/rust-lang/crates.io-index#proconio:0.3.8",
-        "https://github.com/rust-lang/crates.io-index#rand:0.7.3",
-        "https://github.com/rust-lang/crates.io-index#rand_chacha:0.2.2",
-        "https://github.com/rust-lang/crates.io-index#rand_core:0.5.1",
-        "https://github.com/rust-lang/crates.io-index#rand_distr:0.2.2",
-        "https://github.com/rust-lang/crates.io-index#rand_hc:0.2.0",
-        "https://github.com/rust-lang/crates.io-index#rand_pcg:0.2.1",
-        "https://github.com/rust-lang/crates.io-index#regex:1.3.6",
-        "https://github.com/rust-lang/crates.io-index#rustc-hash:1.1.0",
-        "https://github.com/rust-lang/crates.io-index#smallvec:1.2.0",
-        "https://github.com/rust-lang/crates.io-index#superslice:1.0.0",
-        "https://github.com/rust-lang/crates.io-index#text_io:0.1.8",
-        "https://github.com/rust-lang/crates.io-index#whiteread:0.5.0",
-    ];
-
-    static CODINGAME_CRATES: &[&str] = &[
-        "https://github.com/rust-lang/crates.io-index#chrono:0.4.19",
-        "https://github.com/rust-lang/crates.io-index#itertools:0.10.0",
-        "https://github.com/rust-lang/crates.io-index#libc:0.2.93",
-        "https://github.com/rust-lang/crates.io-index#rand:0.8.3",
-        "https://github.com/rust-lang/crates.io-index#regex:1.4.5",
-        "https://github.com/rust-lang/crates.io-index#time:0.2.26",
-    ];
-
     let Opt::Equip {
         src,
         bin,
@@ -255,16 +335,16 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude_atcoder_crates,
         exclude_codingame_crates,
         toolchain,
-        resolve_cfgs: deprecated_resolve_cfgs_flag,
-        no_resolve_cfgs,
         remove,
         minify,
-        oneline: deprecated_oneline_opt,
-        rustfmt: deprecated_rustfmt_flag,
+        no_resolve_cfgs,
         no_rustfmt,
-        check: deprecated_check_flag,
         no_check,
         output,
+        oneline: deprecated_oneline_opt,
+        resolve_cfgs: deprecated_resolve_cfgs_flag,
+        rustfmt: deprecated_rustfmt_flag,
+        check: deprecated_check_flag,
     } = opt;
 
     let minify = match (minify, deprecated_oneline_opt) {

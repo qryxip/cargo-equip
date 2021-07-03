@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Improved the help.
+
+    Now you can read the detailed help with `--help` while `cargo equip -h` still prints a short and concise overview.
+
 ## [0.16.0] - 2021-06-26Z
 
 ### Changed

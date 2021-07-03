@@ -544,10 +544,6 @@ pub mod __bundled {
 
 ## オプション
 
-### `--no-resolve-cfgs`
-
-`#[cfg(…)]`を解決しません。
-
 ### `--remove <REMOVE>...`
 
 1. `--remove docs`でDoc comment (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`)を
@@ -580,6 +576,10 @@ pub mod a {
 `--minify all`でコード全体を最小化します。
 
 ただ現段階では実装が適当なのでいくつか余計なスペースが挟まる場合があります。
+
+### `--no-resolve-cfgs`
+
+`#[cfg(…)]`を解決しません。
 
 ### `--no-rustfmt`
 
