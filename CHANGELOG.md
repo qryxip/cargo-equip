@@ -8,6 +8,36 @@
 
     Now you can read the detailed help with `--help` while `cargo equip -h` still prints a short and concise overview.
 
+- Changed the format.
+
+    - Moved `__bundled` to `__cargo_equip::crates`.
+    - Moved `__bundled::*::__macros` to `__cargo_equip::macros`.
+    - Now creates `__cargo_equip::prelude` and glob-uses it instead of declaring `__prelude_for_main_crate!`.
+    - Unified `__bundled::*::{__external_local_inner_macros, __pseudo_extern_prelude}` into `__cargo_equip::preludes`.
+
+    ```rust
+    //! # Bundled libraries
+    //! ︙
+
+    pub use __cargo_equip::prelude::*;
+
+    // ︙
+
+    // The following code was expanded by `cargo-equip`.
+
+    mod __cargo_equip {
+        pub(crate) mod crates {/* … */}
+        pub(crate) mod macros {/* … */}
+        pub(crate) mod prelude {/* … */}
+        mod preludes {/* … */}
+    }
+
+    #[cfg_attr(any(), rustfmt::skip)]
+    const _: () = {
+        // ︙
+    };
+    ```
+
 ## [0.16.0] - 2021-06-26Z
 
 ### Changed
