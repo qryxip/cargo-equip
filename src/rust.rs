@@ -3,7 +3,6 @@ use anyhow::{anyhow, bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use fixedbitset::FixedBitSet;
 use if_chain::if_chain;
-use indoc::formatdoc;
 use itertools::Itertools as _;
 use maplit::btreemap;
 use proc_macro2::{LineColumn, Spacing, Span, TokenStream, TokenTree};
@@ -161,7 +160,7 @@ pub(crate) fn insert_prelude_for_main_crate(code: &str) -> syn::Result<String> {
                 self.replacements.insert(
                     (pos, pos),
                     format!(
-                        "{}__prelude_for_main_crate!();\n\n",
+                        "pub use {}__cargo_equip::prelude::*;\n\n",
                         if crate_root { "" } else { "crate::" },
                     ),
                 );
@@ -680,22 +679,25 @@ impl CodeEdit {
                         .flat_map(Attribute::parse_meta)
                         .any(|m| m.path().is_ident("macro_use"));
                     let vis = vis.to_token_stream();
-                    let uses = match (rename, is_macro_use) {
-                        (Some((_, rename)), false) if rename == "_" => "".to_owned(),
-                        (Some((_, rename)), false) => format!("{} as {}", ident, rename),
-                        (None, false) => ident.to_string(),
-                        (Some((_, rename)), true) if rename == "_" => {
-                            format!("{}::__macros::*", ident)
+
+                    let mut insertion = "".to_owned();
+
+                    if let Some((_, rename)) = rename {
+                        if rename != "_" {
+                            insertion = format!(
+                                "{} use crate::__cargo_equip::crates::{} as {};",
+                                vis, ident, rename
+                            );
                         }
-                        (Some((_, rename)), true) => {
-                            format!("{}::{{self as {},__macros::*}}", ident, rename)
-                        }
-                        (None, true) => format!("{}::{{self,__macros::*}}", ident),
-                    };
-                    if uses.is_empty() {
-                        return;
+                    } else {
+                        insertion = format!("{} use crate::__cargo_equip::crates::{};", vis, ident);
                     }
-                    let insertion = format!("{} use crate::__bundled::{};", vis, uses);
+
+                    if is_macro_use {
+                        insertion +=
+                            &format!("{} use crate::__cargo_equip::macros::{}::*;", vis, ident);
+                    }
+
                     let insertion = insertion.trim_start();
 
                     let pos = item_use.span().start();
@@ -761,10 +763,15 @@ impl CodeEdit {
                     self.replacements.insert(
                         (item_use.span().start(), semi_token.span().end()),
                         if let Some((_, rename)) = rename {
-                            quote!(#(#attrs)* #vis use crate::__bundled::#to as #rename;)
-                                .to_string()
+                            quote!(
+                                #(#attrs)* #vis use crate::__cargo_equip::crates::#to as #rename;
+                            )
+                            .to_string()
                         } else {
-                            quote!(#(#attrs)* #vis use crate::__bundled::#to as #ident;).to_string()
+                            quote!(
+                                #(#attrs)* #vis use crate::__cargo_equip::crates::#to as #ident;
+                            )
+                            .to_string()
                         },
                     );
                 }
@@ -1177,7 +1184,7 @@ impl CodeEdit {
                 {
                     self.replacements.insert(
                         (leading_colon.start(), leading_colon.end()),
-                        "/*::*/crate::__bundled::".to_owned(),
+                        "/*::*/crate::__cargo_equip::crates::".to_owned(),
                     );
 
                     if extern_crate_name != &*pseudo_extern_crate_name {
@@ -1245,7 +1252,7 @@ impl CodeEdit {
                 let pos = crate_token.span().end();
                 self.replacements.insert(
                     (pos, pos),
-                    format!("::__bundled::{}", self.extern_crate_name),
+                    format!("::__cargo_equip::crates::{}", self.extern_crate_name),
                 );
             }
         }
@@ -1302,10 +1309,10 @@ impl CodeEdit {
         &mut self,
         pseudo_extern_crate_name: &str,
         remove_docs: bool,
-    ) -> anyhow::Result<BTreeMap<String, String>> {
+    ) -> anyhow::Result<(String, BTreeMap<String, String>)> {
         self.apply()?;
 
-        let mut contents = btreemap!();
+        let mut macro_defs = btreemap!();
 
         for item_macro in collect_item_macros(&self.file) {
             if let ItemMacro {
@@ -1327,7 +1334,7 @@ impl CodeEdit {
                         remove_docs,
                         &mut self.replacements,
                     );
-                    contents.insert(rename, (ident.to_string(), content));
+                    macro_defs.insert(rename, (ident.to_string(), content));
                 } else {
                     replace_dollar_crates(
                         tokens.clone(),
@@ -1338,38 +1345,43 @@ impl CodeEdit {
             }
         }
 
-        if let Some(first) = self.file.items.first() {
-            let pos = first.span().start();
-            self.replacements.entry((pos, pos)).or_default().insert_str(
-                0,
-                &if contents.is_empty() {
-                    "pub mod __macros {}".to_owned()
-                } else {
-                    formatdoc! {r#"
-                        pub mod __macros {{
-                            pub use crate::{}{}{};
-                        }}
-                        pub use self::__macros::*;
-                        "#,
-                        if contents.len() > 1 { "{" } else { "" },
-                        contents
-                            .iter()
-                            .map(|(rename, (name, _))| if rename == name {
-                                name.clone()
-                            } else {
-                                format!("{} as {}", rename, name)
-                            })
-                            .format(", "),
-                        if contents.len() > 1 { "}" } else { "" },
-                    }
-                },
-            );
+        if !macro_defs.is_empty() {
+            if let Some(first) = self.file.items.first() {
+                let pos = first.span().start();
+                self.replacements.entry((pos, pos)).or_default().insert_str(
+                    0,
+                    &format!(
+                        "pub use crate::__cargo_equip::macros::{}::*;",
+                        pseudo_extern_crate_name,
+                    ),
+                );
+            }
         }
 
-        return Ok(contents
+        let macro_mod_content = if macro_defs.is_empty() {
+            "".to_owned()
+        } else {
+            format!(
+                "pub use crate::{}{}{};\n",
+                if macro_defs.len() > 1 { "{" } else { "" },
+                macro_defs
+                    .iter()
+                    .map(|(rename, (name, _))| if rename == name {
+                        name.clone()
+                    } else {
+                        format!("{} as {}", rename, name)
+                    })
+                    .format(", "),
+                if macro_defs.len() > 1 { "}" } else { "" },
+            )
+        };
+
+        let macro_defs = macro_defs
             .into_iter()
             .map(|(name, (_, def))| (name, def))
-            .collect());
+            .collect();
+
+        return Ok((macro_mod_content, macro_defs));
 
         fn collect_item_macros(file: &syn::File) -> Vec<&ItemMacro> {
             let mut acc = vec![];
@@ -1397,13 +1409,7 @@ impl CodeEdit {
             let ItemMacro {
                 attrs,
                 ident,
-                mac:
-                    Macro {
-                        path,
-                        bang_token,
-                        tokens,
-                        ..
-                    },
+                mac: Macro { path, tokens, .. },
                 ..
             } = item;
 
@@ -1415,8 +1421,6 @@ impl CodeEdit {
             replacements.insert((pos, pos), "*/".to_owned());
 
             let name = format!("__macro_def_{}_{}", pseudo_extern_crate_name, item_ident);
-
-            let name_as_ident = proc_macro2::Ident::new(&name, Span::call_site());
 
             let tokens = take(
                 tokens.clone(),
@@ -1436,14 +1440,20 @@ impl CodeEdit {
                     }
                 });
 
-            return (
+            let def = format!(
+                "{} macro_rules! {}({});",
+                minify_token_stream::<_, Infallible>(quote!(#(#attrs)*), |o| Ok(o
+                    .parse::<TokenStream>()
+                    .is_ok()))
+                .unwrap(),
                 name,
-                minify_token_stream::<_, Infallible>(
-                    quote!(#(#attrs)* #path#bang_token #name_as_ident { #tokens }),
-                    |o| Ok(syn::parse_str::<ItemMacro>(o).is_ok()),
-                )
+                minify_token_stream::<_, Infallible>(quote!(#tokens), |o| Ok(o
+                    .parse::<TokenStream>()
+                    .is_ok()))
                 .unwrap(),
             );
+
+            return (name, def);
 
             fn take(tokens: TokenStream, pseudo_extern_crate_name: &syn::Ident) -> TokenStream {
                 let mut out = vec![];
@@ -1460,7 +1470,9 @@ impl CodeEdit {
                         out.push(tt);
                         if let [.., TokenTree::Punct(punct), TokenTree::Ident(ident)] = &*out {
                             if punct.as_char() == '$' && ident == "crate" {
-                                out.extend(quote!(::__bundled::#pseudo_extern_crate_name));
+                                out.extend(quote! {
+                                    ::__cargo_equip::crates::#pseudo_extern_crate_name
+                                });
                             }
                         }
                     }
@@ -1493,20 +1505,21 @@ impl CodeEdit {
                     let pos = tt2.span().end();
                     acc.insert(
                         (pos, pos),
-                        format!("::__bundled::{}", pseudo_extern_crate_name),
+                        format!("::__cargo_equip::crates::{}", pseudo_extern_crate_name),
                     );
                 }
             }
         }
     }
 
-    pub(crate) fn insert_pseudo_preludes(
+    pub(crate) fn resolve_pseudo_prelude(
         &mut self,
+        pseudo_extern_crate_name: &str,
         libs_with_local_inner_macros: &BTreeSet<&str>,
         extern_crate_name_translation: &BTreeMap<String, String>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<String> {
         if extern_crate_name_translation.is_empty() && libs_with_local_inner_macros.is_empty() {
-            return Ok(());
+            return Ok("".to_owned());
         }
 
         self.apply()?;
@@ -1516,7 +1529,7 @@ impl CodeEdit {
         let external_local_inner_macros = {
             let macros = libs_with_local_inner_macros
                 .iter()
-                .map(|name| format!("{}::__macros::*", name))
+                .map(|name| format!("{}::*", name))
                 .join(", ");
             match libs_with_local_inner_macros.len() {
                 0 => None,
@@ -1543,35 +1556,19 @@ impl CodeEdit {
             }
         };
 
-        let modules = {
-            let mut modules = "".to_owned();
-            if let Some(external_local_inner_macros) = &external_local_inner_macros {
-                modules += &formatdoc! {r"
-                    mod __external_local_inner_macros {{
-                        pub(super) use crate::__bundled::{};
-                    }}
-                    ",
-                    external_local_inner_macros,
-                };
-            }
-            if let Some(pseudo_extern_crates) = &pseudo_extern_crates {
-                modules += &formatdoc! {r"
-                    mod __pseudo_extern_prelude {{
-                        pub(super) use crate::__bundled::{};
-                    }}
-                    ",
-                    pseudo_extern_crates,
-                };
-            }
-            modules
-        };
-
-        let uses = match (external_local_inner_macros, pseudo_extern_crates) {
-            (Some(_), Some(_)) => "{__external_local_inner_macros::*, __pseudo_extern_prelude::*}",
-            (Some(_), None) => "__external_local_inner_macros::*",
-            (None, Some(_)) => "__pseudo_extern_prelude::*",
-            (None, None) => unreachable!(),
-        };
+        let mut prelude = "".to_owned();
+        if let Some(external_local_inner_macros) = &external_local_inner_macros {
+            prelude += &format!(
+                "pub(in crate::__cargo_equip) use crate::__cargo_equip::macros::{};",
+                external_local_inner_macros,
+            );
+        }
+        if let Some(pseudo_extern_crates) = &pseudo_extern_crates {
+            prelude += &format!(
+                "pub(in crate::__cargo_equip) use crate::__cargo_equip::crates::{};",
+                pseudo_extern_crates,
+            );
+        }
 
         self.replacements.insert(
             {
@@ -1584,13 +1581,10 @@ impl CodeEdit {
                 };
                 (pos, pos)
             },
-            formatdoc! {r"
-                {}
-                use self::{};
-
-                ",
-                modules, uses,
-            },
+            format!(
+                "use crate::__cargo_equip::preludes::{}::*;",
+                pseudo_extern_crate_name,
+            ),
         );
 
         let mut queue = items
@@ -1612,7 +1606,10 @@ impl CodeEdit {
             };
             self.replacements.insert(
                 (pos, pos),
-                format!("use {}{};\n\n", "super::".repeat(depth), uses),
+                format!(
+                    "use crate::__cargo_equip::preludes::{}::*;",
+                    pseudo_extern_crate_name,
+                ),
             );
             for item in items {
                 if let Item::Mod(item_mod) = item {
@@ -1620,7 +1617,7 @@ impl CodeEdit {
                 }
             }
         }
-        Ok(())
+        Ok(prelude)
     }
 
     pub(crate) fn resolve_cfgs(&mut self, features: &[String]) -> anyhow::Result<()> {

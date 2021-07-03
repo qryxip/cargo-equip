@@ -82,7 +82,7 @@ mod sub {
 >       --bin sqrt_mod `# binクレートを指定` | xsel -b
 ```
 
-[Submit Info #50014 - Library-Checker](https://judge.yosupo.jp/submission/50014)
+[Submit Info #52332 - Library-Checker](https://judge.yosupo.jp/submission/52332)
 
 ## 動作するクレート
 
@@ -220,12 +220,23 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
     ライブラリ同様にglob importを挿入します。
 
     ```rust
-    __prelude_for_main_crate!();
+    crate::__cargo_equip::prelude_for!(crate);
 
     mod sub {
-        crate::__prelude_for_main_crate!();
+        crate::__cargo_equip::prelude_for!(crate);
     }
 
+    pub mod __cargo_equip {
+        pub mod crates {
+            // ︙
+        }
+        // ︙
+
+        macro_rules! prelude_for {
+            (crate) => (pub use crate::__cargo_equip::crates::*);
+        }
+        pub(crate) use prelude_for;
+    }
     #[macro_export]
     macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
     ```
@@ -260,18 +271,18 @@ fn main() -> _ {
 ```rust
 //! # Bundled libraries
 //!
-//! - `mic 0.0.0 (path+███████████████████████████████████████████)`                                                                                      published in https://github.com/qryxip/mic licensed under `CC0-1.0` as `crate::__bundled::mic`
-//! - `qryxip-competitive-input 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                                      licensed under `CC0-1.0` as `crate::__bundled::input`
-//! - `qryxip-competitive-partition-point 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                            licensed under `CC0-1.0` as `crate::__bundled::partition_point`
+//! - `mic 0.0.0 (path+███████████████████████████████████████████)`                                                                                      published in https://github.com/qryxip/mic licensed under `CC0-1.0` as `crate::__cargo_equip::crates::mic`
+//! - `qryxip-competitive-input 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                                      licensed under `CC0-1.0` as `crate::__cargo_equip::crates::input`
+//! - `qryxip-competitive-partition-point 0.0.0 (git+https://github.com/qryxip/competitive-programming-library#dadeb6e4685a86f25b4e5c8079f56337321aa12e)`                                            licensed under `CC0-1.0` as `crate::__cargo_equip::crates::partition_point`
 //!
 //! # Procedural macros
 //!
 //! - `mic_impl 0.0.0 (path+████████████████████████████████████████████████████)` published in https://github.com/qryxip/mic licensed under `CC0-1.0`
-#![allow(unused_imports)]
 
-__prelude_for_main_crate!();
+pub use __cargo_equip::prelude::*;
 
 use input::input;
+#[allow(unused_imports)]
 use mic::answer;
 use partition_point::RangeBoundsExt as _;
 
@@ -285,67 +296,85 @@ fn main() -> _ {
 }*/
 fn main() {
     #[allow(unused_imports)]
-    use crate::__bundled::mic::__YouCannotRecurseIfTheOutputTypeIsInferred as main;
+    use crate::__cargo_equip::crates::mic::__YouCannotRecurseIfTheOutputTypeIsInferred as main;
     let __mic_ans = (move || -> _ {
         input! {a:[u64],}
         a.into_iter()
             .map(|a| (1u64..1_000_000_000).partition_point(|ans| ans.pow(2) < a))
     })();
-    let __mic_ans = {#[allow(unused_imports)]use/*::*/crate::__bundled::mic::functions::*;(join("\n"))(__mic_ans)};
+    let __mic_ans = {#[allow(unused_imports)]use/*::*/crate::__cargo_equip::crates::mic::functions::*;join("\n")(__mic_ans)};
     ::std::println!("{}", __mic_ans);
 }
 
 // The following code was expanded by `cargo-equip`.
 
-#[macro_export]
-macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
-
-#[cfg_attr(any(), rustfmt::skip)]
-const _: () = {
-    #[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_answer{($(_:tt)*)=>(::std::compile_error!("`answer` from `mic_impl 0.0.0` should have been expanded");)}
-    #[macro_export]macro_rules!__macro_def___mic_impl_0_0_0_solve{($(_:tt)*)=>(::std::compile_error!("`solve` from `mic_impl 0.0.0` should have been expanded");)}
-    #[macro_export]macro_rules!__macro_def_input___input_inner{/* … */}
-    #[macro_export]macro_rules!__macro_def_input___read{/* … */}
-    #[macro_export]macro_rules!__macro_def_input_input{/* … */}
-};
-
 #[allow(unused)]
-pub mod __bundled {
-    #[allow(unused)]
-    pub mod mic {
-        pub mod __macros {}
-        // ⋮
+mod __cargo_equip {
+    pub(crate) mod crates {
+        pub mod mic {
+            use crate::__cargo_equip::preludes::mic::*;
+            // ︙
+        }
+
+        pub mod __mic_impl_0_0_0 {
+            pub use crate::__cargo_equip::macros::__mic_impl_0_0_0::*;
+        }
+
+        pub mod input {
+            pub use crate::__cargo_equip::macros::input::*;
+            // ︙
+        }
+
+        pub mod partition_point {
+            // ︙
+        }
     }
 
-    #[allow(unused)]
-    pub mod __mic_impl_0_0_0 {
-        pub mod __macros {
+    pub(crate) mod macros {
+        pub mod mic {}
+
+        pub mod __mic_impl_0_0_0 {
             pub use crate::{
                 __macro_def___mic_impl_0_0_0_answer as answer,
                 __macro_def___mic_impl_0_0_0_solve as solve,
             };
         }
-        pub use self::__macros::*;
-    }
 
-    #[allow(unused)]
-    pub mod input {
-        pub mod __macros {
+        pub mod input {
             pub use crate::{
-                __macro_def_input___input_inner as __input_inner, __macro_def_input___read as __read,
-                __macro_def_input_input as input,
+                __macro_def_input___input_inner as __input_inner,
+                __macro_def_input___read as __read, __macro_def_input_input as input,
             };
         }
-        pub use self::__macros::*;
-        // ⋮
+
+        pub mod partition_point {}
     }
 
-    #[allow(unused)]
-    pub mod partition_point {
-        pub mod __macros {}
-        // ⋮
+    pub(crate) mod prelude {
+        pub use crate::__cargo_equip::crates::*;
+    }
+
+    mod preludes {
+        pub mod mic {
+            pub(in crate::__cargo_equip) use crate::__cargo_equip::crates::__mic_impl_0_0_0 as mic_impl;
+        }
+
+        pub mod __mic_impl_0_0_0 {}
+
+        pub mod input {}
+
+        pub mod partition_point {}
     }
 }
+
+#[cfg_attr(any(), rustfmt::skip)]
+const _: () = {
+    #[macro_export] macro_rules! __macro_def___mic_impl_0_0_0_answer(/* … */);
+    #[macro_export] macro_rules! __macro_def___mic_impl_0_0_0_solve(/* … */);
+    #[macro_export] macro_rules! __macro_def_input___input_inner(/* … */);
+    #[macro_export] macro_rules! __macro_def_input___read(/* … */);
+    #[macro_export] macro_rules! __macro_def_input_input(/* … */);
+};
 ```
 
 ## `#[cfg(…)]`の解決
@@ -430,11 +459,12 @@ fn fib(n: i64) -> i64 {
 //!
 //! - `memoise 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)`         licensed under `BSD-3-Clause`
 //! - `proconio-derive 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)` licensed under `MIT OR Apache-2.0`
-#![allow(unused_imports)]
 
-__prelude_for_main_crate!();
+pub use __cargo_equip::prelude::*;
 
+#[allow(unused_imports)]
 use memoise::memoise;
+#[allow(unused_imports)]
 use proconio_derive::fastout;
 
 /*#[fastout]
@@ -500,39 +530,52 @@ fn fib(n: i64) -> i64 {
 
 // The following code was expanded by `cargo-equip`.
 
-#[macro_export]
-macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
-
-#[cfg_attr(any(), rustfmt::skip)]
-const _: () = {
-    #[macro_export]macro_rules!__macro_def_memoise_memoise{($(_:tt)*)=>(::std::compile_error!("`memoise` from `memoise 0.3.2` should have been expanded");)}
-    #[macro_export]macro_rules!__macro_def_memoise_memoise_map{($(_:tt)*)=>(::std::compile_error!("`memoise_map` from `memoise 0.3.2` should have been expanded");)}
-    #[macro_export]macro_rules!__macro_def_proconio_derive_derive_readable{($(_:tt)*)=>(::std::compile_error!("`derive_readable` from `proconio-derive 0.2.1` should have been expanded");)}
-    #[macro_export]macro_rules!__macro_def_proconio_derive_fastout{($(_:tt)*)=>(::std::compile_error!("`fastout` from `proconio-derive 0.2.1` should have been expanded");)}
-};
-
 #[allow(unused)]
-pub mod __bundled {
-    pub mod memoise {
-        pub mod __macros {
+mod __cargo_equip {
+    pub(crate) mod crates {
+        pub mod memoise {
+            pub use crate::__cargo_equip::macros::memoise::*;
+        }
+
+        pub mod proconio_derive {
+            pub use crate::__cargo_equip::macros::proconio_derive::*;
+        }
+    }
+
+    pub(crate) mod macros {
+        pub mod memoise {
             pub use crate::{
                 __macro_def_memoise_memoise as memoise,
                 __macro_def_memoise_memoise_map as memoise_map,
             };
         }
-        pub use self::__macros::*;
-    }
 
-    pub mod proconio_derive {
-        pub mod __macros {
+        pub mod proconio_derive {
             pub use crate::{
                 __macro_def_proconio_derive_derive_readable as derive_readable,
                 __macro_def_proconio_derive_fastout as fastout,
             };
         }
-        pub use self::__macros::*;
+    }
+
+    pub(crate) mod prelude {
+        pub use crate::__cargo_equip::crates::*;
+    }
+
+    mod preludes {
+        pub mod memoise {}
+
+        pub mod proconio_derive {}
     }
 }
+
+#[cfg_attr(any(), rustfmt::skip)]
+const _: () = {
+    #[macro_export] macro_rules! __macro_def_memoise_memoise(($(_:tt)*)=>(::std::compile_error!("`memoise` from `memoise 0.3.2` should have been expanded");));
+    #[macro_export] macro_rules! __macro_def_memoise_memoise_map(($(_:tt)*)=>(::std::compile_error!("`memoise_map` from `memoise 0.3.2` should have been expanded");));
+    #[macro_export] macro_rules! __macro_def_proconio_derive_derive_readable(($(_:tt)*)=>(::std::compile_error!("`derive_readable` from `proconio-derive 0.2.1` should have been expanded");));
+    #[macro_export] macro_rules! __macro_def_proconio_derive_fastout(($(_:tt)*)=>(::std::compile_error!("`fastout` from `proconio-derive 0.2.1` should have been expanded");));
+};
 ```
 
 </details>
