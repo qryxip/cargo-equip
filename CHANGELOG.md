@@ -38,6 +38,8 @@
     };
     ```
 
+- Updated rust-analyzer to `2021-06-28`.
+
 ## [0.16.0] - 2021-06-26Z
 
 ### Changed
