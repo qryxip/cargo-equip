@@ -1,14 +1,14 @@
 # Changelog
 
-## [Unreleased]
+## [0.17.0] - 2021-07-03Z
 
 ### Changed
 
-- Improved the help.
+- Improved the help. ([#143](https://github.com/qryxip/cargo-equip/pull/143))
 
     Now you can read the detailed help with `--help` while `cargo equip -h` still prints a short and concise overview.
 
-- Changed the format.
+- Changed the format. ([#144](https://github.com/qryxip/cargo-equip/pull/144))
 
     - Moved `__bundled` to `__cargo_equip::crates`.
     - Moved `__bundled::*::__macros` to `__cargo_equip::macros`.
@@ -38,7 +38,7 @@
     };
     ```
 
-- Updated rust-analyzer to `2021-06-28`.
+- Updated rust-analyzer to `2021-06-28`. ([#145](https://github.com/qryxip/cargo-equip/pull/145))
 
 ## [0.16.0] - 2021-06-26Z
 
