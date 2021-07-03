@@ -677,8 +677,8 @@ fn bundle(
                                 name, lib_package.name, lib_package.version,
                             );
                             let def = format!(
-                                "#[macro_export]macro_rules!{}\
-                                 {{($(_:tt)*)=>(::std::compile_error!({});)}}",
+                                "#[macro_export] macro_rules! {}\
+                                 (($(_:tt)*)=>(::std::compile_error!({});));",
                                 rename,
                                 quote!(#msg),
                             );
@@ -852,7 +852,7 @@ fn bundle(
 
                     if let Some(pseudo_extern_crate_name) = pseudo_extern_crate_name {
                         row.add_cell(cell!(format!(
-                            "as `crate::__carg_equip::crates::{}`",
+                            "as `crate::__cargo_equip::crates::{}`",
                             pseudo_extern_crate_name,
                         )));
                     }
@@ -1072,13 +1072,23 @@ fn bundle(
         }
         code += "    }\n";
         code += "\n";
-        code += &format!(
-            "    macro_rules!prelude_for{{{}}}\n",
-            prelude_for
-                .iter()
-                .map(|(k, v)| format!("({}) => {{{}}}", k, v))
-                .format(";")
-        );
+        code += &if minify == Minify::Libs {
+            format!(
+                "    macro_rules! prelude_for({});\n",
+                prelude_for
+                    .iter()
+                    .map(|(k, v)| format!("({})=>({})", k, v))
+                    .format(";")
+            )
+        } else {
+            format!(
+                "    macro_rules! prelude_for {{\n{}    }}\n",
+                prelude_for
+                    .iter()
+                    .map(|(k, v)| format!("        ({}) => ({});\n", k, v))
+                    .format("")
+            )
+        };
         code += "    pub(crate) use prelude_for;\n";
         code += "}\n";
     }

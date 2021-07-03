@@ -1409,13 +1409,7 @@ impl CodeEdit {
             let ItemMacro {
                 attrs,
                 ident,
-                mac:
-                    Macro {
-                        path,
-                        bang_token,
-                        tokens,
-                        ..
-                    },
+                mac: Macro { path, tokens, .. },
                 ..
             } = item;
 
@@ -1427,8 +1421,6 @@ impl CodeEdit {
             replacements.insert((pos, pos), "*/".to_owned());
 
             let name = format!("__macro_def_{}_{}", pseudo_extern_crate_name, item_ident);
-
-            let name_as_ident = proc_macro2::Ident::new(&name, Span::call_site());
 
             let tokens = take(
                 tokens.clone(),
@@ -1448,14 +1440,20 @@ impl CodeEdit {
                     }
                 });
 
-            return (
+            let def = format!(
+                "{} macro_rules! {}({});",
+                minify_token_stream::<_, Infallible>(quote!(#(#attrs)*), |o| Ok(o
+                    .parse::<TokenStream>()
+                    .is_ok()))
+                .unwrap(),
                 name,
-                minify_token_stream::<_, Infallible>(
-                    quote!(#(#attrs)* #path#bang_token #name_as_ident { #tokens }),
-                    |o| Ok(syn::parse_str::<ItemMacro>(o).is_ok()),
-                )
+                minify_token_stream::<_, Infallible>(quote!(#tokens), |o| Ok(o
+                    .parse::<TokenStream>()
+                    .is_ok()))
                 .unwrap(),
             );
+
+            return (name, def);
 
             fn take(tokens: TokenStream, pseudo_extern_crate_name: &syn::Ident) -> TokenStream {
                 let mut out = vec![];
