@@ -991,25 +991,12 @@ fn bundle(
             .flat_map(|(_, (_, _, _, _, macro_defs))| macro_defs)
             .collect::<BTreeMap<_, _>>();
 
-        if !macro_defs.is_empty() {
-            code += "#[cfg_attr(any(), rustfmt::skip)]\n";
-            code += "const _: () = {\n";
-            for macro_def in macro_defs.values() {
-                code += "    ";
-                code += macro_def;
-                code += "\n";
-            }
-            code += "};\n";
-            code += "\n";
-        }
-        code += "\n";
-
         let mut render_mods = |code: &mut String, mods: &[(&str, &str)]| -> anyhow::Result<()> {
             if minify == Minify::Libs {
                 for (pseudo_extern_crate_name, mod_content) in mods {
                     *code += "        pub mod ";
                     *code += &pseudo_extern_crate_name.to_string();
-                    *code += "{";
+                    *code += " {";
                     *code += &minify_file(
                         mod_content,
                         Some(&format!(
@@ -1048,11 +1035,11 @@ fn bundle(
         render_mods(&mut code, &macro_mods)?;
         code += "    }\n";
         code += "\n";
-        code += "    pub(crate)";
+        code += "    pub(crate) mod prelude {";
         code += &if minify == Minify::Libs {
-            format!("mod prelude{{{}", prelude_for_main)
+            prelude_for_main
         } else {
-            format!(" mod prelude {{\n    {}\n    ", prelude_for_main)
+            format!("\n    {}\n    ", prelude_for_main)
         };
         code += "}\n";
         code += "\n";
@@ -1060,6 +1047,18 @@ fn bundle(
         render_mods(&mut code, &prelude_mods)?;
         code += "    }\n";
         code += "}\n";
+
+        if !macro_defs.is_empty() {
+            code += "\n";
+            code += "#[cfg_attr(any(), rustfmt::skip)]\n";
+            code += "const _: () = {\n";
+            for macro_def in macro_defs.values() {
+                code += "    ";
+                code += macro_def;
+                code += "\n";
+            }
+            code += "};\n";
+        }
     }
 
     if minify == Minify::All {
