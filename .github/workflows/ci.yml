@@ -77,10 +77,11 @@ jobs:
           args: grcov --version ^0.8
           toolchain: stable
 
-      - name: cargo-build
+      - name: cargo-run
         uses: actions-rs/cargo@v1
         with:
-          command: build
+          command: run
+          args: -- -h
           toolchain: nightly
         env:
           RUSTFLAGS: '-Zinstrument-coverage'
@@ -97,7 +98,7 @@ jobs:
           LLVM_PROFILE_NAME: '%p-%m.profraw'
 
       - name: grcov
-        run: grcov . -b ./target/debug/deps -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+        run: grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
 
       - name: Codecov
         uses: codecov/codecov-action@v1
