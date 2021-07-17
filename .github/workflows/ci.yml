@@ -50,10 +50,10 @@ jobs:
           toolchain: stable
           profile: minimal
 
-      - name: Set up `nightly`
+      - name: Set up `nightly-2021-07-16`
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: nightly-2021-07-16
           profile: minimal
           components: llvm-tools-preview, rustfmt
           default: true
@@ -82,7 +82,7 @@ jobs:
         with:
           command: run
           args: -- -h
-          toolchain: nightly
+          toolchain: nightly-2021-07-16
         env:
           RUSTFLAGS: '-Zinstrument-coverage'
 
@@ -91,11 +91,13 @@ jobs:
         with:
           command: test
           args: --no-fail-fast -v -- --test-threads 1
-          toolchain: nightly
+          toolchain: nightly-2021-07-16
         env:
           RUSTFLAGS: '-Zinstrument-coverage'
           RUST_BACKTRACE: full
           LLVM_PROFILE_NAME: '%p-%m.profraw'
+
+      - run: ls -l *.profraw
 
       - name: grcov
         run: grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
