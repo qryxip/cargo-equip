@@ -38,7 +38,7 @@ jobs:
   grcov:
     name: grcov
     runs-on: ubuntu-20.04
-    if: "github.repository_owner == 'qryxip' && github.ref == 'refs/heads/master'"
+    if: ${{ github.repository_owner == 'qryxip' && github.ref == 'refs/heads/master' }}
 
     steps:
       - name: Checkout
@@ -117,15 +117,15 @@ jobs:
     steps:
       - name: Disable `core.autocrlf`
         run: git config --global core.autocrlf false
-        if: matrix.os == 'windows-2019'
+        if: ${{ matrix.os == 'windows-2019' }}
 
       - name: Checkout
         uses: actions/checkout@v2
 
       # Workaround for https://github.com/actions/cache/issues/403
       - name: Use GNU tar
-        run: echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >> $GITHUB_ENV
-        if: matrix.os == 'macos-10.15'
+        run: echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >>"$GITHUB_ENV"
+        if: ${{ matrix.os == 'macos-10.15' }}
 
       - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
         id: install-toolchain
@@ -227,12 +227,12 @@ jobs:
 
     name: Upload (${{ matrix.target-triple }})
     runs-on: ${{ matrix.os }}
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
 
     steps:
       - name: Disable `core.autocrlf`
         run: git config --global core.autocrlf false
-        if: matrix.os == 'windows-2019'
+        if: ${{ matrix.os == 'windows-2019' }}
 
       - name: Checkout
         uses: actions/checkout@v2
@@ -282,7 +282,7 @@ jobs:
   upload-release-notes:
     name: Upload the release notes
     runs-on: ubuntu-20.04
-    if: startsWith(github.ref, 'refs/tags/')
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
 
     steps:
       - name: Checkout
