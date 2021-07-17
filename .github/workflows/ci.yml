@@ -97,7 +97,7 @@ jobs:
           LLVM_PROFILE_NAME: '%p-%m.profraw'
 
       - name: grcov
-        run: grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+        run: grcov . -b ./target/debug/deps -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
 
       - name: Codecov
         uses: codecov/codecov-action@v1
