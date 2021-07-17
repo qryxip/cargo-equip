@@ -55,7 +55,7 @@ jobs:
         with:
           toolchain: nightly
           profile: minimal
-          components: rustfmt
+          components: llvm-tools-preview, rustfmt
           default: true
 
       - name: Set up Python 3.9
@@ -63,37 +63,47 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Resolve `cargo-udeps ^0.1`
-        id: resolve-version-of-cargo-udeps
-        run: echo "::set-output name=version::$(python ./.github/workflows/resolve-cargo-udeps.py)"
-
-      - name: Install cargo-udeps v${{ steps.resolve-version-of-cargo-udeps.outputs.version }}
+      - name: Install cargo-udeps ^0.1
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: cargo-udeps --version '=${{ steps.resolve-version-of-cargo-udeps.outputs.version }}'
+          args: cargo-udeps --version ^0.1
           toolchain: stable
+
+      - name: Install grcov ^0.8
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: grcov --version ^0.8
+          toolchain: stable
+
+      - name: cargo-build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          toolchain: nightly
+        env:
+          RUSTFLAGS: '-Zinstrument-coverage'
 
       - name: cargo-test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --no-fail-fast -- --test-threads 1
+          args: --no-fail-fast -v -- --test-threads 1
+          toolchain: nightly
         env:
-          CARGO_INCREMENTAL: '0'
-          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
-          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off'
+          RUSTFLAGS: '-Zinstrument-coverage'
           RUST_BACKTRACE: full
+          LLVM_PROFILE_NAME: '%p-%m.profraw'
 
       - name: grcov
-        id: grcov
-        uses: actions-rs/grcov@v0.1
+        run: grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
 
       - name: Codecov
         uses: codecov/codecov-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ${{ steps.grcov.outputs.report }}
+          file: lcov.info
 
   build:
     strategy:
