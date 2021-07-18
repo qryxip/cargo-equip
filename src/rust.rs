@@ -376,14 +376,14 @@ fn minify_token_stream<F: FnOnce(&str) -> Result<bool, E>, E>(
         enum State {
             None,
             AlnumUnderscoreQuote,
-            PunctChars(String, Spacing),
+            PunctChars(String, LineColumn, Spacing),
         }
 
         let mut prev = State::None;
         for tt in token_stream {
             match tt {
                 TokenTree::Group(group) => {
-                    if let State::PunctChars(puncts, _) = mem::replace(&mut prev, State::None) {
+                    if let State::PunctChars(puncts, _, _) = mem::replace(&mut prev, State::None) {
                         *acc += &puncts;
                     }
                     let (left, right) = match group.delimiter() {
@@ -400,75 +400,93 @@ fn minify_token_stream<F: FnOnce(&str) -> Result<bool, E>, E>(
                 TokenTree::Ident(ident) => {
                     match mem::replace(&mut prev, State::AlnumUnderscoreQuote) {
                         State::AlnumUnderscoreQuote => *acc += " ",
-                        State::PunctChars(puncts, _) => *acc += &puncts,
+                        State::PunctChars(puncts, _, _) => *acc += &puncts,
                         _ => {}
                     }
                     *acc += &ident.to_string();
                 }
                 TokenTree::Literal(literal) => {
+                    let end = literal.span().end();
                     let literal = literal.to_string();
                     let (literal, next) = if let Some(literal) = literal.strip_suffix('.') {
-                        (literal, State::PunctChars(".".to_owned(), Spacing::Alone))
+                        (
+                            literal,
+                            State::PunctChars(".".to_owned(), end, Spacing::Alone),
+                        )
                     } else {
                         (&*literal, State::AlnumUnderscoreQuote)
                     };
                     match mem::replace(&mut prev, next) {
                         State::AlnumUnderscoreQuote => *acc += " ",
-                        State::PunctChars(puncts, _) => *acc += &puncts,
+                        State::PunctChars(puncts, _, _) => *acc += &puncts,
                         _ => {}
                     }
                     *acc += &literal.to_string();
                 }
                 TokenTree::Punct(punct) => {
-                    if let State::PunctChars(puncts, spacing) = &mut prev {
+                    let cur_pos = punct.span().start();
+                    if let State::PunctChars(puncts, prev_pos, spacing) = &mut prev {
                         if *spacing == Spacing::Alone {
                             *acc += puncts;
                             // https://docs.rs/syn/1.0.46/syn/token/index.html
-                            if [
-                                ("!", '='),
-                                ("%", '='),
-                                ("&", '&'),
-                                ("&", '='),
-                                ("*", '='),
-                                ("+", '='),
-                                ("-", '='),
-                                ("-", '>'),
-                                (".", '.'),
-                                ("..", '.'),
-                                ("..", '='),
-                                ("/", '='),
-                                (":", ':'),
-                                ("<", '-'),
-                                ("<", '<'),
-                                ("<", '='),
-                                ("<<", '='),
-                                ("=", '='),
-                                ("=", '>'),
-                                (">", '='),
-                                (">", '>'),
-                                (">>", '='),
-                                ("^", '='),
-                                ("|", '='),
-                                ("|", '|'),
-                            ]
-                            .contains(&(&&*puncts, punct.as_char()))
+                            if !adjacent(*prev_pos, cur_pos)
+                                && [
+                                    ("!", '='),
+                                    ("%", '='),
+                                    ("&", '&'),
+                                    ("&", '='),
+                                    ("*", '='),
+                                    ("+", '='),
+                                    ("-", '='),
+                                    ("-", '>'),
+                                    (".", '.'),
+                                    ("..", '.'),
+                                    ("..", '='),
+                                    ("/", '='),
+                                    (":", ':'),
+                                    ("<", '-'),
+                                    ("<", '<'),
+                                    ("<", '='),
+                                    ("<<", '='),
+                                    ("=", '='),
+                                    ("=", '>'),
+                                    (">", '='),
+                                    (">", '>'),
+                                    (">>", '='),
+                                    ("^", '='),
+                                    ("|", '='),
+                                    ("|", '|'),
+                                ]
+                                .contains(&(&&*puncts, punct.as_char()))
                             {
                                 *acc += " ";
                             }
-                            prev = State::PunctChars(punct.as_char().to_string(), punct.spacing());
+                            prev = State::PunctChars(
+                                punct.as_char().to_string(),
+                                cur_pos,
+                                punct.spacing(),
+                            );
                         } else {
                             puncts.push(punct.as_char());
                             *spacing = punct.spacing();
                         }
                     } else {
-                        prev = State::PunctChars(punct.as_char().to_string(), punct.spacing());
+                        prev = State::PunctChars(
+                            punct.as_char().to_string(),
+                            cur_pos,
+                            punct.spacing(),
+                        );
                     }
                 }
             }
         }
-        if let State::PunctChars(puncts, _) = prev {
+        if let State::PunctChars(puncts, _, _) = prev {
             *acc += &puncts;
         }
+    }
+
+    fn adjacent(pos1: LineColumn, pos2: LineColumn) -> bool {
+        pos1.line == pos2.line && pos1.column + 1 == pos2.column
     }
 }
 
@@ -2068,6 +2086,7 @@ fn main() {
     #[test_case(quote!(a & &b)                                => "a& &b"                          ; "space_and_reference"   )]
     #[test_case(quote!(a < -b)                                => "a< -b"                          ; "space_le_neg"          )]
     #[test_case(quote!(0. ..1.)                               => "0. ..1."                        ; "space_dec_point_range" )]
+    #[test_case(quote!(x | || ())                             => "x| ||()"                        ; "zero_arg_closure"      )]
     #[test_case(quote!(println!("{}", 2 * 2 + 1))             => r#"println!("{}",2*2+1)"#        ; "println"               )]
     #[test_case(quote!(macro_rules! m { ($($_:tt)*) => {}; }) => "macro_rules!m{($($_:tt)*)=>{};}"; "macro_rules"           )]
     fn minify_token_stream(tokens: TokenStream) -> String {
