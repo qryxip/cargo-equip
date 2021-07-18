@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Improved the minification function.
+
+    ```diff
+    -let _=| |();
+    +let _=||();
+    ```
+
 ## [0.17.0] - 2021-07-03Z
 
 ### Changed
