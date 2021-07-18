@@ -65,18 +65,34 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install cargo-udeps ^0.1
+      - name: Resolve `cargo-udeps ^0.1` and `grcov ^0.8`
+        id: resolve-versions
+        run: |
+          echo "::set-output name=cargo-udeps::$(python ./.github/workflows/resolve-version.py cargo-udeps ^0.1)"
+          echo "::set-output name=grcov::$(python ./.github/workflows/resolve-version.py grcov ^0.8)"
+
+      - name: Cache
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            ~/.cargo/bin/cargo-udeps
+            ~/.cargo/bin/grcov
+          key: grcov-${{ steps.resolve-versions.outputs.cargo-udeps }}-${{ steps.resolve-versions.outputs.grcov }}
+
+      - name: Install cargo-udeps v${{ steps.resolve-versions.outputs.cargo-udeps }}
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: cargo-udeps --version ^0.1
+          args: cargo-udeps --version '=${{ steps.resolve-versions.outputs.cargo-udeps }}'
           toolchain: stable
 
-      - name: Install grcov ^0.8
+      - name: Install grcov v${{ steps.resolve-versions.outputs.grcov }}
         uses: actions-rs/cargo@v1
         with:
           command: install
-          args: grcov --version ^0.8
+          args: grcov --version '=${{ steps.resolve-versions.outputs.grcov }}'
           toolchain: stable
 
       - name: cargo-run
@@ -164,7 +180,7 @@ jobs:
 
       - name: Resolve `cargo-udeps ^0.1`
         id: resolve-version-of-cargo-udeps
-        run: echo "::set-output name=version::$(python ./.github/workflows/resolve-cargo-udeps.py)"
+        run: echo "::set-output name=version::$(python ./.github/workflows/resolve-version.py cargo-udeps ^0.1)"
         shell: bash
 
       - name: Cache for cargo-udeps
