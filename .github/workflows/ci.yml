@@ -82,7 +82,7 @@ jobs:
     name: grcov
     runs-on: ubuntu-20.04
     env:
-      CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN: nightly-2021-07-16
+      CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN: nightly-2021-07-30
     if: ${{ github.repository_owner == 'qryxip' && github.ref == 'refs/heads/master' }}
 
     steps:
@@ -182,7 +182,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     env:
-      CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN: nightly-2021-05-20
+      CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN: nightly-2021-07-30
 
     steps:
       - name: Disable `core.autocrlf`
