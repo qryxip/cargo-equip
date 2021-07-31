@@ -113,7 +113,7 @@ jobs:
         env:
           RUSTFLAGS: '-Zinstrument-coverage'
           RUST_BACKTRACE: full
-          LLVM_PROFILE_NAME: '%p-%m.profraw'
+          LLVM_PROFILE_FILE: '%p-%m.profraw'
 
       - name: grcov
         run: grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
