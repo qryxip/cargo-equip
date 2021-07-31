@@ -347,7 +347,7 @@ impl RaProcMacro {
                 bail!("rust-analyzer unexpectedly terminated ({})", status);
             }
         }
-        match serde_json::from_str(&res)
+        match serde_json::from_str(res)
             .with_context(|| "could not deserialize values from rust-analyzer")?
         {
             Response::Error(err) => {

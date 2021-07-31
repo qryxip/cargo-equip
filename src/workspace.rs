@@ -75,7 +75,7 @@ pub(crate) fn list_out_dirs<'cm>(
                 package_id,
                 out_dir,
                 ..
-            }) => Some((&metadata[&package_id].id, out_dir.clone())),
+            }) => Some((&metadata[package_id].id, out_dir.clone())),
             _ => None,
         })
         .collect()

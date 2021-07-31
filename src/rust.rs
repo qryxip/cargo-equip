@@ -135,7 +135,7 @@ fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), S
         }
     }
 
-    debug_assert!(syn::parse_file(&code).is_ok());
+    debug_assert!(syn::parse_file(code).is_ok());
 
     ret
 }
@@ -457,7 +457,7 @@ fn minify_token_stream<F: FnOnce(&str) -> Result<bool, E>, E>(
                                     ("|", '='),
                                     ("|", '|'),
                                 ]
-                                .contains(&(&&*puncts, punct.as_char()))
+                                .contains(&(puncts, punct.as_char()))
                             {
                                 *acc += " ";
                             }
@@ -584,7 +584,7 @@ impl CodeEdit {
                     if let Some(path) = paths.iter().find(|p| p.exists()) {
                         let start = semi.span().start();
                         let end = semi.span().end();
-                        let content = expand_mods(&path, depth + 1)?;
+                        let content = expand_mods(path, depth + 1)?;
                         let content = indent_code(&content, depth + 1);
                         let content = format!(" {{\n{}{}}}", content, "    ".repeat(depth + 1));
                         Ok(((start, end), content))
@@ -599,7 +599,7 @@ impl CodeEdit {
     }
 
     fn from_code(string: &str) -> syn::Result<Self> {
-        let file = syn::parse_file(&string)?;
+        let file = syn::parse_file(string)?;
         return Ok(Self {
             has_local_inner_macros_attr: check_local_inner_macros(&file),
             string: string.to_owned(),
@@ -1127,7 +1127,7 @@ impl CodeEdit {
                 {
                     if [parse_quote!(::core::concat), parse_quote!(::std::concat)].contains(path) {
                         (|parse_stream: ParseStream<'_>| {
-                            Punctuated::<Expr, Token![,]>::parse_separated_nonempty(&parse_stream)
+                            Punctuated::<Expr, Token![,]>::parse_separated_nonempty(parse_stream)
                         })
                         .parse2(tokens.clone())
                         .ok()?

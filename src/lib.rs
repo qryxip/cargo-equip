@@ -397,7 +397,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     }?;
 
     let libs_to_bundle = {
-        let unused_deps = &match cargo_udeps::cargo_udeps(&bin_package, &bin, &toolchain, shell) {
+        let unused_deps = &match cargo_udeps::cargo_udeps(bin_package, bin, &toolchain, shell) {
             Ok(unused_deps) => unused_deps,
             Err(warning) => {
                 shell.warn(warning)?;
@@ -439,8 +439,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let code = bundle(
         &metadata,
-        &bin_package,
-        &bin,
+        bin_package,
+        bin,
         &libs_to_bundle,
         !no_resolve_cfgs,
         &remove,
@@ -454,7 +454,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     if !no_check {
         workspace::cargo_check_using_current_lockfile_and_cache(
             &metadata,
-            &bin_package,
+            bin_package,
             bin.is_example(),
             &exclude,
             &code,
@@ -486,7 +486,7 @@ fn bundle(
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
     let cargo_check_message_format_json = |toolchain: &str, shell: &mut Shell| -> _ {
-        workspace::cargo_check_message_format_json(toolchain, metadata, &bin_package, bin, shell)
+        workspace::cargo_check_message_format_json(toolchain, metadata, bin_package, bin, shell)
     };
 
     let cargo_messages_for_out_dirs = &libs_to_bundle
@@ -712,11 +712,11 @@ fn bundle(
                     Some(dst_pseudo_extern_crate_name.clone())
                 };
 
-                edit.translate_crate_path(&pseudo_extern_crate_name)?;
+                edit.translate_crate_path(pseudo_extern_crate_name)?;
                 edit.translate_extern_crate_paths(translate_extern_crate_name)?;
                 edit.process_extern_crates_in_lib(translate_extern_crate_name, shell)?;
                 let (macro_mod_content, macro_defs) = edit.modify_declarative_macros(
-                    &pseudo_extern_crate_name,
+                    pseudo_extern_crate_name,
                     remove.contains(&Remove::Docs),
                 )?;
                 let prelude_mod_content = edit.resolve_pseudo_prelude(
