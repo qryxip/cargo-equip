@@ -2,14 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated rust-analyzer to `2021-07-26`. ([#155](https://github.com/qryxip/cargo-equip/pull/155))
+
 ### Fixed
 
-- Improved the minification function.
+- Improved the minification function. ([#153](https://github.com/qryxip/cargo-equip/pull/153))
 
     ```diff
     -let _=| |();
     +let _=||();
     ```
+
+- (also applied to the previous versions unless `--locked`) [Now accepts `dyn for<'a> Trait<'a>`](https://github.com/dtolnay/syn/pull/1042). ([#155](https://github.com/qryxip/cargo-equip/pull/155))
 
 ## [0.17.0] - 2021-07-03Z
 
