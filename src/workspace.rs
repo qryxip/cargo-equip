@@ -751,3 +751,17 @@ impl TargetExt for cm::Target {
         }
     }
 }
+
+trait SourceExt {
+    fn rev_git(&self) -> Option<(&str, &str)>;
+}
+
+impl SourceExt for cm::Source {
+    fn rev_git(&self) -> Option<(&str, &str)> {
+        let url = self.repr.strip_prefix("git+")?;
+        match *url.split('#').collect::<Vec<_>>() {
+            [url, rev] => Some((url, rev)),
+            _ => None,
+        }
+    }
+}

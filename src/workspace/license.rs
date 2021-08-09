@@ -1,4 +1,4 @@
-use crate::workspace::PackageExt as _;
+use crate::workspace::{PackageExt as _, SourceExt as _};
 use anyhow::{anyhow, bail, Context as _};
 use cargo_metadata as cm;
 use serde::Deserialize;
@@ -35,39 +35,56 @@ pub(super) fn license_file(
 
     find(package.manifest_dir().as_ref(), file_names)
         .unwrap_or_else(|| {
-            if !matches!(&package.source, Some(s) if s.is_crates_io()) {
-                todo!("TODO: find license files from `git` sources and `path` sources");
+            if let Some(source) = &package.source {
+                let (repository, sha1) = if let Some((repository, sha1)) = source.rev_git() {
+                    (repository, sha1.to_owned())
+                } else {
+                    let repository = package.repository.as_deref().with_context(|| {
+                        format!(
+                            "could not retrieve the license file of `{}`: missing `repository` \
+                             field",
+                            package.id,
+                        )
+                    })?;
+                    let sha1 = read_git_sha1(package)?;
+                    (repository, sha1)
+                };
+
+                let cache_path = &cache_dir
+                    .join("license-files")
+                    .join(&package.name)
+                    .join(&sha1);
+
+                if cache_path.exists() {
+                    return xshell::read_file(cache_path).map_err(Into::into);
+                }
+
+                let content =
+                    find_in_git_repos(repository, &sha1, file_names)?.with_context(|| {
+                        format!(
+                            "could not retrieve the license file of `{}`: could not find {:?}",
+                            package.id, file_names,
+                        )
+                    })?;
+
+                xshell::mkdir_p(cache_path.with_file_name(""))?;
+                xshell::write_file(cache_path, &content)?;
+
+                Ok(content)
+            } else {
+                let repository = package
+                    .manifest_dir()
+                    .ancestors()
+                    .find(|p| p.join(".git").is_dir())
+                    .with_context(|| {
+                        format!(
+                            "could not find a license file in `{}`",
+                            package.manifest_dir()
+                        )
+                    })?;
+                find(repository.as_ref(), file_names)
+                    .with_context(|| format!("could not find a license file in `{}`", repository))?
             }
-
-            let repository = package.repository.as_ref().with_context(|| {
-                format!(
-                    "could not retrieve the license file of `{}`: missing `repository` field",
-                    package.id,
-                )
-            })?;
-
-            let sha1 = &read_git_sha1(package)?;
-
-            let cache_path = &cache_dir
-                .join("license-files")
-                .join(&package.name)
-                .join(sha1);
-
-            if cache_path.exists() {
-                return xshell::read_file(cache_path).map_err(Into::into);
-            }
-
-            let content = find_in_git_repos(repository, sha1, file_names)?.with_context(|| {
-                format!(
-                    "could not retrieve the license file of `{}`: could not find {:?}",
-                    package.id, file_names,
-                )
-            })?;
-
-            xshell::mkdir_p(cache_path.with_file_name(""))?;
-            xshell::write_file(cache_path, &content)?;
-
-            Ok(content)
         })
         .map(Some)
 }
