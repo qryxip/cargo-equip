@@ -4,6 +4,16 @@
 
 ### Changed
 
+- Enabled running for a `lib` crate.
+
+    Now you can easily produce standalone Rust source files like `my_library.rs`.
+
+    ```console
+    ❯ cargo metadata --format-version 1 | jq -r .resolve.root | awk '{ print $1, $2 }'
+    proconio 0.4.3
+    ❯ cargo equip --minify libs --remove docs -o ./proconio.rs
+    ```
+
 - Updated rust-analyzer to `2021-07-26`. ([#155](https://github.com/qryxip/cargo-equip/pull/155))
 
 ### Fixed
@@ -15,7 +25,15 @@
     +let _=||();
     ```
 
-- (also applied to the previous versions unless `--locked`) [Now accepts `dyn for<'a> Trait<'a>`](https://github.com/dtolnay/syn/pull/1042). ([#155](https://github.com/qryxip/cargo-equip/pull/155))
+- (also applied to the previous versions unless `--locked`) Updated [syn](https://docs.rs/crate/syn) to v1.0.74. ([#155](https://github.com/qryxip/cargo-equip/pull/155))
+
+    [Now accepts `dyn for<'a> Trait<'a>`](https://github.com/dtolnay/syn/pull/1042).
+
+- Enabled reading license files from `git`/`path` package sources.
+
+    Previously cargo-equip reaches a `todo!`.
+
+- Now handles `path` dependencies correctly when checking an output.
 
 ## [0.17.0] - 2021-07-03Z
 
