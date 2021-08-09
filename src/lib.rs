@@ -805,19 +805,6 @@ fn bundle(
             )>,
         >>()?;
 
-    let minify_file = |content: &_, name: Option<&_>, shell: &mut Shell| -> _ {
-        rust::minify_file(content, |output| {
-            let is_valid = syn::parse_file(output).is_ok();
-            if !is_valid {
-                shell.warn(format!(
-                    "could not minify the code. inserting spaces{}",
-                    name.map(|s| format!(": `{}`", s)).unwrap_or_default(),
-                ))?;
-            }
-            Ok(is_valid)
-        })
-    };
-
     if !libs.is_empty() {
         let authors = if root_crate.package().authors.is_empty() {
             workspace::attempt_get_author(&metadata.workspace_root)?
@@ -998,20 +985,13 @@ fn bundle(
             .flat_map(|(_, (_, _, _, _, macro_defs))| macro_defs)
             .collect::<BTreeMap<_, _>>();
 
-        let mut render_mods = |code: &mut String, mods: &[(&str, &str)]| -> anyhow::Result<()> {
+        let render_mods = |code: &mut String, mods: &[(&str, &str)]| -> anyhow::Result<()> {
             if minify == Minify::Libs {
                 for (pseudo_extern_crate_name, mod_content) in mods {
                     *code += "        pub mod ";
                     *code += &pseudo_extern_crate_name.to_string();
                     *code += " {";
-                    *code += &minify_file(
-                        mod_content,
-                        Some(&format!(
-                            "crate::__cargo_equip::macros::{}",
-                            pseudo_extern_crate_name,
-                        )),
-                        shell,
-                    )?;
+                    *code += &rustminify::minify_file(&rust::parse_file(mod_content)?);
                     *code += "}\n";
                 }
             } else {
@@ -1103,7 +1083,7 @@ fn bundle(
     }
 
     if minify == Minify::All {
-        code = minify_file(&code, None, shell)?;
+        code = rustminify::minify_file(&rust::parse_file(&code)?);
     }
 
     if rustfmt {

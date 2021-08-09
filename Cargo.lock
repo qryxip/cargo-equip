@@ -159,6 +159,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rand",
+ "rustminify",
  "semver",
  "serde",
  "serde_json",
@@ -169,7 +170,6 @@ dependencies = [
  "syn",
  "tempfile",
  "termcolor",
- "test-case",
  "toml",
  "toml_edit",
  "which",
@@ -788,6 +788,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustminify"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ebf2755dbb7825d6215fa58eb885419385d62d29a5bba66eda6dce2655043d9"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -964,19 +975,6 @@ checksum = "633c1a546cee861a1a6d0dc69ebeca693bf4296661ba7852b9d21d159e0506df"
 dependencies = [
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "test-case"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b114ece25254e97bf48dd4bfc2a12bad0647adacfe4cae1247a9ca6ad302cec"
-dependencies = [
- "cfg-if",
- "proc-macro2",
- "quote",
- "syn",
- "version_check",
 ]
 
 [[package]]
