@@ -46,6 +46,7 @@ which = "4.2.2"
 xshell = "0.1.14"
 
 [dev-dependencies]
+assert_cmd = "2.0.0"
 difference = "2.0.0"
 insta = "1.7.1"
 md5 = "0.7.0"

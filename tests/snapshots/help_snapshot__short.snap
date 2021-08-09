@@ -1,0 +1,43 @@
+---
+source: tests/help-snapshot.rs
+expression: "run(\"-h\")?"
+
+---
+cargo-equip <version>
+Ryo Yamashita <qryxip@gmail.com>
+
+A Cargo subcommand to bundle your code into one `.rs` file for competitive programming.
+
+Use -h for short descriptions and --help for more detials.
+
+USAGE:
+    cargo equip [OPTIONS]
+    cargo equip [OPTIONS] --src <PATH>
+    cargo equip [OPTIONS] --bin <NAME>
+    cargo equip [OPTIONS] --example <NAME>
+
+OPTIONS:
+        --src <PATH>                  Bundle the lib/bin/example target and its dependencies
+        --lib                         Bundle the library and its dependencies
+        --bin <NAME>                  Bundle the binary and its dependencies
+        --example <NAME>              Bundle the binary example and its dependencies
+        --manifest-path <PATH>        Path to Cargo.toml
+        --exclude <SPEC>...           Exclude library crates from bundling
+        --exclude-atcoder-crates      Alias for `--exclude {crates available on AtCoder}`
+        --exclude-codingame-crates    Alias for `--exclude {crates available on CodinGame}`
+        --toolchain <TOOLCHAIN>       `nightly` toolchain for `cargo-udeps` [default: nightly]
+        --remove <REMOVE>...          Remove some part [possible values: docs, comments]
+        --minify <MINIFY>             Minify part of the output before emitting [default: none]  [possible values: none,
+                                      libs, all]
+        --no-resolve-cfgs             Do not resolve `cfg(..)`s
+        --no-rustfmt                  Do not format the output before emitting
+        --no-check                    Do not check the output before emitting
+    -o, --output <PATH>               Write to the file instead of STDOUT
+        --oneline <MINIFY>            [Deprecated] Alias for `--minify` [default: none]  [possible values: none, libs,
+                                      all]
+        --resolve-cfgs                [Deprecated] No-op
+        --rustfmt                     [Deprecated] No-op
+        --check                       [Deprecated] No-op
+    -h, --help                        Prints help information
+    -V, --version                     Prints version information
+

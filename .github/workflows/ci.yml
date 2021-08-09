@@ -136,15 +136,6 @@ jobs:
           args: grcov --version '=${{ steps.resolve-versions.outputs.grcov }}'
           toolchain: stable
 
-      - name: cargo-run
-        uses: actions-rs/cargo@v1
-        with:
-          command: run
-          args: -- -h
-          toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
-        env:
-          RUSTFLAGS: '-Zinstrument-coverage'
-
       - name: cargo-test
         uses: actions-rs/cargo@v1
         with:
