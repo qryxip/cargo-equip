@@ -6,6 +6,7 @@ use arrayvec::ArrayVec;
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
 use if_chain::if_chain;
+use indoc::indoc;
 use itertools::Itertools as _;
 use krates::PkgSpec;
 use rand::Rng as _;
@@ -40,11 +41,11 @@ pub(crate) fn cargo_metadata(manifest_path: &Path, cwd: &Path) -> cm::Result<cm:
 pub(crate) fn cargo_check_message_format_json(
     toolchain: &str,
     metadata: &cm::Metadata,
-    bin_package: &cm::Package,
-    bin_target: &cm::Target,
+    package: &cm::Package,
+    krate: &cm::Target,
     shell: &mut Shell,
 ) -> anyhow::Result<Vec<cm::Message>> {
-    let messages = crate::process::process(toolchain::rustup_exe(bin_package.manifest_dir())?)
+    let messages = crate::process::process(toolchain::rustup_exe(package.manifest_dir())?)
         .arg("run")
         .arg(toolchain)
         .arg("cargo")
@@ -52,8 +53,8 @@ pub(crate) fn cargo_check_message_format_json(
         .arg("--message-format")
         .arg("json")
         .arg("-p")
-        .arg(format!("{}:{}", bin_package.name, bin_package.version))
-        .args(&bin_target.target_option())
+        .arg(format!("{}:{}", package.name, package.version))
+        .args(&krate.target_option())
         .cwd(&metadata.workspace_root)
         .read_with_status(true, shell)?;
 
@@ -115,11 +116,11 @@ pub(crate) fn attempt_get_author(workspace_root: &Utf8Path) -> anyhow::Result<Op
 pub(crate) fn cargo_check_using_current_lockfile_and_cache(
     metadata: &cm::Metadata,
     package: &cm::Package,
-    need_dev_deps: bool,
+    target: &cm::Target,
     exclude: &[PkgSpec],
     code: &str,
 ) -> anyhow::Result<()> {
-    let name = {
+    let package_name = {
         let mut rng = rand::thread_rng();
         let suf = (0..16)
             .map(|_| match rng.gen_range(0..=35) {
@@ -131,34 +132,47 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         let suf = str::from_utf8(&suf).expect("should be valid ASCII");
         format!("cargo-equip-check-output-{}", suf)
     };
+    let crate_name = &*if target.is_lib() {
+        package_name.replace('-', "_")
+    } else {
+        package_name.to_owned()
+    };
 
     let temp_pkg = tempfile::Builder::new()
-        .prefix(&name)
+        .prefix(&package_name)
         .rand_bytes(0)
         .tempdir()?;
-
-    let cargo_exe = crate::process::cargo_exe()?;
-
-    crate::process::process(&cargo_exe)
-        .arg("init")
-        .arg("-q")
-        .arg("--vcs")
-        .arg("none")
-        .arg("--bin")
-        .arg("--edition")
-        .arg(&package.edition)
-        .arg("--name")
-        .arg(&name)
-        .arg(temp_pkg.path())
-        .cwd(&metadata.workspace_root)
-        .exec()?;
 
     let orig_manifest =
         std::fs::read_to_string(&package.manifest_path)?.parse::<toml_edit::Document>()?;
 
-    let mut temp_manifest = std::fs::read_to_string(temp_pkg.path().join("Cargo.toml"))?
-        .parse::<toml_edit::Document>()?;
+    let mut temp_manifest = indoc! {r#"
+        [package]
+        name = ""
+        version = "0.0.0"
+        edition = ""
+    "#}
+    .parse::<toml_edit::Document>()
+    .unwrap();
 
+    temp_manifest["package"]["name"] = toml_edit::value(package_name);
+    temp_manifest["package"]["edition"] = toml_edit::value(&*package.edition);
+    let mut tbl = toml_edit::Table::new();
+    tbl["name"] = toml_edit::value(crate_name);
+    tbl["path"] = toml_edit::value(format!("{}.rs", crate_name));
+    if target.is_lib() {
+        temp_manifest["lib"] = toml_edit::Item::Table(tbl);
+    } else {
+        temp_manifest[if target.is_example() {
+            "example"
+        } else {
+            "bin"
+        }] = toml_edit::Item::ArrayOfTables({
+            let mut arr = toml_edit::ArrayOfTables::new();
+            arr.append(tbl);
+            arr
+        });
+    }
     temp_manifest["dependencies"] = orig_manifest["dependencies"].clone();
     temp_manifest["dev-dependencies"] = orig_manifest["dev-dependencies"].clone();
 
@@ -171,7 +185,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .flat_map(|cm::Dependency { rename, .. }| rename)
         .collect::<HashSet<_>>();
 
-    let remove_excluded = |table: &mut toml_edit::Table| {
+    let modify_dependencies = |table: &mut toml_edit::Table| {
         for name_in_toml in metadata
             .resolve
             .as_ref()
@@ -193,41 +207,38 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         {
             table.remove(name_in_toml);
         }
+
+        for (_, value) in table.iter_mut() {
+            if let toml_edit::Item::Value(value) = &mut value["path"] {
+                if let Some(possibly_rel_path) = value.as_str() {
+                    *value = package
+                        .manifest_dir()
+                        .join(possibly_rel_path)
+                        .into_string()
+                        .into();
+                }
+            }
+        }
     };
 
     if let toml_edit::Item::Table(table) = &mut temp_manifest["dependencies"] {
-        remove_excluded(table);
+        modify_dependencies(table);
     }
     if let toml_edit::Item::Table(table) = &mut temp_manifest["dev-dependencies"] {
-        remove_excluded(table);
+        modify_dependencies(table);
     }
 
     std::fs::write(
         temp_pkg.path().join("Cargo.toml"),
         temp_manifest.to_string(),
     )?;
-
-    std::fs::create_dir(temp_pkg.path().join("src").join("bin"))?;
-    std::fs::create_dir(temp_pkg.path().join("examples"))?;
-    std::fs::write(
-        if need_dev_deps {
-            temp_pkg.path().join("examples")
-        } else {
-            temp_pkg.path().join("src").join("bin")
-        }
-        .join(name)
-        .with_extension("rs"),
-        code,
-    )?;
-
-    std::fs::remove_file(temp_pkg.path().join("src").join("main.rs"))?;
-
     std::fs::copy(
         metadata.workspace_root.join("Cargo.lock"),
         temp_pkg.path().join("Cargo.lock"),
     )?;
+    std::fs::write(temp_pkg.path().join(format!("{}.rs", crate_name)), code)?;
 
-    crate::process::process(cargo_exe)
+    crate::process::process(crate::process::cargo_exe()?)
         .arg("check")
         .arg("--target-dir")
         .arg(&metadata.target_directory)
@@ -243,7 +254,8 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
 }
 
 pub(crate) trait MetadataExt {
-    fn exactly_one_bin_like_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)>;
+    fn exactly_one_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)>;
+    fn lib_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)>;
     fn bin_target_by_name<'a>(
         &'a self,
         name: &str,
@@ -252,7 +264,7 @@ pub(crate) trait MetadataExt {
         &'a self,
         name: &str,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
-    fn bin_like_target_by_src_path<'a>(
+    fn target_by_src_path<'a>(
         &'a self,
         src_path: &Path,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)>;
@@ -276,23 +288,62 @@ pub(crate) trait MetadataExt {
 }
 
 impl MetadataExt for cm::Metadata {
-    fn exactly_one_bin_like_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)> {
-        match &*targets_in_ws(self)
-            .filter(|(cm::Target { kind, .. }, _)| {
-                [&["bin".to_owned()][..], &["example".to_owned()][..]].contains(&&**kind)
-            })
-            .collect::<Vec<_>>()
-        {
-            [] => bail!("no bin/example target in this workspace"),
-            [t] => Ok(*t),
-            [ts @ ..] => bail!(
-                "could not determine which binary to choose. Use the `--bin` option, `--example` \
-                 option, or `--src` option to specify a binary.\n\
-                 available binaries: {}\n\
+    fn exactly_one_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)> {
+        let root_package = self.root_package();
+        match (
+            &*targets_in_ws(self)
+                .filter(|(t, p)| {
+                    (t.is_lib() || t.is_bin() || t.is_example())
+                        && root_package.map_or(true, |r| r.id == p.id)
+                })
+                .collect::<Vec<_>>(),
+            root_package,
+        ) {
+            ([], Some(root_package)) => {
+                bail!("no lib/bin/example target in `{}`", root_package.name)
+            }
+            ([], None) => bail!("no lib/bin/example target in this workspace"),
+            ([t], _) => Ok(*t),
+            ([ts @ ..], _) => bail!(
+                "could not determine which target to choose. Use the `--bin` option, `--example` \
+                 option, `--lib` option, or `--src` option to specify a target.\n\
+                 available targets: {}\n\
                  note: currently `cargo-equip` does not support the `default-run` manifest key.",
                 ts.iter()
-                    .map(|(cm::Target { name, .. }, _)| name)
+                    .map(|(target, _)| format!(
+                        "{}{}",
+                        &target.name,
+                        if target.is_lib() {
+                            " (lib)"
+                        } else if target.is_bin() {
+                            " (bin)"
+                        } else if target.is_example() {
+                            " (example)"
+                        } else {
+                            unreachable!()
+                        }
+                    ))
                     .format(", "),
+            ),
+        }
+    }
+
+    fn lib_target(&self) -> anyhow::Result<(&cm::Target, &cm::Package)> {
+        let root_package = self.root_package();
+        match (
+            &*targets_in_ws(self)
+                .filter(|(t, p)| t.is_lib() && root_package.map_or(true, |r| r.id == p.id))
+                .collect::<Vec<_>>(),
+            root_package,
+        ) {
+            ([], Some(root_package)) => {
+                bail!("`{}` does not have a `lib` target", root_package.name)
+            }
+            ([], None) => bail!("no lib target in this workspace"),
+            ([t], _) => Ok(*t),
+            ([..], _) => bail!(
+                "could not determine which library to choose. Use the `-p` option to specify a \
+                 package.",
             ),
         }
     }
@@ -311,7 +362,7 @@ impl MetadataExt for cm::Metadata {
         target_by_kind_and_name(self, "example", name)
     }
 
-    fn bin_like_target_by_src_path<'a>(
+    fn target_by_src_path<'a>(
         &'a self,
         src_path: &Path,
     ) -> anyhow::Result<(&'a cm::Target, &'a cm::Package)> {
@@ -668,15 +719,20 @@ impl PackageIdExt for cm::PackageId {
 }
 
 pub(crate) trait TargetExt {
+    fn is_bin(&self) -> bool;
     fn is_example(&self) -> bool;
     fn is_custom_build(&self) -> bool;
     fn is_lib(&self) -> bool;
     fn is_proc_macro(&self) -> bool;
     fn crate_name(&self) -> String;
-    fn target_option(&self) -> [&str; 2];
+    fn target_option(&self) -> Vec<&str>;
 }
 
 impl TargetExt for cm::Target {
+    fn is_bin(&self) -> bool {
+        self.kind == ["bin".to_owned()]
+    }
+
     fn is_example(&self) -> bool {
         self.kind == ["example".to_owned()]
     }
@@ -697,11 +753,27 @@ impl TargetExt for cm::Target {
         self.name.replace('-', "_")
     }
 
-    fn target_option(&self) -> [&str; 2] {
-        if self.is_example() {
-            ["--example", &self.name]
+    fn target_option(&self) -> Vec<&str> {
+        if self.is_lib() {
+            vec!["--lib"]
+        } else if self.is_example() {
+            vec!["--example", &self.name]
         } else {
-            ["--bin", &self.name]
+            vec!["--bin", &self.name]
+        }
+    }
+}
+
+trait SourceExt {
+    fn rev_git(&self) -> Option<(&str, &str)>;
+}
+
+impl SourceExt for cm::Source {
+    fn rev_git(&self) -> Option<(&str, &str)> {
+        let url = self.repr.strip_prefix("git+")?;
+        match *url.split('#').collect::<Vec<_>>() {
+            [url, rev] => Some((url, rev)),
+            _ => None,
         }
     }
 }

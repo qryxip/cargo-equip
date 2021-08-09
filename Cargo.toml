@@ -15,7 +15,7 @@ arrayvec = { version = "0.7.1", features = ["serde"] }
 atty = "0.2.14"
 camino = { version = "1.0.5", features = ["serde1"] }
 cargo_metadata = "0.14.0"
-cfg-expr = "0.8.0"
+cfg-expr = "0.8.1"
 dirs-next = "2.0.0"
 fixedbitset = "0.4.0"
 if_chain = "1.0.1"
@@ -42,10 +42,11 @@ tempfile = "3.2.0"
 termcolor = "1.1.2"
 toml = "0.5.8"
 toml_edit = "0.2.1"
-which = "4.2.1"
+which = "4.2.2"
 xshell = "0.1.14"
 
 [dev-dependencies]
+assert_cmd = "2.0.0"
 difference = "2.0.0"
 insta = "1.7.1"
 md5 = "0.7.0"

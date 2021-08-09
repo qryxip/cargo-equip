@@ -64,24 +64,28 @@ pub enum Opt {
         )
     )]
     Equip {
-        /// Path to the main source file of the bin target
+        /// Bundle the lib/bin/example target and its dependencies
         #[structopt(
             long,
             value_name("PATH"),
-            conflicts_with_all(&["bin", "example"]),
+            conflicts_with_all(&["lib", "bin", "example"]),
             long_help(indoc! {r#"
-                Path to the main source file of the bin target.
+                Bundle the lib/bin/example target and its dependencies.
 
-                This option is intended to be used from editors such as VSCode. Use `--bin` or `--example` for normal usage.
+                This option is intended to be used from editors such as VSCode. Use `--lib`, `--bin` or `--example` for normal usage.
             "#})
         )]
         src: Option<PathBuf>,
 
-        /// Name of the bin target
+        /// Bundle the library and its dependencies
+        #[structopt(long, conflicts_with_all(&["bin", "example"]))]
+        lib: bool,
+
+        /// Bundle the binary and its dependencies
         #[structopt(long, value_name("NAME"), conflicts_with("example"))]
         bin: Option<String>,
 
-        /// Name of the example target
+        /// Bundle the binary example and its dependencies
         #[structopt(long, value_name("NAME"))]
         example: Option<String>,
 
@@ -327,6 +331,7 @@ static CODINGAME_CRATES: &[&str] = &[
 pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     let Opt::Equip {
         src,
+        lib,
         bin,
         example,
         manifest_path,
@@ -386,25 +391,36 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let metadata = workspace::cargo_metadata(&manifest_path, &cwd)?;
 
-    let (bin, bin_package) = if let Some(bin) = bin {
+    let (root, root_package) = if lib {
+        metadata.lib_target()
+    } else if let Some(bin) = bin {
         metadata.bin_target_by_name(&bin)
     } else if let Some(example) = example {
         metadata.example_target_by_name(&example)
     } else if let Some(src) = src {
-        metadata.bin_like_target_by_src_path(&cwd.join(src))
+        metadata.target_by_src_path(&cwd.join(src))
     } else {
-        metadata.exactly_one_bin_like_target()
+        metadata.exactly_one_target()
     }?;
 
     let libs_to_bundle = {
-        let unused_deps = &match cargo_udeps::cargo_udeps(bin_package, bin, &toolchain, shell) {
-            Ok(unused_deps) => unused_deps,
-            Err(warning) => {
-                shell.warn(warning)?;
-                hashset!()
+        let unused_deps = &if root.is_lib() {
+            hashset!()
+        } else {
+            match cargo_udeps::cargo_udeps(root_package, root, &toolchain, shell) {
+                Ok(unused_deps) => unused_deps,
+                Err(warning) => {
+                    shell.warn(warning)?;
+                    hashset!()
+                }
             }
         };
-        metadata.libs_to_bundle(&bin_package.id, bin.is_example(), unused_deps, &exclude)?
+        let mut libs_to_bundle =
+            metadata.libs_to_bundle(&root_package.id, root.is_example(), unused_deps, &exclude)?;
+        if root.is_lib() {
+            libs_to_bundle.insert(&root_package.id, (root, root.crate_name()));
+        }
+        libs_to_bundle
     };
 
     let error_message = |head: &str| {
@@ -439,8 +455,11 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let code = bundle(
         &metadata,
-        bin_package,
-        bin,
+        if root.is_lib() {
+            RootCrate::Lib(root_package, root)
+        } else {
+            RootCrate::BinLike(root_package, root)
+        },
         &libs_to_bundle,
         !no_resolve_cfgs,
         &remove,
@@ -454,8 +473,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     if !no_check {
         workspace::cargo_check_using_current_lockfile_and_cache(
             &metadata,
-            bin_package,
-            bin.is_example(),
+            root_package,
+            root,
             &exclude,
             &code,
         )
@@ -475,8 +494,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 #[allow(clippy::too_many_arguments)]
 fn bundle(
     metadata: &cm::Metadata,
-    bin_package: &cm::Package,
-    bin: &cm::Target,
+    root_crate: RootCrate<'_>,
     libs_to_bundle: &BTreeMap<&cm::PackageId, (&cm::Target, String)>,
     resolve_cfgs: bool,
     remove: &[Remove],
@@ -486,14 +504,15 @@ fn bundle(
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
     let cargo_check_message_format_json = |toolchain: &str, shell: &mut Shell| -> _ {
-        workspace::cargo_check_message_format_json(toolchain, metadata, bin_package, bin, shell)
+        let (package, krate) = root_crate.split();
+        workspace::cargo_check_message_format_json(toolchain, metadata, package, krate, shell)
     };
 
     let cargo_messages_for_out_dirs = &libs_to_bundle
         .keys()
         .any(|p| metadata[p].has_custom_build())
         .then(|| {
-            let toolchain = &toolchain::active_toolchain(bin_package.manifest_dir())?;
+            let toolchain = &toolchain::active_toolchain(root_crate.package().manifest_dir())?;
             cargo_check_message_format_json(toolchain, shell)
         })
         .unwrap_or_else(|| Ok(vec![]))?;
@@ -502,8 +521,10 @@ fn bundle(
         .keys()
         .any(|p| metadata[p].has_proc_macro())
         .then(|| {
-            let toolchain =
-                &toolchain::find_toolchain_compatible_with_ra(bin_package.manifest_dir(), shell)?;
+            let toolchain = &toolchain::find_toolchain_compatible_with_ra(
+                root_crate.package().manifest_dir(),
+                shell,
+            )?;
             cargo_check_message_format_json(toolchain, shell)
         })
         .unwrap_or_else(|| Ok(vec![]))?;
@@ -549,31 +570,38 @@ fn bundle(
         .map(|node| (&node.id, node))
         .collect::<HashMap<_, _>>();
 
-    let code = xshell::read_file(&bin.src_path)?;
-    if rust::find_skip_attribute(&code)? {
-        shell.status("Found", "`#![cfg_attr(cargo_equip, cargo_equip::skip)]`")?;
-        return Ok(code);
-    }
+    let mut code = if let Some((_, bin_target)) = root_crate.bin_like() {
+        let code = xshell::read_file(&bin_target.src_path)?;
+        if rust::find_skip_attribute(&code)? {
+            shell.status("Found", "`#![cfg_attr(cargo_equip, cargo_equip::skip)]`")?;
+            return Ok(code);
+        }
+        code
+    } else {
+        "".to_owned()
+    };
 
     shell.status("Bundling", "the code")?;
 
-    let mut code = rust::process_bin(
-        &bin.src_path,
-        { macro_expander }.as_mut(),
-        |extern_crate_name| {
-            metadata
-                .dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name)
-                .map(|_| extern_crate_name.to_owned())
-        },
-        |extern_crate_name| {
-            matches!(
-                metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
-                Some(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
-            )
-        },
-        shell,
-        || (bin.crate_name(), &bin_package.id.repr),
-    )?;
+    if let Some((bin_package, bin_target)) = root_crate.bin_like() {
+        code = rust::process_bin(
+            &bin_target.src_path,
+            { macro_expander }.as_mut(),
+            |extern_crate_name| {
+                metadata
+                    .dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name)
+                    .map(|_| extern_crate_name.to_owned())
+            },
+            |extern_crate_name| {
+                matches!(
+                    metadata.dep_lib_by_extern_crate_name(&bin_package.id, extern_crate_name),
+                    Some(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
+                )
+            },
+            shell,
+            || (bin_target.crate_name(), &bin_package.id.repr),
+        )?;
+    }
 
     let libs = libs_to_bundle
         .iter()
@@ -791,12 +819,12 @@ fn bundle(
     };
 
     if !libs.is_empty() {
-        let authors = if bin_package.authors.is_empty() {
+        let authors = if root_crate.package().authors.is_empty() {
             workspace::attempt_get_author(&metadata.workspace_root)?
                 .into_iter()
                 .collect()
         } else {
-            bin_package.authors.clone()
+            root_crate.package().authors.clone()
         };
 
         ensure!(
@@ -894,9 +922,10 @@ fn bundle(
                 .filter(|(_, (p, _, _, _, _))| p.has_lib())
                 .map(|(_, (p, _, _, _, _))| p)
                 .filter(|lib_package| {
-                    !authors
-                        .iter()
-                        .all(|author| lib_package.authors.contains(author))
+                    lib_package.id == root_crate.package().id
+                        || !authors
+                            .iter()
+                            .all(|author| lib_package.authors.contains(author))
                 })
                 .flat_map(|lib_package| {
                     if let Err(err) = shell.status(
@@ -943,33 +972,11 @@ fn bundle(
         })?;
 
         code += "\n";
-        code += "// The following code was expanded by `cargo-equip`.\n";
-        code += "\n";
-
-        let prelude_for_main = {
-            let local_macro_uses_in_main_crate = libs_with_local_inner_macros
-                .values()
-                .flatten()
-                .unique()
-                .sorted()
-                .map(|name| format!("{}::*", name))
-                .collect::<Vec<_>>();
-
-            let local_macro_uses_in_main_crate = match &*local_macro_uses_in_main_crate {
-                [] => None,
-                [part] => Some(part.clone()),
-                parts => Some(format!("{{{}}}", parts.iter().format(","))),
-            };
-
-            format!(
-                "pub use crate::__cargo_equip::{};",
-                if let Some(local_macro_uses_in_main_crate) = local_macro_uses_in_main_crate {
-                    format!("{{crates::*,macros::{}}}", local_macro_uses_in_main_crate)
-                } else {
-                    "crates::*".to_owned()
-                }
-            )
+        code += match root_crate {
+            RootCrate::BinLike(..) => "// The following code was expanded by `cargo-equip`.\n",
+            RootCrate::Lib(..) => "use __cargo_equip::prelude::*;\n",
         };
+        code += "\n";
 
         let crate_mods = libs
             .iter()
@@ -1036,11 +1043,45 @@ fn bundle(
         code += "    }\n";
         code += "\n";
         code += "    pub(crate) mod prelude {";
-        code += &if minify == Minify::Libs {
-            prelude_for_main
-        } else {
-            format!("\n    {}\n    ", prelude_for_main)
-        };
+        match root_crate {
+            RootCrate::BinLike(..) => {
+                let prelude_for_main = {
+                    let local_macro_uses_in_main_crate = libs_with_local_inner_macros
+                        .values()
+                        .flatten()
+                        .unique()
+                        .sorted()
+                        .map(|name| format!("{}::*", name))
+                        .collect::<Vec<_>>();
+
+                    let local_macro_uses_in_main_crate = match &*local_macro_uses_in_main_crate {
+                        [] => None,
+                        [part] => Some(part.clone()),
+                        parts => Some(format!("{{{}}}", parts.iter().format(","))),
+                    };
+
+                    format!(
+                        "pub use crate::__cargo_equip::{};",
+                        if let Some(local_macro_uses_in_main_crate) = local_macro_uses_in_main_crate
+                        {
+                            format!("{{crates::*,macros::{}}}", local_macro_uses_in_main_crate)
+                        } else {
+                            "crates::*".to_owned()
+                        }
+                    )
+                };
+                code += &if minify == Minify::Libs {
+                    prelude_for_main
+                } else {
+                    format!("\n    {}\n    ", prelude_for_main)
+                };
+            }
+            RootCrate::Lib(_, krate) => {
+                code += "pub use crate::__cargo_equip::crates::";
+                code += &krate.crate_name();
+                code += ";";
+            }
+        }
         code += "}\n";
         code += "\n";
         code += "    mod preludes {\n";
@@ -1066,7 +1107,11 @@ fn bundle(
     }
 
     if rustfmt {
-        code = rustfmt::rustfmt(&metadata.workspace_root, &code, &bin.edition)?;
+        code = rustfmt::rustfmt(
+            &metadata.workspace_root,
+            &code,
+            &root_crate.package().edition,
+        )?;
     }
 
     Ok(code)
@@ -1102,4 +1147,31 @@ fn normal_non_host_dep_graph<'cm>(
         }
     }
     (graph, indices)
+}
+
+#[derive(Clone, Copy)]
+enum RootCrate<'cm> {
+    BinLike(&'cm cm::Package, &'cm cm::Target),
+    Lib(&'cm cm::Package, &'cm cm::Target),
+}
+
+impl<'cm> RootCrate<'cm> {
+    fn split(self) -> (&'cm cm::Package, &'cm cm::Target) {
+        match self {
+            RootCrate::BinLike(p, t) | RootCrate::Lib(p, t) => (p, t),
+        }
+    }
+
+    fn package(self) -> &'cm cm::Package {
+        match self {
+            RootCrate::BinLike(p, _) | RootCrate::Lib(p, _) => p,
+        }
+    }
+
+    fn bin_like(self) -> Option<(&'cm cm::Package, &'cm cm::Target)> {
+        match self {
+            RootCrate::BinLike(p, t) => Some((p, t)),
+            RootCrate::Lib(..) => None,
+        }
+    }
 }
