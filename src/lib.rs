@@ -64,28 +64,28 @@ pub enum Opt {
         )
     )]
     Equip {
-        /// Path to the main source file of the bin target
+        /// Bundle the lib/bin/example target and its dependencies
         #[structopt(
             long,
             value_name("PATH"),
             conflicts_with_all(&["lib", "bin", "example"]),
             long_help(indoc! {r#"
-                Path to the main source file of the bin target.
+                Bundle the lib/bin/example target and its dependencies.
 
-                This option is intended to be used from editors such as VSCode. Use `--bin` or `--example` for normal usage.
+                This option is intended to be used from editors such as VSCode. Use `--lib`, `--bin` or `--example` for normal usage.
             "#})
         )]
         src: Option<PathBuf>,
 
-        ///
+        /// Bundle the library and its dependencies
         #[structopt(long, conflicts_with_all(&["bin", "example"]))]
         lib: bool,
 
-        /// Name of the bin target
+        /// Bundle the binary and its dependencies
         #[structopt(long, value_name("NAME"), conflicts_with("example"))]
         bin: Option<String>,
 
-        /// Name of the example target
+        /// Bundle the binary example and its dependencies
         #[structopt(long, value_name("NAME"))]
         example: Option<String>,
 
