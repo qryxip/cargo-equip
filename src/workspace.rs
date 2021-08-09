@@ -185,7 +185,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .flat_map(|cm::Dependency { rename, .. }| rename)
         .collect::<HashSet<_>>();
 
-    let remove_excluded = |table: &mut toml_edit::Table| {
+    let modify_dependencies = |table: &mut toml_edit::Table| {
         for name_in_toml in metadata
             .resolve
             .as_ref()
@@ -207,13 +207,25 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         {
             table.remove(name_in_toml);
         }
+
+        for (_, value) in table.iter_mut() {
+            if let toml_edit::Item::Value(value) = &mut value["path"] {
+                if let Some(possibly_rel_path) = value.as_str() {
+                    *value = package
+                        .manifest_dir()
+                        .join(possibly_rel_path)
+                        .into_string()
+                        .into();
+                }
+            }
+        }
     };
 
     if let toml_edit::Item::Table(table) = &mut temp_manifest["dependencies"] {
-        remove_excluded(table);
+        modify_dependencies(table);
     }
     if let toml_edit::Item::Table(table) = &mut temp_manifest["dev-dependencies"] {
-        remove_excluded(table);
+        modify_dependencies(table);
     }
 
     std::fs::write(
