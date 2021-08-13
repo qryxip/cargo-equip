@@ -120,7 +120,7 @@ Install a `nightly` toolchain and [cargo-udeps](https://github.com/est31/cargo-u
 ### From `master` branch
 
 ```console
-❯ cargo install --git https://github.com/qryxip/cargo-equip
+❯ cargo install cargo-equip --git https://github.com/qryxip/cargo-equip
 ```
 
 ### GitHub Releases
