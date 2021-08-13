@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `--mod-path <MODULE_PATH>` option.
+
+    ```diff
+    +        --mod-path <MODULE_PATH>      Expand the libraries to the module [default: crate::__cargo_equip]
+    ```
+
 ### Changed
 
 - Enabled running for a `lib` crate.
