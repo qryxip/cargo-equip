@@ -32,6 +32,7 @@ use quote::quote;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    fmt::Debug,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -127,6 +128,10 @@ pub enum Opt {
         #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
         toolchain: String,
 
+        /// Expand the libraries to the module
+        #[structopt(long, value_name("MODULE_PATH"), default_value("crate::__cargo_equip"))]
+        mod_path: CrateSinglePath,
+
         /// Remove some part [possible values: docs, comments]
         #[structopt(
             long,
@@ -221,6 +226,28 @@ pub enum Opt {
         #[structopt(long, conflicts_with("no_check"))]
         check: bool,
     },
+}
+
+#[derive(Debug, derive_more::Display)]
+#[display(fmt = "crate::{}", _0)]
+pub struct CrateSinglePath(syn::Ident);
+
+impl FromStr for CrateSinglePath {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, &'static str> {
+        (|| {
+            let syn::Path {
+                leading_colon,
+                segments,
+            } = syn::parse_str(s).map_err(|_| ())?;
+            match (leading_colon, &*segments.into_iter().collect::<Vec<_>>()) {
+                (None, [p1, p2]) if p1.ident == "crate" => Ok(Self(p2.ident.clone())),
+                _ => Err(()),
+            }
+        })()
+        .map_err(|()| "expected `crate::$ident`")
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -339,6 +366,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude_atcoder_crates,
         exclude_codingame_crates,
         toolchain,
+        mod_path: CrateSinglePath(cargo_equip_mod_name),
         remove,
         minify,
         no_resolve_cfgs,
@@ -431,8 +459,8 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             .iter()
             .map(|(package_id, (_, pseudo_extern_crate_name))| {
                 format!(
-                    "- `{}` as `crate::__cargo_equip::crates::{}`\n",
-                    package_id, pseudo_extern_crate_name,
+                    "- `{}` as `crate::{}::crates::{}`\n",
+                    package_id, cargo_equip_mod_name, pseudo_extern_crate_name,
                 )
             })
             .join("");
@@ -461,6 +489,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             RootCrate::BinLike(root_package, root)
         },
         &libs_to_bundle,
+        &cargo_equip_mod_name,
         !no_resolve_cfgs,
         &remove,
         minify,
@@ -496,6 +525,7 @@ fn bundle(
     metadata: &cm::Metadata,
     root_crate: RootCrate<'_>,
     libs_to_bundle: &BTreeMap<&cm::PackageId, (&cm::Target, String)>,
+    cargo_equip_mod_name: &syn::Ident,
     resolve_cfgs: bool,
     remove: &[Remove],
     minify: Minify,
@@ -585,6 +615,7 @@ fn bundle(
 
     if let Some((bin_package, bin_target)) = root_crate.bin_like() {
         code = rust::process_bin(
+            cargo_equip_mod_name,
             &bin_target.src_path,
             { macro_expander }.as_mut(),
             |extern_crate_name| {
@@ -606,7 +637,9 @@ fn bundle(
     let libs = libs_to_bundle
         .iter()
         .map(|(pkg, (krate, pseudo_extern_crate_name))| {
-            let mut edit = CodeEdit::new(&krate.src_path, || (krate.crate_name(), &pkg.repr))?;
+            let mut edit = CodeEdit::new(cargo_equip_mod_name, &krate.src_path, || {
+                (krate.crate_name(), &pkg.repr)
+            })?;
             if let Some(out_dir) = out_dirs.get(pkg) {
                 edit.expand_includes(out_dir)?;
             }
@@ -684,8 +717,8 @@ fn bundle(
                         })
                         .collect::<Vec<_>>();
                     let crate_mod_content = format!(
-                        "pub use crate::__cargo_equip::macros::{}::*;",
-                        pseudo_extern_crate_name
+                        "pub use crate::{}::macros::{}::*;",
+                        cargo_equip_mod_name, pseudo_extern_crate_name,
                     );
                     let macro_mod_content = format!(
                         "pub use crate::{}{}{};",
@@ -819,7 +852,7 @@ fn bundle(
             "cannot know who you are. see https://github.com/qryxip/cargo-equip/issues/120",
         );
 
-        code = rust::insert_prelude_for_main_crate(&code)?;
+        code = rust::insert_prelude_for_main_crate(&code, cargo_equip_mod_name)?;
 
         code =
             rust::allow_unused_imports_for_seemingly_proc_macros(&code, |mod_name, item_name| {
@@ -833,6 +866,7 @@ fn bundle(
             fn list_packages<'a>(
                 doc: &mut String,
                 title: &str,
+                cargo_equip_mod_name: &syn::Ident,
                 contents: impl Iterator<Item = (Option<&'a str>, &'a cm::Package)>,
             ) {
                 let mut table = Table::new();
@@ -866,8 +900,8 @@ fn bundle(
 
                     if let Some(pseudo_extern_crate_name) = pseudo_extern_crate_name {
                         row.add_cell(cell!(format!(
-                            "as `crate::__cargo_equip::crates::{}`",
-                            pseudo_extern_crate_name,
+                            "as `crate::{}::crates::{}`",
+                            cargo_equip_mod_name, pseudo_extern_crate_name,
                         )));
                     }
 
@@ -891,6 +925,7 @@ fn bundle(
             list_packages(
                 &mut doc,
                 "Bundled libraries",
+                cargo_equip_mod_name,
                 libs.iter()
                     .filter(|(_, (p, _, _, _, _))| p.has_lib())
                     .map(|(k, (p, _, _, _, _))| (Some(*k), *p)),
@@ -899,6 +934,7 @@ fn bundle(
             list_packages(
                 &mut doc,
                 "Procedural macros",
+                cargo_equip_mod_name,
                 libs.iter()
                     .filter(|(_, (p, _, _, _, _))| p.has_proc_macro())
                     .map(|(_, (p, _, _, _, _))| (None, *p)),
@@ -959,9 +995,11 @@ fn bundle(
         })?;
 
         code += "\n";
-        code += match root_crate {
-            RootCrate::BinLike(..) => "// The following code was expanded by `cargo-equip`.\n",
-            RootCrate::Lib(..) => "use __cargo_equip::prelude::*;\n",
+        code += &match root_crate {
+            RootCrate::BinLike(..) => {
+                "// The following code was expanded by `cargo-equip`.\n".to_owned()
+            }
+            RootCrate::Lib(..) => format!("use {}::prelude::*;\n", cargo_equip_mod_name),
         };
         code += "\n";
 
@@ -1013,7 +1051,7 @@ fn bundle(
             code += "#[rustfmt::skip]\n";
         }
         code += "#[allow(unused)]\n";
-        code += "mod __cargo_equip {\n";
+        code += &format!("mod {} {{\n", cargo_equip_mod_name);
         code += "    pub(crate) mod crates {\n";
         render_mods(&mut code, &crate_mods)?;
         code += "    }\n";
@@ -1041,7 +1079,8 @@ fn bundle(
                     };
 
                     format!(
-                        "pub use crate::__cargo_equip::{};",
+                        "pub use crate::{}::{};",
+                        cargo_equip_mod_name,
                         if let Some(local_macro_uses_in_main_crate) = local_macro_uses_in_main_crate
                         {
                             format!("{{crates::*,macros::{}}}", local_macro_uses_in_main_crate)
@@ -1057,7 +1096,7 @@ fn bundle(
                 };
             }
             RootCrate::Lib(_, krate) => {
-                code += "pub use crate::__cargo_equip::crates::";
+                code += &format!("pub use crate::{}::crates::", cargo_equip_mod_name);
                 code += &krate.crate_name();
                 code += ";";
             }

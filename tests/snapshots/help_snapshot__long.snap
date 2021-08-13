@@ -93,6 +93,9 @@ OPTIONS:
         --toolchain <TOOLCHAIN>       
             `nightly` toolchain for `cargo-udeps` [default: nightly]
 
+        --mod-path <MODULE_PATH>      
+            Expand the libraries to the module [default: crate::__cargo_equip]
+
         --remove <REMOVE>...          
             Removes
             * doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`) with `--remove docs`.

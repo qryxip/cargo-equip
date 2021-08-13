@@ -139,17 +139,22 @@ fn replace_ranges(code: &str, replacements: BTreeMap<(LineColumn, LineColumn), S
     ret
 }
 
-pub(crate) fn insert_prelude_for_main_crate(code: &str) -> syn::Result<String> {
+pub(crate) fn insert_prelude_for_main_crate(
+    code: &str,
+    cargo_equip_mod_name: &Ident,
+) -> syn::Result<String> {
     let file = &syn::parse_file(code)?;
     let mut replacements = btreemap!();
     Visitor {
         replacements: &mut replacements,
+        cargo_equip_mod_name,
     }
     .visit_file(file);
     return Ok(replace_ranges(code, replacements));
 
     struct Visitor<'a> {
         replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+        cargo_equip_mod_name: &'a Ident,
     }
 
     impl Visitor<'_> {
@@ -159,8 +164,9 @@ pub(crate) fn insert_prelude_for_main_crate(code: &str) -> syn::Result<String> {
                 self.replacements.insert(
                     (pos, pos),
                     format!(
-                        "pub use {}__cargo_equip::prelude::*;\n\n",
+                        "pub use {}{}::prelude::*;\n\n",
                         if crate_root { "" } else { "crate::" },
+                        self.cargo_equip_mod_name,
                     ),
                 );
             }
@@ -346,6 +352,7 @@ pub(crate) fn parse_file(code: &str) -> anyhow::Result<syn::File> {
 }
 
 pub(crate) fn process_bin<'cm>(
+    cargo_equip_mod_name: &Ident,
     src_path: &Utf8Path,
     proc_macro_expander: Option<&mut ProcMacroExpander<'_>>,
     translate_extern_crate_name: impl FnMut(&str) -> Option<String>,
@@ -353,7 +360,7 @@ pub(crate) fn process_bin<'cm>(
     shell: &mut Shell,
     context: impl FnOnce() -> (String, &'cm str),
 ) -> anyhow::Result<String> {
-    let mut edit = CodeEdit::new(src_path, context)?;
+    let mut edit = CodeEdit::new(cargo_equip_mod_name, src_path, context)?;
     if let Some(proc_macro_expander) = proc_macro_expander {
         edit.expand_proc_macros(proc_macro_expander, shell)?;
     }
@@ -362,23 +369,28 @@ pub(crate) fn process_bin<'cm>(
     edit.finish()
 }
 
-pub(crate) struct CodeEdit {
+pub(crate) struct CodeEdit<'opt> {
+    cargo_equip_mod_name: &'opt Ident,
     has_local_inner_macros_attr: bool,
     string: String,
     file: syn::File,
     replacements: BTreeMap<(LineColumn, LineColumn), String>,
 }
 
-impl CodeEdit {
+impl<'opt> CodeEdit<'opt> {
     pub(crate) fn new<'cm>(
+        cargo_equip_mod_name: &'opt Ident,
         src_path: &Utf8Path,
         err_context: impl FnOnce() -> (String, &'cm str),
     ) -> anyhow::Result<Self> {
-        return (|| Self::from_code(&expand_mods(src_path, 0)?).map_err(anyhow::Error::from))()
-            .with_context(|| {
-                let (crate_name, package_id) = err_context();
-                format!("could not expand `{}` from `{}`", crate_name, package_id)
-            });
+        return (|| {
+            Self::from_code(cargo_equip_mod_name, &expand_mods(src_path, 0)?)
+                .map_err(anyhow::Error::from)
+        })()
+        .with_context(|| {
+            let (crate_name, package_id) = err_context();
+            format!("could not expand `{}` from `{}`", crate_name, package_id)
+        });
 
         fn expand_mods(src_path: &Utf8Path, depth: usize) -> anyhow::Result<String> {
             let content = std::fs::read_to_string(src_path)
@@ -453,9 +465,10 @@ impl CodeEdit {
         }
     }
 
-    fn from_code(string: &str) -> syn::Result<Self> {
+    fn from_code(cargo_equip_mod_name: &'opt Ident, string: &str) -> syn::Result<Self> {
         let file = syn::parse_file(string)?;
         return Ok(Self {
+            cargo_equip_mod_name,
             has_local_inner_macros_attr: check_local_inner_macros(&file),
             string: string.to_owned(),
             file,
@@ -526,6 +539,7 @@ impl CodeEdit {
         self.apply()?;
         Visitor {
             replacements: &mut self.replacements,
+            cargo_equip_mod_name: self.cargo_equip_mod_name,
             is_lib_to_bundle,
         }
         .visit_file(&self.file);
@@ -533,6 +547,7 @@ impl CodeEdit {
 
         struct Visitor<'a, F> {
             replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+            cargo_equip_mod_name: &'a Ident,
             is_lib_to_bundle: F,
         }
 
@@ -558,17 +573,22 @@ impl CodeEdit {
                     if let Some((_, rename)) = rename {
                         if rename != "_" {
                             insertion = format!(
-                                "{} use crate::__cargo_equip::crates::{} as {};",
-                                vis, ident, rename
+                                "{} use crate::{}::crates::{} as {};",
+                                vis, self.cargo_equip_mod_name, ident, rename
                             );
                         }
                     } else {
-                        insertion = format!("{} use crate::__cargo_equip::crates::{};", vis, ident);
+                        insertion = format!(
+                            "{} use crate::{}::crates::{};",
+                            vis, self.cargo_equip_mod_name, ident,
+                        );
                     }
 
                     if is_macro_use {
-                        insertion +=
-                            &format!("{} use crate::__cargo_equip::macros::{}::*;", vis, ident);
+                        insertion += &format!(
+                            "{} use crate::{}::macros::{}::*;",
+                            vis, self.cargo_equip_mod_name, ident,
+                        );
                     }
 
                     let insertion = insertion.trim_start();
@@ -610,6 +630,7 @@ impl CodeEdit {
 
         Visitor {
             replacements: &mut self.replacements,
+            cargo_equip_mod_name: self.cargo_equip_mod_name,
             convert_extern_crate_name,
         }
         .visit_file(&self.file);
@@ -617,6 +638,7 @@ impl CodeEdit {
 
         struct Visitor<'a, F> {
             replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+            cargo_equip_mod_name: &'a Ident,
             convert_extern_crate_name: F,
         }
 
@@ -633,16 +655,20 @@ impl CodeEdit {
 
                 if let Some(to) = (self.convert_extern_crate_name)(&ident.to_string()) {
                     let to = Ident::new(&to, Span::call_site());
+                    let Self {
+                        cargo_equip_mod_name,
+                        ..
+                    } = self;
                     self.replacements.insert(
                         (item_use.span().start(), semi_token.span().end()),
                         if let Some((_, rename)) = rename {
                             quote!(
-                                #(#attrs)* #vis use crate::__cargo_equip::crates::#to as #rename;
+                                #(#attrs)* #vis use crate::#cargo_equip_mod_name::crates::#to as #rename;
                             )
                             .to_string()
                         } else {
                             quote!(
-                                #(#attrs)* #vis use crate::__cargo_equip::crates::#to as #ident;
+                                #(#attrs)* #vis use crate::#cargo_equip_mod_name::crates::#to as #ident;
                             )
                             .to_string()
                         },
@@ -1044,6 +1070,7 @@ impl CodeEdit {
         self.apply()?;
         Visitor {
             replacements: &mut self.replacements,
+            cargo_equip_mod_name: self.cargo_equip_mod_name,
             translate_extern_crate_name,
         }
         .visit_file(&self.file);
@@ -1051,6 +1078,7 @@ impl CodeEdit {
 
         struct Visitor<'a, F> {
             replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
+            cargo_equip_mod_name: &'a Ident,
             translate_extern_crate_name: F,
         }
 
@@ -1061,7 +1089,7 @@ impl CodeEdit {
                 {
                     self.replacements.insert(
                         (leading_colon.start(), leading_colon.end()),
-                        "/*::*/crate::__cargo_equip::crates::".to_owned(),
+                        format!("/*::*/crate::{}::crates::", self.cargo_equip_mod_name),
                     );
 
                     if extern_crate_name != &*pseudo_extern_crate_name {
@@ -1114,6 +1142,7 @@ impl CodeEdit {
         self.apply()?;
         Visitor {
             extern_crate_name,
+            cargo_equip_mod_name: self.cargo_equip_mod_name,
             replacements: &mut self.replacements,
         }
         .visit_file(&self.file);
@@ -1121,6 +1150,7 @@ impl CodeEdit {
 
         struct Visitor<'a> {
             extern_crate_name: &'a str,
+            cargo_equip_mod_name: &'a Ident,
             replacements: &'a mut BTreeMap<(LineColumn, LineColumn), String>,
         }
 
@@ -1129,7 +1159,10 @@ impl CodeEdit {
                 let pos = crate_token.span().end();
                 self.replacements.insert(
                     (pos, pos),
-                    format!("::__cargo_equip::crates::{}", self.extern_crate_name),
+                    format!(
+                        "::{}::crates::{}",
+                        self.cargo_equip_mod_name, self.extern_crate_name,
+                    ),
                 );
             }
         }
@@ -1207,6 +1240,7 @@ impl CodeEdit {
                     let (rename, content) = take(
                         item_macro,
                         ident,
+                        self.cargo_equip_mod_name,
                         pseudo_extern_crate_name,
                         remove_docs,
                         &mut self.replacements,
@@ -1215,6 +1249,7 @@ impl CodeEdit {
                 } else {
                     replace_dollar_crates(
                         tokens.clone(),
+                        self.cargo_equip_mod_name,
                         pseudo_extern_crate_name,
                         &mut self.replacements,
                     );
@@ -1228,8 +1263,8 @@ impl CodeEdit {
                 self.replacements.entry((pos, pos)).or_default().insert_str(
                     0,
                     &format!(
-                        "pub use crate::__cargo_equip::macros::{}::*;",
-                        pseudo_extern_crate_name,
+                        "pub use crate::{}::macros::{}::*;",
+                        self.cargo_equip_mod_name, pseudo_extern_crate_name,
                     ),
                 );
             }
@@ -1279,6 +1314,7 @@ impl CodeEdit {
         fn take(
             item: &ItemMacro,
             item_ident: &syn::Ident,
+            cargo_equip_mod_name: &Ident,
             pseudo_extern_crate_name: &str,
             remove_docs: bool,
             replacements: &mut BTreeMap<(LineColumn, LineColumn), String>,
@@ -1301,6 +1337,7 @@ impl CodeEdit {
 
             let tokens = take(
                 tokens.clone(),
+                cargo_equip_mod_name,
                 &proc_macro2::Ident::new(pseudo_extern_crate_name, Span::call_site()),
             );
 
@@ -1326,14 +1363,22 @@ impl CodeEdit {
 
             return (name, def);
 
-            fn take(tokens: TokenStream, pseudo_extern_crate_name: &syn::Ident) -> TokenStream {
+            fn take(
+                tokens: TokenStream,
+                cargo_equip_mod_name: &Ident,
+                pseudo_extern_crate_name: &syn::Ident,
+            ) -> TokenStream {
                 let mut out = vec![];
                 for tt in tokens {
                     if let TokenTree::Group(group) = &tt {
                         out.push(
                             proc_macro2::Group::new(
                                 group.delimiter(),
-                                take(group.stream(), pseudo_extern_crate_name),
+                                take(
+                                    group.stream(),
+                                    cargo_equip_mod_name,
+                                    pseudo_extern_crate_name,
+                                ),
                             )
                             .into(),
                         );
@@ -1342,7 +1387,7 @@ impl CodeEdit {
                         if let [.., TokenTree::Punct(punct), TokenTree::Ident(ident)] = &*out {
                             if punct.as_char() == '$' && ident == "crate" {
                                 out.extend(quote! {
-                                    ::__cargo_equip::crates::#pseudo_extern_crate_name
+                                    ::#cargo_equip_mod_name::crates::#pseudo_extern_crate_name
                                 });
                             }
                         }
@@ -1354,18 +1399,29 @@ impl CodeEdit {
 
         fn replace_dollar_crates(
             token_stream: TokenStream,
+            cargo_equip_mod_name: &Ident,
             pseudo_extern_crate_name: &str,
             acc: &mut BTreeMap<(LineColumn, LineColumn), String>,
         ) {
             let mut token_stream = token_stream.into_iter().peekable();
 
             if let Some(proc_macro2::TokenTree::Group(group)) = token_stream.peek() {
-                replace_dollar_crates(group.stream(), pseudo_extern_crate_name, acc);
+                replace_dollar_crates(
+                    group.stream(),
+                    cargo_equip_mod_name,
+                    pseudo_extern_crate_name,
+                    acc,
+                );
             }
 
             for (tt1, tt2) in token_stream.tuple_windows() {
                 if let proc_macro2::TokenTree::Group(group) = &tt2 {
-                    replace_dollar_crates(group.stream(), pseudo_extern_crate_name, acc);
+                    replace_dollar_crates(
+                        group.stream(),
+                        cargo_equip_mod_name,
+                        pseudo_extern_crate_name,
+                        acc,
+                    );
                 }
 
                 if matches!(
@@ -1376,7 +1432,10 @@ impl CodeEdit {
                     let pos = tt2.span().end();
                     acc.insert(
                         (pos, pos),
-                        format!("::__cargo_equip::crates::{}", pseudo_extern_crate_name),
+                        format!(
+                            "::{}::crates::{}",
+                            cargo_equip_mod_name, pseudo_extern_crate_name,
+                        ),
                     );
                 }
             }
@@ -1430,14 +1489,14 @@ impl CodeEdit {
         let mut prelude = "".to_owned();
         if let Some(external_local_inner_macros) = &external_local_inner_macros {
             prelude += &format!(
-                "pub(in crate::__cargo_equip) use crate::__cargo_equip::macros::{};",
-                external_local_inner_macros,
+                "pub(in crate::{0}) use crate::{0}::macros::{1};",
+                self.cargo_equip_mod_name, external_local_inner_macros,
             );
         }
         if let Some(pseudo_extern_crates) = &pseudo_extern_crates {
             prelude += &format!(
-                "pub(in crate::__cargo_equip) use crate::__cargo_equip::crates::{};",
-                pseudo_extern_crates,
+                "pub(in crate::{0}) use crate::{0}::crates::{1};",
+                self.cargo_equip_mod_name, pseudo_extern_crates,
             );
         }
 
@@ -1452,10 +1511,12 @@ impl CodeEdit {
                 };
                 (pos, pos)
             },
-            format!(
-                "use crate::__cargo_equip::preludes::{}::*;",
-                pseudo_extern_crate_name,
-            ),
+            {
+                format!(
+                    "use crate::{}::preludes::{}::*;",
+                    self.cargo_equip_mod_name, pseudo_extern_crate_name,
+                )
+            },
         );
 
         let mut queue = items
@@ -1478,8 +1539,8 @@ impl CodeEdit {
             self.replacements.insert(
                 (pos, pos),
                 format!(
-                    "use crate::__cargo_equip::preludes::{}::*;",
-                    pseudo_extern_crate_name,
+                    "use crate::{}::preludes::{}::*;",
+                    self.cargo_equip_mod_name, pseudo_extern_crate_name,
                 ),
             );
             for item in items {
@@ -1795,6 +1856,12 @@ impl CodeEdit {
 mod tests {
     use crate::rust::CodeEdit;
     use difference::assert_diff;
+    use proc_macro2::Span;
+    use syn::Ident;
+
+    thread_local! {
+        static DUMMY_MOD_NAME: Ident = Ident::new("__", Span::call_site());
+    }
 
     #[test]
     fn prepend_mod_doc() -> syn::Result<()> {
@@ -1846,10 +1913,12 @@ fn main() {
     #[test]
     fn erase_docs() -> anyhow::Result<()> {
         fn test(input: &str, expected: &str) -> anyhow::Result<()> {
-            let mut edit = CodeEdit::from_code(input)?;
-            edit.erase_docs()?;
-            assert_diff!(expected, &edit.finish()?, "\n", 0);
-            Ok(())
+            DUMMY_MOD_NAME.with(|dummy_mod_name| {
+                let mut edit = CodeEdit::from_code(dummy_mod_name, input)?;
+                edit.erase_docs()?;
+                assert_diff!(expected, &edit.finish()?, "\n", 0);
+                Ok(())
+            })
         }
 
         test(
@@ -1882,10 +1951,12 @@ fn foo() {}
     #[test]
     fn erase_comments() -> anyhow::Result<()> {
         fn test(input: &str, expected: &str) -> anyhow::Result<()> {
-            let mut edit = CodeEdit::from_code(input)?;
-            edit.erase_comments()?;
-            assert_diff!(expected, &edit.finish()?, "\n", 0);
-            Ok(())
+            DUMMY_MOD_NAME.with(|dummy_mod_name| {
+                let mut edit = CodeEdit::from_code(dummy_mod_name, input)?;
+                edit.erase_comments()?;
+                assert_diff!(expected, &edit.finish()?, "\n", 0);
+                Ok(())
+            })
         }
 
         test(
