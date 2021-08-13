@@ -15,11 +15,21 @@ use std::{
 
 use crate::shell::Shell;
 
-pub(crate) fn dl_ra(dir: &Path, shell: &mut Shell) -> anyhow::Result<PathBuf> {
+pub(crate) fn dl_ra(
+    dir: &Path,
+    rustc_version: &cm::Version,
+    shell: &mut Shell,
+) -> anyhow::Result<PathBuf> {
     xshell::mkdir_p(dir)?;
 
+    let tag = if rustc_version.to_string() == "1.47.0" {
+        &TAG_FOR_EQ_1_47
+    } else {
+        &TAG_FOR_GEQ_1_48
+    };
+
     let ra_path = dir
-        .join(format!("rust-analyzer-{}", TAG))
+        .join(format!("rust-analyzer-{}", tag))
         .with_extension(env::consts::EXE_EXTENSION);
 
     if ra_path.exists() {
@@ -44,7 +54,7 @@ pub(crate) fn dl_ra(dir: &Path, shell: &mut Shell) -> anyhow::Result<PathBuf> {
 
     let url = format!(
         "https://github.com/rust-analyzer/rust-analyzer/releases/download/{}/{}",
-        TAG, file_name,
+        tag, file_name,
     );
     let gz = &curl(&url, dir, shell)?;
     let ra = decode_gz(gz).with_context(|| format!("could not decode {}", file_name))?;
@@ -53,7 +63,8 @@ pub(crate) fn dl_ra(dir: &Path, shell: &mut Shell) -> anyhow::Result<PathBuf> {
     chmod755(&ra_path)?;
     return Ok(ra_path);
 
-    static TAG: &str = "2021-07-26";
+    static TAG_FOR_EQ_1_47: &str = "2021-07-12";
+    static TAG_FOR_GEQ_1_48: &str = "2021-08-09";
 
     fn curl(url: &str, cwd: &Path, shell: &mut Shell) -> anyhow::Result<Vec<u8>> {
         let curl_exe = which::which("curl").map_err(|_| anyhow!("command not found: curl"))?;
