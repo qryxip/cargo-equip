@@ -26,6 +26,7 @@ OPTIONS:
         --exclude-atcoder-crates      Alias for `--exclude {crates available on AtCoder}`
         --exclude-codingame-crates    Alias for `--exclude {crates available on CodinGame}`
         --toolchain <TOOLCHAIN>       `nightly` toolchain for `cargo-udeps` [default: nightly]
+        --mod-path <MODULE_PATH>      Expand the libraries to the module [default: crate::__cargo_equip]
         --remove <REMOVE>...          Remove some part [possible values: docs, comments]
         --minify <MINIFY>             Minify part of the output before emitting [default: none]  [possible values: none,
                                       libs, all]
