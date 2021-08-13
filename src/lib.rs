@@ -862,7 +862,7 @@ fn bundle(
                 )
             })?;
 
-        code = rust::prepend_mod_doc(&code, &{
+        let doc = &{
             fn list_packages<'a>(
                 doc: &mut String,
                 title: &str,
@@ -992,7 +992,7 @@ fn bundle(
             }
 
             doc
-        })?;
+        };
 
         code += "\n";
         code += &match root_crate {
@@ -1047,6 +1047,14 @@ fn bundle(
             Ok(())
         };
 
+        for doc in doc.lines() {
+            code += "///";
+            if !code.is_empty() {
+                code += " ";
+            }
+            code += doc;
+            code += "\n";
+        }
         if minify == Minify::Libs {
             code += "#[rustfmt::skip]\n";
         }
