@@ -119,7 +119,7 @@ mod sub {
 ### `master`ブランチから
 
 ```console
-❯ cargo install --git https://github.com/qryxip/cargo-equip
+❯ cargo install cargo-equip --git https://github.com/qryxip/cargo-equip
 ```
 
 ### GitHub Releases
