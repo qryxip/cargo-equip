@@ -22,6 +22,22 @@
     ❯ cargo equip --minify libs --remove docs -o ./proconio.rs
     ```
 
+- Changed potition of the generated doc comment.
+
+    ```diff
+    -//! # Bundled libraries
+    -//! ⋮
+     use __cargo_equip::prelude::*;
+
+     fn main() {}
+    +/// # Bundled libraries
+    +/// ⋮
+     #[allow(unused)]
+     mod __cargo_equip {
+         // ⋮
+     }
+    ```
+
 - Updated rust-analyzer to `2021-07-26`. ([#155](https://github.com/qryxip/cargo-equip/pull/155))
 
 ### Fixed
