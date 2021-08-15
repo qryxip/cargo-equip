@@ -1,7 +1,6 @@
 [package]
 name = "cargo-equip"
 version = "0.17.0"
-authors = ["Ryo Yamashita <qryxip@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 description = "A Cargo subcommand to bundle your code into one `.rs` file for competitive programming."

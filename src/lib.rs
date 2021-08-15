@@ -43,7 +43,7 @@ use structopt::{clap::AppSettings, StructOpt};
 
 #[derive(StructOpt, Debug)]
 #[structopt(
-    author,
+    author("Ryo Yamashita <qryxip@gmail.com>"),
     about("Please run as `cargo equip`, not `cargo-equip`."),
     bin_name("cargo"),
     global_settings(&[AppSettings::DeriveDisplayOrder, AppSettings::UnifiedHelpMessage])
@@ -56,7 +56,7 @@ pub enum Opt {
 
             Use -h for short descriptions and --help for more detials.
         "#}),
-        author,
+        author("Ryo Yamashita <qryxip@gmail.com>"),
         usage(
             r#"cargo equip [OPTIONS]
     cargo equip [OPTIONS] --src <PATH>
