@@ -38,7 +38,7 @@
      }
     ```
 
-- Updated rust-analyzer to `2021-07-26`. ([#155](https://github.com/qryxip/cargo-equip/pull/155))
+- Now uses rust-analyzer `2021-07-12` for Rust 1.47 and `2021-08-09` for Rust 1.48+.
 
 ### Fixed
 

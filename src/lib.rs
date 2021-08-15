@@ -547,17 +547,18 @@ fn bundle(
         })
         .unwrap_or_else(|| Ok(vec![]))?;
 
-    let cargo_messages_for_proc_macro_dll_paths = &libs_to_bundle
+    let (ra_rustc_version, cargo_messages_for_proc_macro_dll_paths) = &libs_to_bundle
         .keys()
         .any(|p| metadata[p].has_proc_macro())
         .then(|| {
-            let toolchain = &toolchain::find_toolchain_compatible_with_ra(
+            let (toolchain, version) = toolchain::find_toolchain_compatible_with_ra(
                 root_crate.package().manifest_dir(),
                 shell,
             )?;
-            cargo_check_message_format_json(toolchain, shell)
+            let msgs = cargo_check_message_format_json(&toolchain, shell)?;
+            Ok::<_, anyhow::Error>((Some(version), msgs))
         })
-        .unwrap_or_else(|| Ok(vec![]))?;
+        .unwrap_or_else(|| Ok((None, vec![])))?;
 
     let out_dirs = workspace::list_out_dirs(metadata, cargo_messages_for_out_dirs);
     let proc_macro_crate_dlls =
@@ -565,10 +566,11 @@ fn bundle(
             libs_to_bundle.contains_key(p)
         });
 
-    let macro_expander = (!proc_macro_crate_dlls.is_empty())
-        .then(|| {
+    let macro_expander = ra_rustc_version
+        .as_ref()
+        .map(|ra_rustc_version| {
             ProcMacroExpander::new(
-                &ra_proc_macro::dl_ra(cache_dir, shell)?,
+                &ra_proc_macro::dl_ra(cache_dir, ra_rustc_version, shell)?,
                 proc_macro_crate_dlls,
                 shell,
             )
