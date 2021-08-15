@@ -10,8 +10,7 @@ keywords = ["competitive", "cli", "windows"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins"]
 
 [dependencies]
-anyhow = "1.0.42"
-arrayvec = { version = "0.7.1", features = ["serde"] }
+anyhow = "1.0.43"
 atty = "0.2.14"
 camino = { version = "1.0.5", features = ["serde1"] }
 cargo_metadata = "0.14.0"
@@ -42,7 +41,6 @@ structopt = "0.3.22"
 syn = { version = "1.0.74", features = ["extra-traits", "full", "parsing", "visit"] }
 tempfile = "3.2.0"
 termcolor = "1.1.2"
-toml = "0.5.8"
 toml_edit = "0.2.1"
 which = "4.2.2"
 xshell = "0.1.14"

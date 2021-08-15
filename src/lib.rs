@@ -17,7 +17,7 @@ use crate::{
     shell::Shell,
     workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _, TargetExt as _},
 };
-use anyhow::{ensure, Context as _};
+use anyhow::Context as _;
 use cargo_metadata as cm;
 use indoc::indoc;
 use itertools::{iproduct, Itertools as _};
@@ -841,18 +841,11 @@ fn bundle(
         >>()?;
 
     if !libs.is_empty() {
-        let authors = if root_crate.package().authors.is_empty() {
-            workspace::attempt_get_author(&metadata.workspace_root)?
-                .into_iter()
-                .collect()
-        } else {
-            root_crate.package().authors.clone()
-        };
-
-        ensure!(
-            !authors.is_empty(),
-            "cannot know who you are. see https://github.com/qryxip/cargo-equip/issues/120",
-        );
+        if !root_crate.package().authors.is_empty() {
+            shell.warn(
+                "`package.authors` are no longer used to skip Copyright and License Notices",
+            )?;
+        }
 
         code = rust::insert_prelude_for_main_crate(&code, cargo_equip_mod_name)?;
 
@@ -946,12 +939,6 @@ fn bundle(
                 .iter()
                 .filter(|(_, (p, _, _, _, _))| p.has_lib())
                 .map(|(_, (p, _, _, _, _))| p)
-                .filter(|lib_package| {
-                    lib_package.id == root_crate.package().id
-                        || !authors
-                            .iter()
-                            .all(|author| lib_package.authors.contains(author))
-                })
                 .flat_map(|lib_package| {
                     if let Err(err) = shell.status(
                         "Reading",

@@ -1,22 +1,44 @@
 use crate::workspace::{PackageExt as _, SourceExt as _};
-use anyhow::{anyhow, bail, Context as _};
+use anyhow::{anyhow, Context as _};
 use cargo_metadata as cm;
 use serde::Deserialize;
 use std::path::Path;
 
-pub(super) fn license_file(
+pub(super) fn read_non_unlicense_license_file(
     package: &cm::Package,
     cache_dir: &Path,
 ) -> anyhow::Result<Option<String>> {
+    read(package, cache_dir).map_err(|causes| {
+        let err = anyhow!(
+            "could not read the license file of `{}`.\n\
+             note: cargo-equip no longer reads `package.authors` to skip Copyright and License \
+             Notices",
+            package.id
+        );
+        let mut causes = causes.into_iter();
+        if let Some(cause) = causes.next() {
+            causes
+                .fold(anyhow!("{}", cause), |e, s| e.context(s))
+                .context(err)
+        } else {
+            err
+        }
+    })
+}
+
+fn read(package: &cm::Package, cache_dir: &Path) -> Result<Option<String>, Vec<String>> {
     let license = package
         .license
         .as_deref()
-        .with_context(|| format!("`{}`: missing `license`", package.id))?;
+        .ok_or_else(|| vec![format!("`{}`: missing `license`", package.id)])?;
 
     let license = normalize(license);
 
-    let license = spdx::Expression::parse(license).map_err(|e| {
-        anyhow!("{}", e).context(format!("`{}`: could not parse `license`", package.id))
+    let license = spdx::Expression::parse(license).map_err(|err| {
+        vec![
+            err.to_string(),
+            format!("`{}`: could not parse `license`", package.id),
+        ]
     })?;
 
     let is = |name| license.evaluate(|r| r.license.id() == spdx::license_id(name));
@@ -30,7 +52,10 @@ pub(super) fn license_file(
     } else if is("Apache-2.0") {
         &["LICENSE-APACHE", "LICENSE"]
     } else {
-        bail!("`{}`: unsupported license: `{}`", package.id, license);
+        return Err(vec![format!(
+            "`{}`: unsupported license: `{}`",
+            package.id, license,
+        )]);
     };
 
     find(package.manifest_dir().as_ref(), file_names)
@@ -87,6 +112,7 @@ pub(super) fn license_file(
             }
         })
         .map(Some)
+        .map_err(|e| vec![e.to_string()])
 }
 
 fn normalize(license: &str) -> &str {
