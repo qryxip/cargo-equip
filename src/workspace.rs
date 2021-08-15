@@ -2,7 +2,6 @@ mod license;
 
 use crate::{shell::Shell, toolchain};
 use anyhow::{bail, Context as _};
-use arrayvec::ArrayVec;
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
 use if_chain::if_chain;
@@ -10,7 +9,6 @@ use indoc::indoc;
 use itertools::Itertools as _;
 use krates::PkgSpec;
 use rand::Rng as _;
-use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     env,
@@ -80,37 +78,6 @@ pub(crate) fn list_out_dirs<'cm>(
             _ => None,
         })
         .collect()
-}
-
-pub(crate) fn attempt_get_author(workspace_root: &Utf8Path) -> anyhow::Result<Option<String>> {
-    #[derive(Deserialize)]
-    struct Manifest {
-        package: ManifestPackage,
-    }
-
-    #[derive(Deserialize)]
-    struct ManifestPackage {
-        #[serde(default)]
-        authors: ArrayVec<String, 1>,
-    }
-
-    let tempdir = tempfile::Builder::new()
-        .prefix("cargo-equip-get-author-")
-        .tempdir()?;
-
-    crate::process::process(crate::process::cargo_exe()?)
-        .args(&["new", "-q", "--vcs", "none"])
-        .arg(tempdir.path().join("a"))
-        .cwd(workspace_root)
-        .exec()?;
-
-    let manifest = xshell::read_file(tempdir.path().join("a").join("Cargo.toml"))?;
-    let author = toml::from_str::<Manifest>(&manifest)?
-        .package
-        .authors
-        .get(0)
-        .cloned();
-    Ok(author)
 }
 
 pub(crate) fn cargo_check_using_current_lockfile_and_cache(
@@ -692,7 +659,7 @@ impl PackageExt for cm::Package {
     }
 
     fn read_license_text(&self, cache_dir: &Path) -> anyhow::Result<Option<String>> {
-        license::license_file(self, cache_dir)
+        license::read_non_unlicense_license_file(self, cache_dir)
     }
 }
 

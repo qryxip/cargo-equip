@@ -38,6 +38,8 @@
      }
     ```
 
+- No longer uses [`package.authors`](https://doc.rust-lang.org/cargo/reference/manifest.html#the-authors-field) to skip Copyright and License Notices.
+
 - Now uses rust-analyzer `2021-07-12` for Rust 1.47 and `2021-08-09` for Rust 1.48+.
 
 ### Fixed
