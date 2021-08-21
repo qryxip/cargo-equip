@@ -1792,7 +1792,7 @@ impl<'opt> CodeEdit<'opt> {
 #[cfg(test)]
 mod tests {
     use crate::rust::CodeEdit;
-    use difference::assert_diff;
+    use pretty_assertions::assert_eq;
     use proc_macro2::Span;
     use syn::Ident;
 
@@ -1806,7 +1806,7 @@ mod tests {
             DUMMY_MOD_NAME.with(|dummy_mod_name| {
                 let mut edit = CodeEdit::from_code(dummy_mod_name, input)?;
                 edit.erase_docs()?;
-                assert_diff!(expected, &edit.finish()?, "\n", 0);
+                assert_eq!(expected, edit.finish()?);
                 Ok(())
             })
         }
@@ -1844,7 +1844,7 @@ fn foo() {}
             DUMMY_MOD_NAME.with(|dummy_mod_name| {
                 let mut edit = CodeEdit::from_code(dummy_mod_name, input)?;
                 edit.erase_comments()?;
-                assert_diff!(expected, &edit.finish()?, "\n", 0);
+                assert_eq!(expected, edit.finish()?);
                 Ok(())
             })
         }
