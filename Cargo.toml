@@ -46,6 +46,6 @@ xshell = "0.1.14"
 
 [dev-dependencies]
 assert_cmd = "2.0.0"
-difference = "2.0.0"
 insta = "1.7.2"
 md5 = "0.7.0"
+pretty_assertions = "0.7.2"
