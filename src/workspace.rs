@@ -176,13 +176,15 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         }
 
         for (_, value) in table.iter_mut() {
-            if let toml_edit::Item::Value(value) = &mut value["path"] {
-                if let Some(possibly_rel_path) = value.as_str() {
-                    *value = package
-                        .manifest_dir()
-                        .join(possibly_rel_path)
-                        .into_string()
-                        .into();
+            if !value["path"].is_none() {
+                if let toml_edit::Item::Value(value) = &mut value["path"] {
+                    if let Some(possibly_rel_path) = value.as_str() {
+                        *value = package
+                            .manifest_dir()
+                            .join(possibly_rel_path)
+                            .into_string()
+                            .into();
+                    }
                 }
             }
         }
