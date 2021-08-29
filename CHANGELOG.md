@@ -7,7 +7,18 @@
 - Added `--mod-path <MODULE_PATH>` option.
 
     ```diff
-    +        --mod-path <MODULE_PATH>      Expand the libraries to the module [default: crate::__cargo_equip]
+    +        --mod-path <MODULE_PATH>           Expand the libraries to the module [default: crate::__cargo_equip]
+    ```
+
+- Added `--mine <DOMAIN_AND_USERNAME>...` option.
+
+    ```diff
+    +        --mine <DOMAIN_AND_USERNAME>...
+    +            Do not include license and copyright notices for the users.
+    +
+    +            Supported formats:
+    +            * github.com/{username}
+    +            * gitlab.com/{username}
     ```
 
 ### Changed
@@ -38,7 +49,9 @@
      }
     ```
 
-- No longer uses [`package.authors`](https://doc.rust-lang.org/cargo/reference/manifest.html#the-authors-field) to skip Copyright and License Notices.
+- cargo-equip no longer uses [`package.authors`](https://doc.rust-lang.org/cargo/reference/manifest.html#the-authors-field) to skip Copyright and License Notices.
+
+    Instead, add `--mine github.com/your-username` to the arguments.
 
 - Now uses rust-analyzer `2021-07-12` for Rust 1.47 and `2021-08-09` for Rust 1.48+.
 

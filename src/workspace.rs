@@ -1,6 +1,6 @@
 mod license;
 
-use crate::{shell::Shell, toolchain};
+use crate::{shell::Shell, toolchain, User};
 use anyhow::{bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
@@ -634,7 +634,7 @@ pub(crate) trait PackageExt {
     fn has_proc_macro(&self) -> bool;
     fn lib_like_target(&self) -> Option<&cm::Target>;
     fn manifest_dir(&self) -> &Utf8Path;
-    fn read_license_text(&self, cache_dir: &Path) -> anyhow::Result<Option<String>>;
+    fn read_license_text(&self, mine: &[User], cache_dir: &Path) -> anyhow::Result<Option<String>>;
 }
 
 impl PackageExt for cm::Package {
@@ -660,8 +660,8 @@ impl PackageExt for cm::Package {
         self.manifest_path.parent().expect("should not be empty")
     }
 
-    fn read_license_text(&self, cache_dir: &Path) -> anyhow::Result<Option<String>> {
-        license::read_non_unlicense_license_file(self, cache_dir)
+    fn read_license_text(&self, mine: &[User], cache_dir: &Path) -> anyhow::Result<Option<String>> {
+        license::read_non_unlicense_license_file(self, mine, cache_dir)
     }
 }
 

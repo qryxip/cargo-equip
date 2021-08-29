@@ -124,6 +124,25 @@ pub enum Opt {
         )]
         exclude_codingame_crates: bool,
 
+        /// Do not include license and copyright notices for the users
+        #[structopt(
+            long,
+            value_name("DOMAIN_AND_USERNAME"),
+            long_help(
+                concat!(
+                    indoc! {r#"
+                        Do not include license and copyright notices for the users.
+
+                        Supported formats:
+                        * github.com/{username}
+                        * gitlab.com/{username}
+                    "#},
+                    ' ',
+                )
+            )
+        )]
+        mine: Vec<User>,
+
         /// `nightly` toolchain for `cargo-udeps`
         #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
         toolchain: String,
@@ -226,6 +245,32 @@ pub enum Opt {
         #[structopt(long, conflicts_with("no_check"))]
         check: bool,
     },
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum User {
+    Github(String),
+    GitlabCom(String),
+}
+
+impl FromStr for User {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, &'static str> {
+        return if let Some(username) = s.strip_prefix("github.com/") {
+            Ok(Self::Github(username.to_owned()))
+        } else if let Some(username) = s.strip_prefix("gitlab.com/") {
+            Ok(Self::GitlabCom(username.to_owned()))
+        } else {
+            Err(MSG)
+        };
+
+        static MSG: &str = indoc! {r"
+            Supported formats:
+            * github.com/{username}
+            * gitlab.com/{username}
+        "};
+    }
 }
 
 #[derive(Debug, derive_more::Display)]
@@ -365,6 +410,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude,
         exclude_atcoder_crates,
         exclude_codingame_crates,
+        mine,
         toolchain,
         mod_path: CrateSinglePath(cargo_equip_mod_name),
         remove,
@@ -489,6 +535,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
             RootCrate::BinLike(root_package, root)
         },
         &libs_to_bundle,
+        &mine,
         &cargo_equip_mod_name,
         !no_resolve_cfgs,
         &remove,
@@ -525,6 +572,7 @@ fn bundle(
     metadata: &cm::Metadata,
     root_crate: RootCrate<'_>,
     libs_to_bundle: &BTreeMap<&cm::PackageId, (&cm::Target, String)>,
+    mine: &[User],
     cargo_equip_mod_name: &syn::Ident,
     resolve_cfgs: bool,
     remove: &[Remove],
@@ -845,6 +893,7 @@ fn bundle(
             shell.warn(
                 "`package.authors` are no longer used to skip Copyright and License Notices",
             )?;
+            shell.warn("instead, add `--mine github.com/{your username}` to the arguments")?;
         }
 
         code = rust::insert_prelude_for_main_crate(&code, cargo_equip_mod_name)?;
@@ -940,13 +989,12 @@ fn bundle(
                 .filter(|(_, (p, _, _, _, _))| p.has_lib())
                 .map(|(_, (p, _, _, _, _))| p)
                 .flat_map(|lib_package| {
-                    if let Err(err) = shell.status(
-                        "Reading",
-                        format!("the license file of `{}`", lib_package.id),
-                    ) {
+                    if let Err(err) =
+                        shell.status("Checking", format!("the license of `{}`", lib_package.id))
+                    {
                         return Some(Err(err.into()));
                     }
-                    match lib_package.read_license_text(cache_dir) {
+                    match lib_package.read_license_text(mine, cache_dir) {
                         Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
                         Ok(None) => None,
                         Err(err) => Some(Err(err)),
