@@ -1,18 +1,35 @@
-use crate::workspace::{PackageExt as _, SourceExt as _};
+use crate::{
+    workspace::{PackageExt as _, SourceExt as _},
+    User,
+};
 use anyhow::{anyhow, Context as _};
 use cargo_metadata as cm;
-use serde::Deserialize;
-use std::path::Path;
+use maplit::btreeset;
+use semver::Version;
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::{btree_map, BTreeMap, BTreeSet},
+    path::Path,
+};
 
 pub(super) fn read_non_unlicense_license_file(
     package: &cm::Package,
+    mine: &[User],
     cache_dir: &Path,
 ) -> anyhow::Result<Option<String>> {
-    read(package, cache_dir).map_err(|causes| {
+    if !mine.is_empty() {
+        let users = users(package, cache_dir)?;
+        if mine.iter().any(|u| users.contains(u)) {
+            return Ok(None);
+        }
+    }
+
+    return read(package, cache_dir).map_err(|causes| {
         let err = anyhow!(
             "could not read the license file of `{}`.\n\
              note: cargo-equip no longer reads `package.authors` to skip Copyright and License \
-             Notices",
+             Notices.\n      \
+             instead, add `--mine github.com/{{your username}}` to the arguments",
             package.id
         );
         let mut causes = causes.into_iter();
@@ -23,7 +40,149 @@ pub(super) fn read_non_unlicense_license_file(
         } else {
             err
         }
-    })
+    });
+
+    #[derive(Deserialize, Serialize)]
+    struct Owners {
+        #[serde(rename = "crates.io")]
+        crates_io: BTreeMap<String, BTreeMap<Version, BTreeSet<String>>>,
+        #[serde(rename = "github.com")]
+        github_com: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+        #[serde(rename = "gitlab.com")]
+        gitlab_com: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    }
+}
+
+fn users(package: &cm::Package, cache_dir: &Path) -> anyhow::Result<BTreeSet<User>> {
+    let path = &cache_dir.join("owners.json");
+    let cur_cache = if path.exists() {
+        serde_json::from_str(&xshell::read_file(path)?)?
+    } else {
+        CachedUsers::default()
+    };
+    let mut cache = cur_cache.clone();
+
+    let mut users = if let Some(source) = &package.source {
+        if source.is_crates_io() {
+            match cache
+                .crates_io
+                .entry(package.name.clone())
+                .or_default()
+                .entry(package.version.clone())
+            {
+                btree_map::Entry::Vacant(entry) => {
+                    let owners = retrieve_owner_urls(&package.name, cache_dir)?
+                        .flat_map(|url| {
+                            url.strip_prefix("https://github.com/")
+                                .map(ToOwned::to_owned)
+                        })
+                        .collect();
+                    github_users(entry.insert(owners))
+                }
+                entry @ btree_map::Entry::Occupied(_) => {
+                    github_users(entry.or_insert_with(|| unreachable!()))
+                }
+            }
+        } else if let Some([username, _, rev]) = source
+            .repr
+            .strip_prefix("git+https://github.com/")
+            .map(|s| s.split(|c| ['/', '#'].contains(&c)).collect::<Vec<_>>())
+            .as_deref()
+        {
+            cache
+                .github_com
+                .entry(package.name.clone())
+                .or_default()
+                .entry((*rev).to_owned())
+                .or_default()
+                .insert((*username).to_owned());
+            btreeset!(User::Github((*username).to_owned()))
+        } else if let Some([username, _, rev]) = source
+            .repr
+            .strip_prefix("git+https://gitlab.com/")
+            .map(|s| s.split(|c| ['/', '#'].contains(&c)).collect::<Vec<_>>())
+            .as_deref()
+        {
+            cache
+                .gitlab_com
+                .entry(package.name.clone())
+                .or_default()
+                .entry((*rev).to_owned())
+                .or_default()
+                .insert((*username).to_owned());
+            btreeset!(User::GitlabCom((*username).to_owned()))
+        } else {
+            btreeset!()
+        }
+    } else {
+        btreeset!()
+    };
+
+    if cache != cur_cache {
+        xshell::mkdir_p(cache_dir)?;
+        xshell::write_file(path, cache.to_json())?;
+    }
+
+    if users.is_empty() {
+        if let Some(repository) = &package.repository {
+            if let Some(username) = repository.strip_prefix("https://github.com/") {
+                users.insert(User::Github(username.to_owned()));
+            } else if let Some(username) = repository.strip_prefix("https://gitlab.com/") {
+                users.insert(User::GitlabCom(username.to_owned()));
+            }
+        }
+    }
+
+    return Ok(users);
+
+    #[derive(Default, Deserialize, Serialize, Clone, PartialEq)]
+    struct CachedUsers {
+        #[serde(rename = "crates.io")]
+        crates_io: BTreeMap<String, BTreeMap<Version, BTreeSet<String>>>,
+        #[serde(rename = "github.com")]
+        github_com: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+        #[serde(rename = "gitlab.com")]
+        gitlab_com: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    }
+
+    impl CachedUsers {
+        fn to_json(&self) -> String {
+            serde_json::to_string(self).expect("should not fail")
+        }
+    }
+
+    fn github_users(names: &BTreeSet<String>) -> BTreeSet<User> {
+        names.iter().cloned().map(User::Github).collect()
+    }
+
+    fn retrieve_owner_urls(
+        package_name: &str,
+        cwd: &Path,
+    ) -> anyhow::Result<impl Iterator<Item = String>> {
+        let url = &format!("https://crates.io/api/v1/crates/{}/owners", package_name);
+        let res = &curl(url, cwd)?;
+        let KrateOwnersOwners { users } = serde_json::from_str(res)
+            .with_context(|| format!("could not parse the output from {}", url))?;
+        return Ok(users.into_iter().flat_map(|EncodableOwner { url }| url));
+
+        #[derive(Deserialize)]
+        struct KrateOwnersOwners {
+            users: Vec<EncodableOwner>,
+        }
+
+        #[derive(Deserialize)]
+        struct EncodableOwner {
+            url: Option<String>,
+        }
+
+        fn curl(url: &str, cwd: &Path) -> anyhow::Result<String> {
+            let curl_exe = which::which("curl").map_err(|_| anyhow!("command not found: curl"))?;
+            crate::process::process(curl_exe)
+                .args(&[url, "-L"])
+                .cwd(cwd)
+                .read(true)
+        }
+    }
 }
 
 fn read(package: &cm::Package, cache_dir: &Path) -> Result<Option<String>, Vec<String>> {
