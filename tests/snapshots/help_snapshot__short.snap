@@ -12,9 +12,10 @@ Use -h for short descriptions and --help for more detials.
 
 USAGE:
     cargo equip [OPTIONS]
-    cargo equip [OPTIONS] --src <PATH>
+    cargo equip [OPTIONS] --lib
     cargo equip [OPTIONS] --bin <NAME>
     cargo equip [OPTIONS] --example <NAME>
+    cargo equip [OPTIONS] --src <PATH>
 
 OPTIONS:
         --src <PATH>                       Bundle the lib/bin/example target and its dependencies
