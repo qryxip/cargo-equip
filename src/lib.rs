@@ -762,8 +762,10 @@ fn bundle(
                     let names = names
                         .iter()
                         .map(|name| {
-                            let rename =
-                                format!("__macro_def_{}_{}", pseudo_extern_crate_name, name);
+                            let rename = format!(
+                                "{}_macro_def_{}_{}",
+                                cargo_equip_mod_name, pseudo_extern_crate_name, name,
+                            );
                             (name, rename)
                         })
                         .collect::<Vec<_>>();

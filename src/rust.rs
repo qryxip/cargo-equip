@@ -1180,7 +1180,7 @@ impl<'opt> CodeEdit<'opt> {
                     .any(|m| m.path().is_ident("macro_export"))
                 {
                     let rename = format!(
-                        "{}_macro_{}_{}",
+                        "{}_macro_def_{}_{}",
                         self.cargo_equip_mod_name, pseudo_extern_crate_name, ident,
                     );
                     self.replacements.insert(
