@@ -59,9 +59,10 @@ pub enum Opt {
         author("Ryo Yamashita <qryxip@gmail.com>"),
         usage(
             r#"cargo equip [OPTIONS]
-    cargo equip [OPTIONS] --src <PATH>
+    cargo equip [OPTIONS] --lib
     cargo equip [OPTIONS] --bin <NAME>
-    cargo equip [OPTIONS] --example <NAME>"#,
+    cargo equip [OPTIONS] --example <NAME>
+    cargo equip [OPTIONS] --src <PATH>"#,
         )
     )]
     Equip {
