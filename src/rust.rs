@@ -1155,11 +1155,10 @@ impl<'opt> CodeEdit<'opt> {
     pub(crate) fn modify_declarative_macros(
         &mut self,
         pseudo_extern_crate_name: &str,
-        remove_docs: bool,
-    ) -> anyhow::Result<(String, BTreeMap<String, String>)> {
+    ) -> anyhow::Result<String> {
         self.apply()?;
 
-        let mut macro_defs = btreemap!();
+        let mut macro_names = btreemap!();
 
         for item_macro in collect_item_macros(&self.file) {
             if let ItemMacro {
@@ -1169,32 +1168,39 @@ impl<'opt> CodeEdit<'opt> {
                 ..
             } = item_macro
             {
+                replace_dollar_crates(
+                    tokens.clone(),
+                    self.cargo_equip_mod_name,
+                    pseudo_extern_crate_name,
+                    &mut self.replacements,
+                );
                 if attrs
                     .iter()
                     .flat_map(Attribute::parse_meta)
                     .any(|m| m.path().is_ident("macro_export"))
                 {
-                    let (rename, content) = take(
-                        item_macro,
-                        ident,
-                        self.cargo_equip_mod_name,
-                        pseudo_extern_crate_name,
-                        remove_docs,
-                        &mut self.replacements,
+                    let rename = format!(
+                        "{}_macro_{}_{}",
+                        self.cargo_equip_mod_name, pseudo_extern_crate_name, ident,
                     );
-                    macro_defs.insert(rename, (ident.to_string(), content));
-                } else {
-                    replace_dollar_crates(
-                        tokens.clone(),
-                        self.cargo_equip_mod_name,
-                        pseudo_extern_crate_name,
-                        &mut self.replacements,
+                    self.replacements.insert(
+                        (ident.span().start(), ident.span().end()),
+                        format!("/*{}*/{}", ident, rename),
                     );
+                    let pos = item_macro.span().end();
+                    self.replacements.insert(
+                        (pos, pos),
+                        format!(
+                            "\nmacro_rules!{}{{($($tt:tt)*)=>(crate::{}!{{$($tt)*}})}}",
+                            ident, rename,
+                        ),
+                    );
+                    macro_names.insert(rename, ident);
                 }
             }
         }
 
-        if !macro_defs.is_empty() {
+        if !macro_names.is_empty() {
             if let Some(first) = self.file.items.first() {
                 let pos = first.span().start();
                 self.replacements.entry((pos, pos)).or_default().insert_str(
@@ -1207,30 +1213,25 @@ impl<'opt> CodeEdit<'opt> {
             }
         }
 
-        let macro_mod_content = if macro_defs.is_empty() {
+        let macro_mod_content = if macro_names.is_empty() {
             "".to_owned()
         } else {
             format!(
                 "pub use crate::{}{}{};\n",
-                if macro_defs.len() > 1 { "{" } else { "" },
-                macro_defs
+                if macro_names.len() > 1 { "{" } else { "" },
+                macro_names
                     .iter()
-                    .map(|(rename, (name, _))| if rename == name {
-                        name.clone()
+                    .map(|(rename, name)| if *name == rename {
+                        name.to_string()
                     } else {
                         format!("{} as {}", rename, name)
                     })
                     .format(", "),
-                if macro_defs.len() > 1 { "}" } else { "" },
+                if macro_names.len() > 1 { "}" } else { "" },
             )
         };
 
-        let macro_defs = macro_defs
-            .into_iter()
-            .map(|(name, (_, def))| (name, def))
-            .collect();
-
-        return Ok((macro_mod_content, macro_defs));
+        return Ok(macro_mod_content);
 
         fn collect_item_macros(file: &syn::File) -> Vec<&ItemMacro> {
             let mut acc = vec![];
@@ -1245,92 +1246,6 @@ impl<'opt> CodeEdit<'opt> {
                 fn visit_item_macro(&mut self, i: &'a ItemMacro) {
                     self.acc.push(i);
                 }
-            }
-        }
-
-        fn take(
-            item: &ItemMacro,
-            item_ident: &syn::Ident,
-            cargo_equip_mod_name: &Ident,
-            pseudo_extern_crate_name: &str,
-            remove_docs: bool,
-            replacements: &mut BTreeMap<(LineColumn, LineColumn), String>,
-        ) -> (String, String) {
-            let ItemMacro {
-                attrs,
-                ident,
-                mac: Macro { path, tokens, .. },
-                ..
-            } = item;
-
-            debug_assert!(ident.is_some() && path.is_ident("macro_rules"));
-
-            let pos = item.span().start();
-            replacements.insert((pos, pos), "/*".to_owned());
-            let pos = item.span().end();
-            replacements.insert((pos, pos), "*/".to_owned());
-
-            let name = format!("__macro_def_{}_{}", pseudo_extern_crate_name, item_ident);
-
-            let tokens = take(
-                tokens.clone(),
-                cargo_equip_mod_name,
-                &proc_macro2::Ident::new(pseudo_extern_crate_name, Span::call_site()),
-            );
-
-            let attrs = attrs
-                .iter()
-                .filter(|a| {
-                    !(remove_docs && matches!(a.parse_meta(), Ok(m) if m.path().is_ident("doc")))
-                })
-                .map(|a| {
-                    if matches!(a.parse_meta(), Ok(m) if m.path().is_ident("macro_export")) {
-                        quote!(#[macro_export])
-                    } else {
-                        a.to_token_stream()
-                    }
-                });
-
-            let def = format!(
-                "{} macro_rules! {}({});",
-                rustminify::minify_tokens(quote!(#(#attrs)*)),
-                name,
-                rustminify::minify_tokens(quote!(#tokens)),
-            );
-
-            return (name, def);
-
-            fn take(
-                tokens: TokenStream,
-                cargo_equip_mod_name: &Ident,
-                pseudo_extern_crate_name: &syn::Ident,
-            ) -> TokenStream {
-                let mut out = vec![];
-                for tt in tokens {
-                    if let TokenTree::Group(group) = &tt {
-                        out.push(
-                            proc_macro2::Group::new(
-                                group.delimiter(),
-                                take(
-                                    group.stream(),
-                                    cargo_equip_mod_name,
-                                    pseudo_extern_crate_name,
-                                ),
-                            )
-                            .into(),
-                        );
-                    } else {
-                        out.push(tt);
-                        if let [.., TokenTree::Punct(punct), TokenTree::Ident(ident)] = &*out {
-                            if punct.as_char() == '$' && ident == "crate" {
-                                out.extend(quote! {
-                                    ::#cargo_equip_mod_name::crates::#pseudo_extern_crate_name
-                                });
-                            }
-                        }
-                    }
-                }
-                out.into_iter().collect()
             }
         }
 
