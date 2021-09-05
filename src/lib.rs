@@ -767,8 +767,24 @@ fn bundle(
                         })
                         .collect::<Vec<_>>();
                     let crate_mod_content = format!(
-                        "pub use crate::{}::macros::{}::*;",
-                        cargo_equip_mod_name, pseudo_extern_crate_name,
+                        "pub use crate::{}::macros::{}::*;{}",
+                        cargo_equip_mod_name,
+                        pseudo_extern_crate_name,
+                        names
+                            .iter()
+                            .map(|(name, rename)| {
+                                let msg = format!(
+                                    "`{}` from `{} {}` should have been expanded",
+                                    name, lib_package.name, lib_package.version,
+                                );
+                                format!(
+                                    "#[macro_export]macro_rules!{}\
+                                     {{($(_:tt)*)=>(::std::compile_error!({});)}}",
+                                    rename,
+                                    quote!(#msg),
+                                )
+                            })
+                            .join("")
                     );
                     let macro_mod_content = format!(
                         "pub use crate::{}{}{};",
@@ -779,22 +795,6 @@ fn bundle(
                             .format(","),
                         if names.len() == 1 { "" } else { "}" },
                     );
-                    let macro_defs = names
-                        .into_iter()
-                        .map(|(name, rename)| {
-                            let msg = format!(
-                                "`{}` from `{} {}` should have been expanded",
-                                name, lib_package.name, lib_package.version,
-                            );
-                            let def = format!(
-                                "#[macro_export] macro_rules! {}\
-                                 (($(_:tt)*)=>(::std::compile_error!({});));",
-                                rename,
-                                quote!(#msg),
-                            );
-                            (rename, def)
-                        })
-                        .collect::<BTreeMap<_, _>>();
                     return Ok((
                         pseudo_extern_crate_name,
                         (
@@ -802,7 +802,6 @@ fn bundle(
                             crate_mod_content,
                             macro_mod_content,
                             "".to_owned(),
-                            macro_defs,
                         ),
                     ));
                 }
@@ -826,10 +825,7 @@ fn bundle(
                 edit.translate_crate_path(pseudo_extern_crate_name)?;
                 edit.translate_extern_crate_paths(translate_extern_crate_name)?;
                 edit.process_extern_crates_in_lib(translate_extern_crate_name, shell)?;
-                let (macro_mod_content, macro_defs) = edit.modify_declarative_macros(
-                    pseudo_extern_crate_name,
-                    remove.contains(&Remove::Docs),
-                )?;
+                let macro_mod_content = edit.modify_declarative_macros(pseudo_extern_crate_name)?;
                 let prelude_mod_content = edit.resolve_pseudo_prelude(
                     pseudo_extern_crate_name,
                     &libs_with_local_inner_macros[&lib_package.id],
@@ -870,23 +866,11 @@ fn bundle(
                         crate_mod_content,
                         macro_mod_content,
                         prelude_mod_content,
-                        macro_defs,
                     ),
                 ))
             },
         )
-        .collect::<anyhow::Result<
-            Vec<(
-                &str,
-                (
-                    &cm::Package,
-                    String,
-                    String,
-                    String,
-                    BTreeMap<String, String>,
-                ),
-            )>,
-        >>()?;
+        .collect::<anyhow::Result<Vec<(&str, (&cm::Package, String, String, String))>>>()?;
 
     if !libs.is_empty() {
         if !root_crate.package().authors.is_empty() {
@@ -971,8 +955,8 @@ fn bundle(
                 "Bundled libraries",
                 cargo_equip_mod_name,
                 libs.iter()
-                    .filter(|(_, (p, _, _, _, _))| p.has_lib())
-                    .map(|(k, (p, _, _, _, _))| (Some(*k), *p)),
+                    .filter(|(_, (p, _, _, _))| p.has_lib())
+                    .map(|(k, (p, _, _, _))| (Some(*k), *p)),
             );
 
             list_packages(
@@ -980,14 +964,14 @@ fn bundle(
                 "Procedural macros",
                 cargo_equip_mod_name,
                 libs.iter()
-                    .filter(|(_, (p, _, _, _, _))| p.has_proc_macro())
-                    .map(|(_, (p, _, _, _, _))| (None, *p)),
+                    .filter(|(_, (p, _, _, _))| p.has_proc_macro())
+                    .map(|(_, (p, _, _, _))| (None, *p)),
             );
 
             let notices = libs
                 .iter()
-                .filter(|(_, (p, _, _, _, _))| p.has_lib())
-                .map(|(_, (p, _, _, _, _))| p)
+                .filter(|(_, (p, _, _, _))| p.has_lib())
+                .map(|(_, (p, _, _, _))| p)
                 .flat_map(|lib_package| {
                     if let Err(err) =
                         shell.status("Checking", format!("the license of `{}`", lib_package.id))
@@ -1042,23 +1026,18 @@ fn bundle(
 
         let crate_mods = libs
             .iter()
-            .map(|(name, (_, content, _, _, _))| (*name, &**content))
+            .map(|(name, (_, content, _, _))| (*name, &**content))
             .collect::<Vec<_>>();
 
         let macro_mods = libs
             .iter()
-            .map(|(name, (_, _, content, _, _))| (*name, &**content))
+            .map(|(name, (_, _, content, _))| (*name, &**content))
             .collect::<Vec<_>>();
 
         let prelude_mods = libs
             .iter()
-            .map(|(name, (_, _, _, content, _))| (*name, &**content))
+            .map(|(name, (_, _, _, content))| (*name, &**content))
             .collect::<Vec<_>>();
-
-        let macro_defs = libs
-            .iter()
-            .flat_map(|(_, (_, _, _, _, macro_defs))| macro_defs)
-            .collect::<BTreeMap<_, _>>();
 
         let render_mods = |code: &mut String, mods: &[(&str, &str)]| -> anyhow::Result<()> {
             if minify == Minify::Libs {
@@ -1093,7 +1072,7 @@ fn bundle(
             code += "\n";
         }
         if minify == Minify::Libs {
-            code += "#[rustfmt::skip]\n";
+            code += "#[cfg_attr(any(), rustfmt::skip)]\n";
         }
         code += "#[allow(unused)]\n";
         code += &format!("mod {} {{\n", cargo_equip_mod_name);
@@ -1152,18 +1131,6 @@ fn bundle(
         render_mods(&mut code, &prelude_mods)?;
         code += "    }\n";
         code += "}\n";
-
-        if !macro_defs.is_empty() {
-            code += "\n";
-            code += "#[cfg_attr(any(), rustfmt::skip)]\n";
-            code += "const _: () = {\n";
-            for macro_def in macro_defs.values() {
-                code += "    ";
-                code += macro_def;
-                code += "\n";
-            }
-            code += "};\n";
-        }
     }
 
     if minify == Minify::All {

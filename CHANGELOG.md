@@ -57,6 +57,19 @@
 
 ### Fixed
 
+- `#[macro_export]`ed macros will remain in [textual scope](https://doc.rust-lang.org/reference/macros-by-example.html#textual-scope).
+
+    ```diff
+     #[macro_export]
+    -macro_rules! hello {
+    +macro_rules! /*hello*/__cargo_equip_macro_lib_hello {
+         () => {
+             ::std::println!("Hello!")
+         };
+     }
+    +macro_rules!hello{($($tt:tt)*)=>(crate::__cargo_equip_macro_lib_hello!{$($tt)*})}
+    ```
+
 - Improved the minification function. ([#153](https://github.com/qryxip/cargo-equip/pull/153))
 
     ```diff
