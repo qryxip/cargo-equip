@@ -4,13 +4,13 @@
 
 ### Added
 
-- Added `--mod-path <MODULE_PATH>` option.
+- Added `--mod-path <MODULE_PATH>` option. ([#159](https://github.com/qryxip/cargo-equip/pull/159))
 
     ```diff
     +        --mod-path <MODULE_PATH>           Expand the libraries to the module [default: crate::__cargo_equip]
     ```
 
-- Added `--mine <DOMAIN_AND_USERNAME>...` option.
+- Added `--mine <DOMAIN_AND_USERNAME>...` option. ([#169](https://github.com/qryxip/cargo-equip/pull/169))
 
     ```diff
     +        --mine <DOMAIN_AND_USERNAME>...
@@ -23,7 +23,7 @@
 
 ### Changed
 
-- Enabled running for a `lib` crate.
+- Enabled running for a `lib` crate. ([#156](https://github.com/qryxip/cargo-equip/pull/156))
 
     Now you can easily produce standalone Rust source files like `my_library.rs`.
 
@@ -33,7 +33,7 @@
     ❯ cargo equip --minify libs --remove docs -o ./proconio.rs
     ```
 
-- Changed potition of the generated doc comment.
+- Changed potition of the generated doc comment. ([#161](https://github.com/qryxip/cargo-equip/pull/161))
 
     ```diff
     -//! # Bundled libraries
@@ -49,15 +49,15 @@
      }
     ```
 
-- cargo-equip no longer uses [`package.authors`](https://doc.rust-lang.org/cargo/reference/manifest.html#the-authors-field) to skip Copyright and License Notices.
+- cargo-equip no longer uses [`package.authors`](https://doc.rust-lang.org/cargo/reference/manifest.html#the-authors-field) to skip Copyright and License Notices. ([#164](https://github.com/qryxip/cargo-equip/pull/164))
 
     Instead, add `--mine github.com/your-username` to the arguments.
 
-- Now uses rust-analyzer `2021-07-12` for Rust 1.47 and `2021-08-09` for Rust 1.48+.
+- Now uses rust-analyzer `2021-07-12` for Rust 1.47 and `2021-08-09` for Rust 1.48+. ([#163](https://github.com/qryxip/cargo-equip/pull/163))
 
 ### Fixed
 
-- `#[macro_export]`ed macros will remain in [textual scope](https://doc.rust-lang.org/reference/macros-by-example.html#textual-scope).
+- `#[macro_export]`ed macros will remain in [textual scope](https://doc.rust-lang.org/reference/macros-by-example.html#textual-scope). ([#170](https://github.com/qryxip/cargo-equip/pull/170))
 
     ```diff
      #[macro_export]
@@ -70,7 +70,7 @@
     +macro_rules!hello{($($tt:tt)*)=>(crate::__cargo_equip_macro_lib_hello!{$($tt)*})}
     ```
 
-- Improved the minification function. ([#153](https://github.com/qryxip/cargo-equip/pull/153))
+- Improved the minification function. ([#153](https://github.com/qryxip/cargo-equip/pull/153), [#157](https://github.com/qryxip/cargo-equip/pull/157))
 
     ```diff
     -let _=| |();
@@ -81,11 +81,11 @@
 
     [Now accepts `dyn for<'a> Trait<'a>`](https://github.com/dtolnay/syn/pull/1042).
 
-- Enabled reading license files from `git`/`path` package sources.
+- Enabled reading license files from `git`/`path` package sources. ([#156](https://github.com/qryxip/cargo-equip/pull/156))
 
     Previously cargo-equip reaches a `todo!`.
 
-- Now handles `path` dependencies correctly when checking an output.
+- Now handles `path` dependencies correctly when checking an output. ([#156](https://github.com/qryxip/cargo-equip/pull/156), [#166](https://github.com/qryxip/cargo-equip/pull/166))
 
 ## [0.17.0] - 2021-07-03Z
 
