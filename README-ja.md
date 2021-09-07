@@ -82,7 +82,7 @@ mod sub {
 >       --bin sqrt_mod `# binクレートを指定` | xsel -b
 ```
 
-[Submit Info #52332 - Library-Checker](https://judge.yosupo.jp/submission/52332)
+[Submit Info #59239 - Library-Checker](https://judge.yosupo.jp/submission/59239)
 
 ## 動作するクレート
 
@@ -220,11 +220,9 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
     ライブラリ同様にglob importを挿入します。
 
     ```rust
-    crate::__cargo_equip::prelude_for!(crate);
+    pub use __cargo_equip::prelude::*;
 
-    mod sub {
-        crate::__cargo_equip::prelude_for!(crate);
-    }
+    // ︙
 
     pub mod __cargo_equip {
         pub mod crates {
@@ -232,13 +230,10 @@ ac-library-rs-parted-twosat      = { git = "https://github.com/qryxip/ac-library
         }
         // ︙
 
-        macro_rules! prelude_for {
-            (crate) => (pub use crate::__cargo_equip::crates::*);
+        pub(crate) prelude {
+            pub use crate::__cargo_equip::crates::*;
         }
-        pub(crate) use prelude_for;
     }
-    #[macro_export]
-    macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
     ```
 
 ```rust
@@ -265,6 +260,7 @@ fn main() -> _ {
 ❯ cargo equip --bin "$name"
 ```
 
+<!--
 コードはこのように展開されます。
 `extern_crate_name`が`bin`/`example`側から与えられていないクレートは`__package_name_0_1_0`のような名前が与えられます。
 
@@ -376,6 +372,7 @@ const _: () = {
     #[macro_export] macro_rules! __macro_def_input_input(/* … */);
 };
 ```
+-->
 
 ## `#[cfg(…)]`の解決
 
@@ -449,6 +446,7 @@ fn fib(n: i64) -> i64 {
 }
 ```
 
+<!--
 ↓
 
 <details>
@@ -579,6 +577,7 @@ const _: () = {
 ```
 
 </details>
+-->
 
 - `rust-analyzer(.exe)`は自動でダウンロードされます。
 - `proc-macro`クレートは1.47.0以上のRustでコンパイルされる必要があります。

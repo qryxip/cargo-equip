@@ -83,7 +83,7 @@ mod sub {
 >       --bin sqrt_mod `# Specify the bin crate` | xsel -b
 ```
 
-[Submit Info #52332 - Library-Checker](https://judge.yosupo.jp/submission/52332)
+[Submit Info #59239 - Library-Checker](https://judge.yosupo.jp/submission/59239)
 
 ## Works With
 
@@ -211,11 +211,9 @@ The constraints for `bin`s/`example`s are:
     cargo-equip also inserts glob imports as it does into libraries.
 
     ```rust
-    crate::__cargo_equip::prelude_for!(crate);
+    pub use __cargo_equip::prelude::*;
 
-    mod sub {
-        crate::__cargo_equip::prelude_for!(crate);
-    }
+    // ︙
 
     pub mod __cargo_equip {
         pub mod crates {
@@ -223,13 +221,10 @@ The constraints for `bin`s/`example`s are:
         }
         // ︙
 
-        macro_rules! prelude_for {
-            (crate) => (pub use crate::__cargo_equip::crates::*);
+        pub(crate) prelude {
+            pub use crate::__cargo_equip::crates::*;
         }
-        pub(crate) use prelude_for;
     }
-    #[macro_export]
-    macro_rules! __prelude_for_main_crate(() => (pub use crate::__bundled::*;));
     ```
 
 ```rust
@@ -253,6 +248,7 @@ Then execute `cargo-equip`.
 ❯ cargo equip --bin "$name"
 ```
 
+<!--
 cargo-equip outputs code like this.
 It gives tentative `extern_crate_name`s like `__package_name_0_1_0` to dependencies of the dependencies.
 
@@ -364,6 +360,7 @@ const _: () = {
     #[macro_export] macro_rules! __macro_def_input_input(/* … */);
 };
 ```
+-->
 
 ## Resolving `#[cfg(…)]`
 
@@ -437,6 +434,7 @@ fn fib(n: i64) -> i64 {
 }
 ```
 
+<!--
 ↓
 
 <details>
@@ -567,6 +565,7 @@ const _: () = {
 ```
 
 </details>
+-->
 
 - `rust-analyzer(.exe)` is automatically downloaded.
 - `proc-macro` crates need to be compile with Rust 1.47.0+.
