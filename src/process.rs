@@ -1,23 +1,6 @@
-use anyhow::{anyhow, bail, Context as _};
-use itertools::Itertools as _;
-use std::{
-    env,
-    ffi::{OsStr, OsString},
-    fmt,
-    path::{Path, PathBuf},
-    process::{Output, Stdio},
-    str,
-};
-
-use crate::shell::Shell;
-
-pub(crate) fn process(program: impl AsRef<OsStr>) -> ProcessBuilder<NotPresent> {
-    ProcessBuilder {
-        program: program.as_ref().to_owned(),
-        args: vec![],
-        cwd: (),
-    }
-}
+use anyhow::Context as _;
+use cargo_util::ProcessError;
+use std::{env, fmt, io, path::PathBuf, process::Stdio};
 
 pub(crate) fn cargo_exe() -> anyhow::Result<PathBuf> {
     env::var_os("CARGO")
@@ -27,104 +10,60 @@ pub(crate) fn cargo_exe() -> anyhow::Result<PathBuf> {
         .map(Into::into)
 }
 
-#[derive(Debug)]
-pub(crate) struct ProcessBuilder<C: Presence<PathBuf>> {
-    program: OsString,
-    args: Vec<OsString>,
-    cwd: C::Value,
+pub(crate) trait ProcessBuilderExt: fmt::Display {
+    fn try_inspect(&mut self, f: impl FnOnce(&Self) -> io::Result<()>) -> io::Result<&mut Self> {
+        f(self)?;
+        Ok(self)
+    }
+
+    fn read_stdout<O: StdoutOutput>(&self) -> anyhow::Result<O>;
+    fn read_stdout_unchecked<O: StdoutOutput>(&self) -> anyhow::Result<O>;
 }
 
-impl<C: Presence<PathBuf>> ProcessBuilder<C> {
-    pub(crate) fn arg(mut self, arg: impl AsRef<OsStr>) -> Self {
-        self.args.push(arg.as_ref().to_owned());
-        self
+impl ProcessBuilderExt for cargo_util::ProcessBuilder {
+    fn read_stdout<O: StdoutOutput>(&self) -> anyhow::Result<O> {
+        O::read_stdout(self, true)
     }
 
-    pub(crate) fn args(mut self, args: &[impl AsRef<OsStr>]) -> Self {
-        self.args.extend(args.iter().map(|s| s.as_ref().to_owned()));
-        self
-    }
-
-    pub(crate) fn cwd(self, cwd: impl AsRef<Path>) -> ProcessBuilder<Present> {
-        ProcessBuilder {
-            program: self.program,
-            args: self.args,
-            cwd: cwd.as_ref().to_owned(),
-        }
+    fn read_stdout_unchecked<O: StdoutOutput>(&self) -> anyhow::Result<O> {
+        O::read_stdout(self, false)
     }
 }
 
-impl ProcessBuilder<Present> {
-    fn output(&self, check: bool, stdout: Stdio, stderr: Stdio) -> anyhow::Result<Output> {
-        let output = std::process::Command::new(&self.program)
-            .args(&self.args)
-            .current_dir(&self.cwd)
-            .stdout(stdout)
-            .stderr(stderr)
+pub(crate) trait StdoutOutput: Sized {
+    fn from_bytes(bytes: Vec<u8>, proc: impl fmt::Display) -> anyhow::Result<Self>;
+
+    fn read_stdout(proc: &cargo_util::ProcessBuilder, check: bool) -> anyhow::Result<Self> {
+        let output = proc
+            .build_command()
+            .stdin(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .output()
-            .with_context(|| format!("could not execute process {}", self))?;
+            .with_context(|| {
+                ProcessError::new(&format!("could not execute process {}", proc), None, None)
+            })?;
+
         if check && !output.status.success() {
-            bail!("{} didn't exit successfully: {}", self, output.status);
+            return Err(ProcessError::new(
+                &format!("process didn't exit successfully: {}", proc),
+                Some(output.status),
+                Some(&output),
+            )
+            .into());
         }
-        Ok(output)
-    }
 
-    pub(crate) fn exec(&self) -> anyhow::Result<()> {
-        self.output(true, Stdio::inherit(), Stdio::inherit())?;
-        Ok(())
-    }
-
-    pub(crate) fn read(&self, check: bool) -> anyhow::Result<String> {
-        let Output { stdout, .. } = self.output(check, Stdio::piped(), Stdio::inherit())?;
-        let stdout =
-            str::from_utf8(&stdout).map_err(|_| anyhow!("stream did not contain valid UTF-8"))?;
-        Ok(stdout.trim_end().to_owned())
-    }
-
-    pub(crate) fn read_with_status(
-        &self,
-        check: bool,
-        shell: &mut Shell,
-    ) -> anyhow::Result<String> {
-        shell.status("Running", self)?;
-        self.read(check)
-    }
-
-    pub(crate) fn read_bytes_with_status(&self, shell: &mut Shell) -> anyhow::Result<Vec<u8>> {
-        shell.status("Running", self)?;
-        let Output { stdout, .. } = self.output(true, Stdio::piped(), Stdio::inherit())?;
-        Ok(stdout)
+        Self::from_bytes(output.stdout, proc)
     }
 }
 
-impl fmt::Display for ProcessBuilder<Present> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            fmt,
-            "`{}{}`",
-            shell_escape::escape(self.program.to_string_lossy()),
-            self.args.iter().format_with("", |arg, f| f(&format_args!(
-                " {}",
-                shell_escape::escape(arg.to_string_lossy()),
-            ))),
-        )
+impl StdoutOutput for String {
+    fn from_bytes(bytes: Vec<u8>, proc: impl fmt::Display) -> anyhow::Result<Self> {
+        String::from_utf8(bytes).with_context(|| format!("invalid utf-8 output from {}", proc))
     }
 }
 
-pub(crate) trait Presence<T> {
-    type Value;
-}
-
-#[derive(Debug)]
-pub(crate) enum NotPresent {}
-
-impl<T> Presence<T> for NotPresent {
-    type Value = ();
-}
-
-#[derive(Debug)]
-pub(crate) enum Present {}
-
-impl<T> Presence<T> for Present {
-    type Value = T;
+impl StdoutOutput for Vec<u8> {
+    fn from_bytes(bytes: Vec<u8>, _: impl fmt::Display) -> anyhow::Result<Self> {
+        Ok(bytes)
+    }
 }

@@ -1,9 +1,11 @@
 use crate::{
+    process::ProcessBuilderExt as _,
     workspace::{PackageExt as _, SourceExt as _},
     User,
 };
 use anyhow::{anyhow, Context as _};
 use cargo_metadata as cm;
+use cargo_util::ProcessBuilder;
 use maplit::btreeset;
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -56,7 +58,7 @@ pub(super) fn read_non_unlicense_license_file(
 fn users(package: &cm::Package, cache_dir: &Path) -> anyhow::Result<BTreeSet<User>> {
     let path = &cache_dir.join("owners.json");
     let cur_cache = if path.exists() {
-        serde_json::from_str(&xshell::read_file(path)?)?
+        serde_json::from_str(&cargo_util::paths::read(path)?)?
     } else {
         CachedUsers::default()
     };
@@ -119,8 +121,8 @@ fn users(package: &cm::Package, cache_dir: &Path) -> anyhow::Result<BTreeSet<Use
     };
 
     if cache != cur_cache {
-        xshell::mkdir_p(cache_dir)?;
-        xshell::write_file(path, cache.to_json())?;
+        cargo_util::paths::create_dir_all(cache_dir)?;
+        cargo_util::paths::write(path, cache.to_json())?;
     }
 
     if users.is_empty() {
@@ -177,10 +179,10 @@ fn users(package: &cm::Package, cache_dir: &Path) -> anyhow::Result<BTreeSet<Use
 
         fn curl(url: &str, cwd: &Path) -> anyhow::Result<String> {
             let curl_exe = which::which("curl").map_err(|_| anyhow!("command not found: curl"))?;
-            crate::process::process(curl_exe)
+            ProcessBuilder::new(curl_exe)
                 .args(&[url, "-L"])
                 .cwd(cwd)
-                .read(true)
+                .read_stdout()
         }
     }
 }
@@ -240,7 +242,7 @@ fn read(package: &cm::Package, cache_dir: &Path) -> Result<Option<String>, Vec<S
                     .join(&sha1);
 
                 if cache_path.exists() {
-                    return xshell::read_file(cache_path).map_err(Into::into);
+                    return cargo_util::paths::read(cache_path);
                 }
 
                 let content =
@@ -251,8 +253,8 @@ fn read(package: &cm::Package, cache_dir: &Path) -> Result<Option<String>, Vec<S
                         )
                     })?;
 
-                xshell::mkdir_p(cache_path.with_file_name(""))?;
-                xshell::write_file(cache_path, &content)?;
+                cargo_util::paths::create_dir_all(cache_path.with_file_name(""))?;
+                cargo_util::paths::write(cache_path, &content)?;
 
                 Ok(content)
             } else {
@@ -285,7 +287,8 @@ fn normalize(license: &str) -> &str {
 }
 
 fn read_git_sha1(package: &cm::Package) -> anyhow::Result<String> {
-    let json = &xshell::read_file(package.manifest_dir().join(".cargo_vcs_info.json"))?;
+    let json =
+        &cargo_util::paths::read(package.manifest_dir().join(".cargo_vcs_info.json").as_ref())?;
     let CargoVcsInfo {
         git: CargoVcsInfoGit { sha1 },
     } = serde_json::from_str(json).with_context(|| {
@@ -313,12 +316,12 @@ fn find_in_git_repos(url: &str, sha1: &str, file_names: &[&str]) -> anyhow::Resu
         .prefix("cargo-equip-git-clone-")
         .tempdir()?;
 
-    crate::process::process("git")
+    ProcessBuilder::new("git")
         .args(&["clone", "--no-checkout", "--filter", "blob:none", url, "."])
         .cwd(tempdir.path())
         .exec()?;
 
-    crate::process::process("git")
+    ProcessBuilder::new("git")
         .args(&["switch", "-d", sha1])
         .cwd(tempdir.path())
         .exec()?;
@@ -329,9 +332,9 @@ fn find_in_git_repos(url: &str, sha1: &str, file_names: &[&str]) -> anyhow::Resu
 }
 
 fn find(dir: &Path, file_names: &[&str]) -> Option<anyhow::Result<String>> {
-    let path = file_names
+    let path = &file_names
         .iter()
         .map(|name| dir.join(name))
         .find(|path| path.exists())?;
-    Some(xshell::read_file(path).map_err(Into::into))
+    Some(cargo_util::paths::read(path))
 }

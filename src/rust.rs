@@ -10,7 +10,7 @@ use quote::{quote, ToTokens};
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, VecDeque},
-    env, fs, mem,
+    env, mem,
     ops::Range,
     str,
 };
@@ -330,8 +330,7 @@ impl<'opt> CodeEdit<'opt> {
         });
 
         fn expand_mods(src_path: &Utf8Path, depth: usize) -> anyhow::Result<String> {
-            let content = std::fs::read_to_string(src_path)
-                .with_context(|| format!("could not read `{}`", src_path))?;
+            let content = cargo_util::paths::read(src_path.as_ref())?;
 
             let syn::File { items, .. } = syn::parse_file(&content)
                 .map_err(|e| anyhow!("{:?}", e))
@@ -988,7 +987,7 @@ impl<'opt> CodeEdit<'opt> {
                         if let Some(path) = self.resolve(&expr) {
                             let path = Utf8PathBuf::from(path);
                             if path.is_absolute() {
-                                if let Ok(content) = fs::read_to_string(path) {
+                                if let Ok(content) = cargo_util::paths::read(path.as_ref()) {
                                     self.replacements
                                         .insert((i.span().start(), i.span().end()), content);
                                 }
