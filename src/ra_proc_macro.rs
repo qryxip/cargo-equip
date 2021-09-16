@@ -1,8 +1,10 @@
 mod tt;
 
+use crate::{process::ProcessBuilderExt as _, shell::Shell};
 use anyhow::{anyhow, bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
+use cargo_util::ProcessBuilder;
 use maplit::btreemap;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,14 +15,12 @@ use std::{
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
 
-use crate::shell::Shell;
-
 pub(crate) fn dl_ra(
     dir: &Path,
     rustc_version: &cm::Version,
     shell: &mut Shell,
 ) -> anyhow::Result<PathBuf> {
-    xshell::mkdir_p(dir)?;
+    cargo_util::paths::create_dir_all(dir)?;
 
     let tag = if rustc_version.to_string() == "1.47.0" {
         &TAG_FOR_EQ_1_47
@@ -58,7 +58,7 @@ pub(crate) fn dl_ra(
     );
     let gz = &curl(&url, dir, shell)?;
     let ra = decode_gz(gz).with_context(|| format!("could not decode {}", file_name))?;
-    xshell::write_file(&ra_path, ra)?;
+    cargo_util::paths::write(&ra_path, ra)?;
     shell.status("Wrote", ra_path.display())?;
     chmod755(&ra_path)?;
     return Ok(ra_path);
@@ -68,10 +68,11 @@ pub(crate) fn dl_ra(
 
     fn curl(url: &str, cwd: &Path, shell: &mut Shell) -> anyhow::Result<Vec<u8>> {
         let curl_exe = which::which("curl").map_err(|_| anyhow!("command not found: curl"))?;
-        crate::process::process(curl_exe)
+        ProcessBuilder::new(curl_exe)
             .args(&[url, "-L"])
             .cwd(cwd)
-            .read_bytes_with_status(shell)
+            .try_inspect(|this| shell.status("Running", this))?
+            .read_stdout()
     }
 
     fn decode_gz(data: &[u8]) -> io::Result<Vec<u8>> {

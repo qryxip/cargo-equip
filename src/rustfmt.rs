@@ -1,4 +1,5 @@
 use camino::Utf8Path;
+use cargo_util::ProcessBuilder;
 use std::env;
 
 pub(crate) fn rustfmt(
@@ -12,19 +13,19 @@ pub(crate) fn rustfmt(
         .tempfile()?
         .into_temp_path();
 
-    std::fs::write(&tempfile, code)?;
+    cargo_util::paths::write(&tempfile, code)?;
 
     let rustfmt_exe = crate::process::cargo_exe()?
         .with_file_name("rustfmt")
         .with_extension(env::consts::EXE_EXTENSION);
 
-    crate::process::process(rustfmt_exe)
+    ProcessBuilder::new(rustfmt_exe)
         .args(&["--edition", edition])
         .arg(&tempfile)
         .cwd(workspace_root)
         .exec()?;
 
-    let formatted = std::fs::read_to_string(&tempfile)?;
+    let formatted = cargo_util::paths::read(&tempfile)?;
 
     tempfile.close()?;
 

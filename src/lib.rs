@@ -560,8 +560,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     if let Some(output) = output {
         let output = cwd.join(output);
-        std::fs::write(&output, code)
-            .with_context(|| format!("could not write `{}`", output.display()))
+        cargo_util::paths::write(&output, code)
     } else {
         write!(shell.out(), "{}", code)?;
         Ok(())
@@ -652,7 +651,7 @@ fn bundle(
         .collect::<HashMap<_, _>>();
 
     let mut code = if let Some((_, bin_target)) = root_crate.bin_like() {
-        let code = xshell::read_file(&bin_target.src_path)?;
+        let code = cargo_util::paths::read(bin_target.src_path.as_ref())?;
         if rust::find_skip_attribute(&code)? {
             shell.status("Found", "`#![cfg_attr(cargo_equip, cargo_equip::skip)]`")?;
             return Ok(code);

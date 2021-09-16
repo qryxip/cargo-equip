@@ -1,7 +1,8 @@
-use crate::shell::Shell;
+use crate::{process::ProcessBuilderExt as _, shell::Shell};
 use anyhow::{anyhow, Context as _};
 use camino::Utf8Path;
 use cargo_metadata as cm;
+use cargo_util::ProcessBuilder;
 use once_cell::sync::Lazy;
 use semver::{Version, VersionReq};
 use std::{
@@ -15,10 +16,10 @@ pub(crate) fn rustup_exe(cwd: impl AsRef<Path>) -> anyhow::Result<PathBuf> {
 }
 
 pub(crate) fn active_toolchain(manifest_dir: &Utf8Path) -> anyhow::Result<String> {
-    let output = crate::process::process(rustup_exe(manifest_dir)?)
+    let output = ProcessBuilder::new(rustup_exe(manifest_dir)?)
         .args(&["show", "active-toolchain"])
         .cwd(manifest_dir)
-        .read(true)?;
+        .read_stdout::<String>()?;
     Ok(output.split_whitespace().next().unwrap().to_owned())
 }
 
@@ -29,10 +30,10 @@ pub(crate) fn find_toolchain_compatible_with_ra(
     let rustup_exe = &rustup_exe(manifest_dir)?;
 
     let cargo_version = |toolchain| -> _ {
-        crate::process::process(rustup_exe)
+        ProcessBuilder::new(rustup_exe)
             .args(&["run", toolchain, "cargo", "-V"])
             .cwd(manifest_dir)
-            .read(true)
+            .read_stdout::<String>()
             .and_then(|o| extract_version(&o))
     };
 
@@ -49,10 +50,10 @@ pub(crate) fn find_toolchain_compatible_with_ra(
         )
     };
 
-    let output = crate::process::process(rustup_exe)
+    let output = ProcessBuilder::new(rustup_exe)
         .args(&["toolchain", "list"])
         .cwd(manifest_dir)
-        .read(true)?;
+        .read_stdout::<String>()?;
     let toolchains = output
         .lines()
         .map(|s| s.split_whitespace().next().unwrap())

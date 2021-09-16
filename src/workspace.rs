@@ -1,9 +1,10 @@
 mod license;
 
-use crate::{shell::Shell, toolchain, User};
+use crate::{process::ProcessBuilderExt as _, shell::Shell, toolchain, User};
 use anyhow::{bail, Context as _};
 use camino::{Utf8Path, Utf8PathBuf};
 use cargo_metadata as cm;
+use cargo_util::ProcessBuilder;
 use if_chain::if_chain;
 use indoc::indoc;
 use itertools::Itertools as _;
@@ -43,7 +44,7 @@ pub(crate) fn cargo_check_message_format_json(
     krate: &cm::Target,
     shell: &mut Shell,
 ) -> anyhow::Result<Vec<cm::Message>> {
-    let messages = crate::process::process(toolchain::rustup_exe(package.manifest_dir())?)
+    let messages = ProcessBuilder::new(toolchain::rustup_exe(package.manifest_dir())?)
         .arg("run")
         .arg(toolchain)
         .arg("cargo")
@@ -54,7 +55,8 @@ pub(crate) fn cargo_check_message_format_json(
         .arg(format!("{}:{}", package.name, package.version))
         .args(&krate.target_option())
         .cwd(&metadata.workspace_root)
-        .read_with_status(true, shell)?;
+        .try_inspect(|this| shell.status("Running", this))?
+        .read_stdout::<Vec<u8>>()?;
 
     // TODO: check if ≧ 1.41.0
 
@@ -111,7 +113,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .tempdir()?;
 
     let orig_manifest =
-        std::fs::read_to_string(&package.manifest_path)?.parse::<toml_edit::Document>()?;
+        cargo_util::paths::read(package.manifest_path.as_ref())?.parse::<toml_edit::Document>()?;
 
     let mut temp_manifest = indoc! {r#"
         [package]
@@ -136,7 +138,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
             "bin"
         }] = toml_edit::Item::ArrayOfTables({
             let mut arr = toml_edit::ArrayOfTables::new();
-            arr.append(tbl);
+            arr.push(tbl);
             arr
         });
     }
@@ -197,17 +199,17 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         modify_dependencies(table);
     }
 
-    std::fs::write(
+    cargo_util::paths::write(
         temp_pkg.path().join("Cargo.toml"),
         temp_manifest.to_string(),
     )?;
-    std::fs::copy(
+    cargo_util::paths::copy(
         metadata.workspace_root.join("Cargo.lock"),
         temp_pkg.path().join("Cargo.lock"),
     )?;
-    std::fs::write(temp_pkg.path().join(format!("{}.rs", crate_name)), code)?;
+    cargo_util::paths::write(temp_pkg.path().join(format!("{}.rs", crate_name)), code)?;
 
-    crate::process::process(crate::process::cargo_exe()?)
+    ProcessBuilder::new(crate::process::cargo_exe()?)
         .arg("check")
         .arg("--target-dir")
         .arg(&metadata.target_directory)
@@ -374,12 +376,10 @@ impl MetadataExt for cm::Metadata {
                 .with_file_name("rustc")
                 .with_extension(env::consts::EXE_EXTENSION);
 
-            let preds = crate::process::process(rustc_exe)
+            ProcessBuilder::new(rustc_exe)
                 .args(&["--print", "cfg"])
                 .cwd(package.manifest_path.with_file_name(""))
-                .read(true)?;
-
-            preds
+                .read_stdout::<String>()?
                 .lines()
                 .flat_map(cfg_expr::Expression::parse) // https://github.com/EmbarkStudios/cfg-expr/blob/25290dba689ce3f3ab589926ba545875f048c130/src/expr/parser.rs#L180-L195
                 .collect::<Vec<_>>()
