@@ -9,11 +9,11 @@ keywords = ["competitive", "cli", "windows"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins"]
 
 [dependencies]
-anyhow = "1.0.43"
+anyhow = "1.0.44"
 atty = "0.2.14"
 camino = { version = "1.0.5", features = ["serde1"] }
 cargo_metadata = "0.14.0"
-cfg-expr = "0.8.1"
+cfg-expr = "0.9.0"
 derive_more = "0.99.16"
 dirs-next = "2.0.0"
 fixedbitset = "0.4.0"
@@ -32,7 +32,7 @@ rand = "0.8.4"
 rustminify = "0.1.0"
 semver = { version = "1.0.4", features = ["serde"] }
 serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.67"
+serde_json = "1.0.68"
 shell-escape = "0.1.5"
 smol_str = { version = "0.1.18", features = ["serde"] }
 spdx = "0.6.0"
@@ -40,12 +40,12 @@ structopt = "0.3.23"
 syn = { version = "1.0.76", features = ["extra-traits", "full", "parsing", "visit"] }
 tempfile = "3.2.0"
 termcolor = "1.1.2"
-toml_edit = "0.2.1"
+toml_edit = "0.3.1"
 which = "4.2.2"
 xshell = "0.1.17"
 
 [dev-dependencies]
-assert_cmd = "2.0.0"
-insta = "1.7.2"
+assert_cmd = "2.0.1"
+insta = "1.8.0"
 md5 = "0.7.0"
 pretty_assertions = "0.7.2"

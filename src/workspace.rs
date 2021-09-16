@@ -136,7 +136,7 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
             "bin"
         }] = toml_edit::Item::ArrayOfTables({
             let mut arr = toml_edit::ArrayOfTables::new();
-            arr.append(tbl);
+            arr.push(tbl);
             arr
         });
     }
