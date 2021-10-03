@@ -37,14 +37,14 @@ serde_json = "1.0.68"
 smol_str = { version = "0.1.18", features = ["serde"] }
 spdx = "0.6.0"
 structopt = "0.3.23"
-syn = { version = "1.0.76", features = ["extra-traits", "full", "parsing", "visit"] }
+syn = { version = "1.0.78", features = ["extra-traits", "full", "parsing", "visit"] }
 tempfile = "3.2.0"
 termcolor = "1.1.2"
-toml_edit = "0.3.1"
+toml_edit = "0.5.0"
 which = "4.2.2"
 
 [dev-dependencies]
 assert_cmd = "2.0.1"
 insta = "1.8.0"
 md5 = "0.7.0"
-pretty_assertions = "0.7.2"
+pretty_assertions = "1.0.0"

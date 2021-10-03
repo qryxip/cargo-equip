@@ -4,6 +4,15 @@
 
 ### Added
 
+- (also applied to the previous versions unless `--locked`) Updated [syn](https://docs.rs/crate/syn) to v1.0.76.
+
+    - [Now accepts some nightly-only syntax](https://github.com/dtolnay/syn/pull/1070).
+    - [Now accepts trailing `+` in _TypeParamBounds_](https://github.com/dtolnay/syn/pull/1074).
+
+## [0.18.0] - 2021-09-07Z
+
+### Added
+
 - Added `--mod-path <MODULE_PATH>` option. ([#159](https://github.com/qryxip/cargo-equip/pull/159))
 
     ```diff
