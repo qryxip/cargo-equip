@@ -215,7 +215,13 @@ pub(crate) fn cargo_check_using_current_lockfile_and_cache(
         .arg(&metadata.target_directory)
         .arg("--manifest-path")
         .arg(temp_pkg.path().join("Cargo.toml"))
-        .arg("--all-targets")
+        .args(&if target.is_bin() {
+            vec!["--bin", crate_name]
+        } else if target.is_example() {
+            vec!["--example", crate_name]
+        } else {
+            vec!["--lib"]
+        })
         .arg("--offline")
         .cwd(&metadata.workspace_root)
         .exec()?;
