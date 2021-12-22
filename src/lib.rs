@@ -991,7 +991,7 @@ fn bundle(
             if !notices.is_empty() {
                 doc += "\n # License and Copyright Notices\n";
                 for (package_id, license_text) in notices {
-                    doc += &format!("\n - `{}`\n\n", package_id);
+                    doc += &format!("\n - `{}`\n\n", package_id.mask_path());
                     let backquotes = {
                         let (mut n, mut m) = (2, None);
                         for c in license_text.chars() {
