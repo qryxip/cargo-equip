@@ -4,16 +4,18 @@
 
 ### Added
 
-- (also applied to the previous versions unless `--locked`) Updated [syn](https://docs.rs/crate/syn) to v1.0.76.
+- (also applied to the previous versions unless `--locked`) Updated [syn](https://docs.rs/crate/syn) to v1.0.83.
 
-    - [Now accepts some nightly-only syntaxes](https://github.com/dtolnay/syn/pull/1070).
+    - Now accepts some nightly-only syntaxes
     - [Now accepts trailing `+` in _TypeParamBounds_](https://github.com/dtolnay/syn/pull/1074).
 
 ### Fixed
 
-- Now outputs from `lib`/`bin` crates are `check`ed without `test` flag.
+- Now outputs from `lib`/`bin` crates are `check`ed without `test` flag. ([#177](https://github.com/qryxip/cargo-equip/pull/177))
 
     Previously, `#[test]`s without `#[cfg(test)]` are unintentionally `check`ed.
+
+- Fixed a problem where file paths are not masked in the `# License and Copyright Notices` section. ([#178](https://github.com/qryxip/cargo-equip/pull/178) by [@SGThr7](https://github.com/SGThr7))
 
 ## [0.18.0] - 2021-09-07Z
 
