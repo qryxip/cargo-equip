@@ -1,7 +1,6 @@
 use crate::{process::ProcessBuilderExt as _, shell::Shell};
 use anyhow::{anyhow, Context as _};
 use camino::Utf8Path;
-use cargo_metadata as cm;
 use cargo_util::ProcessBuilder;
 use once_cell::sync::Lazy;
 use semver::{Version, VersionReq};
@@ -26,7 +25,7 @@ pub(crate) fn active_toolchain(manifest_dir: &Utf8Path) -> anyhow::Result<String
 pub(crate) fn find_toolchain_compatible_with_ra(
     manifest_dir: &Utf8Path,
     shell: &mut Shell,
-) -> anyhow::Result<(String, cm::Version)> {
+) -> anyhow::Result<String> {
     let rustup_exe = &rustup_exe(manifest_dir)?;
 
     let cargo_version = |toolchain| -> _ {
@@ -39,8 +38,8 @@ pub(crate) fn find_toolchain_compatible_with_ra(
 
     let active_toolchain = active_toolchain(manifest_dir)?;
     let active_version = cargo_version(&active_toolchain)?;
-    if GEQ_1_47_0.matches(&active_version) {
-        return Ok((active_toolchain, active_version));
+    if GEQ_1_48_0.matches(&active_version) {
+        return Ok(active_toolchain);
     }
 
     let status = &mut |toolchain: &str| -> _ {
@@ -64,17 +63,17 @@ pub(crate) fn find_toolchain_compatible_with_ra(
         .map(|s| s.split_whitespace().next().unwrap())
         .flat_map(|toolchain| {
             let version = toolchain.split('-').next().unwrap().parse().ok()?;
-            GEQ_1_47_0.matches(&version).then(|| (version, toolchain))
+            GEQ_1_48_0.matches(&version).then(|| (version, toolchain))
         })
         .collect::<BTreeMap<Version, _>>();
 
-    if let Some((version, toolchain)) = compatible_toolchains
+    if let Some((_, toolchain)) = compatible_toolchains
         .iter()
         .next()
-        .filter(|(v, _)| v.to_string() == "1.47.0")
+        .filter(|(v, _)| v.to_string() == "1.48.0")
     {
         status(toolchain)?;
-        return Ok(((*toolchain).to_owned(), version.clone()));
+        return Ok((*toolchain).to_owned());
     }
 
     for toolchain in toolchains {
@@ -83,23 +82,20 @@ pub(crate) fn find_toolchain_compatible_with_ra(
             .any(|p| toolchain.starts_with(p))
         {
             let version = cargo_version(toolchain)?;
-            if GEQ_1_47_0.matches(&version) {
+            if GEQ_1_48_0.matches(&version) {
                 compatible_toolchains.insert(version, toolchain);
             }
         }
     }
 
-    let (compatible_version, compatible_toolchain) = compatible_toolchains
+    let (_, compatible_toolchain) = compatible_toolchains
         .iter()
         .next()
-        .with_context(|| format!("no toolchain found that satisfies {}", *GEQ_1_47_0))?;
+        .with_context(|| format!("no toolchain found that satisfies {}", *GEQ_1_48_0))?;
     status(compatible_toolchain)?;
-    return Ok((
-        (*compatible_toolchain).to_owned(),
-        compatible_version.clone(),
-    ));
+    return Ok((*compatible_toolchain).to_owned());
 
-    static GEQ_1_47_0: Lazy<VersionReq> = Lazy::new(|| ">=1.47.0".parse().unwrap());
+    static GEQ_1_48_0: Lazy<VersionReq> = Lazy::new(|| ">=1.48.0".parse().unwrap());
 
     fn extract_version(output: &str) -> anyhow::Result<Version> {
         output

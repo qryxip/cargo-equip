@@ -294,12 +294,11 @@ pub(crate) fn process_bin<'cm>(
     proc_macro_expander: Option<&mut ProcMacroExpander<'_>>,
     translate_extern_crate_name: impl FnMut(&str) -> Option<String>,
     is_lib_to_bundle: impl FnMut(&str) -> bool,
-    shell: &mut Shell,
     context: impl FnOnce() -> (String, &'cm str),
 ) -> anyhow::Result<String> {
     let mut edit = CodeEdit::new(cargo_equip_mod_name, src_path, context)?;
     if let Some(proc_macro_expander) = proc_macro_expander {
-        edit.expand_proc_macros(proc_macro_expander, shell)?;
+        edit.expand_proc_macros(proc_macro_expander)?;
     }
     edit.translate_extern_crate_paths(translate_extern_crate_name)?;
     edit.process_extern_crate_in_bin(is_lib_to_bundle)?;
@@ -617,7 +616,6 @@ impl<'opt> CodeEdit<'opt> {
     pub(crate) fn expand_proc_macros(
         &mut self,
         expander: &mut ProcMacroExpander<'_>,
-        shell: &mut Shell,
     ) -> anyhow::Result<()> {
         self.apply()?;
 
@@ -630,7 +628,6 @@ impl<'opt> CodeEdit<'opt> {
             AttributeMacroVisitor {
                 expander,
                 output: &mut output,
-                shell,
             }
             .visit_file(&self.file);
 
@@ -648,7 +645,6 @@ impl<'opt> CodeEdit<'opt> {
             DeriveMacroVisitor {
                 expander,
                 output: &mut output,
-                shell,
             }
             .visit_file(&self.file);
 
@@ -673,7 +669,6 @@ impl<'opt> CodeEdit<'opt> {
             FunctionLikeMacroVisitor {
                 expander,
                 output: &mut output,
-                shell,
             }
             .visit_file(&self.file);
 
@@ -692,7 +687,6 @@ impl<'opt> CodeEdit<'opt> {
         struct AttributeMacroVisitor<'a, 'msg> {
             expander: &'a mut ProcMacroExpander<'msg>,
             output: &'a mut anyhow::Result<Option<(Span, proc_macro2::Group)>>,
-            shell: &'a mut Shell,
         }
 
         impl AttributeMacroVisitor<'_, '_> {
@@ -712,12 +706,10 @@ impl<'opt> CodeEdit<'opt> {
                     .enumerate()
                     .filter(|(_, Attribute { style, .. })| *style == AttrStyle::Outer)
                     .find_map(|(nth, attr)| {
-                        let Self {
-                            expander, shell, ..
-                        } = self;
+                        let Self { expander, .. } = self;
                         let macro_name = attr.path.get_ident()?.to_string();
                         expander
-                            .expand_attr_macro(
+                            .attempt_expand_attr(
                                 &macro_name,
                                 || {
                                     let i = &mut i.clone();
@@ -731,10 +723,6 @@ impl<'opt> CodeEdit<'opt> {
                                             .map(|attr| attr.stream())
                                             .unwrap_or_default(),
                                     )
-                                },
-                                |msg| {
-                                    shell.warn(format!("error from RA: {}", msg))?;
-                                    Ok(())
                                 },
                             )
                             .transpose()
@@ -787,7 +775,6 @@ impl<'opt> CodeEdit<'opt> {
             output: &'a mut anyhow::Result<
                 Option<(proc_macro2::Group, Span, Span, Option<LineColumn>)>,
             >,
-            shell: &'a mut Shell,
         }
 
         impl DeriveMacroVisitor<'_, '_> {
@@ -822,18 +809,9 @@ impl<'opt> CodeEdit<'opt> {
                         }
                     })
                     .find_map(|(macro_name, path_span, comma_end)| {
-                        let Self {
-                            expander, shell, ..
-                        } = self;
+                        let Self { expander, .. } = self;
                         expander
-                            .expand_derive_macro(
-                                &macro_name,
-                                || i.to_token_stream(),
-                                |msg| {
-                                    shell.warn(format!("error from RA: {}", msg))?;
-                                    Ok(())
-                                },
-                            )
+                            .attempt_expand_custom_derive(&macro_name, || i.to_token_stream())
                             .transpose()
                             .map(move |expansion| {
                                 expansion.map(move |expansion| (expansion, path_span, comma_end))
@@ -867,7 +845,6 @@ impl<'opt> CodeEdit<'opt> {
         struct FunctionLikeMacroVisitor<'a, 'msg> {
             expander: &'a mut ProcMacroExpander<'msg>,
             output: &'a mut anyhow::Result<Option<(Span, proc_macro2::Group)>>,
-            shell: &'a mut Shell,
         }
 
         impl Visit<'_> for FunctionLikeMacroVisitor<'_, '_> {
@@ -883,17 +860,9 @@ impl<'opt> CodeEdit<'opt> {
                 }
 
                 if let Some(macro_name) = i.path.get_ident() {
-                    let Self {
-                        expander, shell, ..
-                    } = self;
-                    let expansion = expander.expand_func_like_macro(
-                        &macro_name.to_string(),
-                        || i.tokens.clone(),
-                        |msg| {
-                            shell.warn(format!("error from RA: {}", msg))?;
-                            Ok(())
-                        },
-                    );
+                    let Self { expander, .. } = self;
+                    let expansion = expander
+                        .attempt_expand_func_like(&macro_name.to_string(), || i.tokens.clone());
 
                     *self.output = match expansion {
                         Ok(Some(expansion)) => Ok(Some((i.span(), expansion))),
@@ -1671,7 +1640,7 @@ impl<'opt> CodeEdit<'opt> {
         };
 
         let code = if code.starts_with("#!") {
-            let (_, code) = code.split_at(code.find('\n').unwrap_or_else(|| code.len()));
+            let (_, code) = code.split_at(code.find('\n').unwrap_or(code.len()));
             code
         } else {
             code

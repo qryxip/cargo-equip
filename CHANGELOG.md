@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Embedded rust-analyzer for expanding procedural macros.
+
+    Previously, cargo-equip downloaded rust-analyzer(.exe) from GitHub Releases and used it.
+
+- Requires additional 1.48+ toolchain for compiling proc-macro crates when cargo-equip is used for an old toolchain such as 1.42.
+
+    Previously, 1.47 was compatible.
+
+### Fixed
+
+- Fixed [the issue where cargo-equip cannot expand procedural macros for Rust 1.58+](https://github.com/qryxip/cargo-equip/issues/180).
+
+## [0.18.1] - 2021-12-23Z
+
 ### Added
 
 - (also applied to the previous versions unless `--locked`) Updated [syn](https://docs.rs/crate/syn) to v1.0.83.

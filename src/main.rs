@@ -1,9 +1,10 @@
 #![forbid(unsafe_code)]
 #![warn(rust_2018_idioms)]
 
-use anyhow::Context as _;
+use anyhow::{anyhow, Context as _};
 use cargo_equip::{shell::Shell, Context, Opt};
-use std::env;
+use ra_ap_paths::AbsPathBuf;
+use std::{convert::TryFrom as _, env};
 use structopt::{clap, StructOpt};
 
 fn main() {
@@ -14,6 +15,13 @@ fn main() {
 
         let ctx = Context {
             cwd: env::current_dir().with_context(|| "could not get the current direcotry")?,
+            cargo_equip_exe: env::current_exe()
+                .map_err(anyhow::Error::from)
+                .and_then(|p| {
+                    AbsPathBuf::try_from(p)
+                        .map_err(|p| anyhow!("`{}` is not an absolute path", p.display()))
+                })
+                .with_context(|| "could not get the current executable")?,
             cache_dir: dirs_next::cache_dir()
                 .with_context(|| "could not find the cache directory")?
                 .join("cargo-equip"),
