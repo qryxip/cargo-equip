@@ -29,6 +29,8 @@ use petgraph::{
 };
 use prettytable::{cell, format::FormatBuilder, row, Table};
 use quote::quote;
+use ra_ap_paths::{AbsPath, AbsPathBuf};
+use ra_ap_proc_macro_srv as proc_macro_srv;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -41,6 +43,7 @@ use structopt::{clap::AppSettings, StructOpt};
 // We need to prepend " " to `long_help`s.
 // https://github.com/BurntSushi/ripgrep/blob/9eddb71b8e86a04d7048b920b9b50a2e97068d03/crates/core/app.rs#L533-L539
 
+#[allow(clippy::large_enum_variant)]
 #[derive(StructOpt, Debug)]
 #[structopt(
     author("Ryo Yamashita <qryxip@gmail.com>"),
@@ -65,187 +68,192 @@ pub enum Opt {
     cargo equip [OPTIONS] --src <PATH>"#,
         )
     )]
-    Equip {
-        /// Bundle the lib/bin/example target and its dependencies
-        #[structopt(
-            long,
-            value_name("PATH"),
-            conflicts_with_all(&["lib", "bin", "example"]),
-            long_help(indoc! {r#"
-                Bundle the lib/bin/example target and its dependencies.
+    Equip(OptEquip),
+    #[structopt(setting(AppSettings::Hidden))]
+    RustAnalyzerProcMacro {},
+}
 
-                This option is intended to be used from editors such as VSCode. Use `--lib`, `--bin` or `--example` for normal usage.
-            "#})
-        )]
-        src: Option<PathBuf>,
+#[derive(StructOpt, Debug)]
+pub struct OptEquip {
+    /// Bundle the lib/bin/example target and its dependencies
+    #[structopt(
+        long,
+        value_name("PATH"),
+        conflicts_with_all(&["lib", "bin", "example"]),
+        long_help(indoc! {r#"
+            Bundle the lib/bin/example target and its dependencies.
 
-        /// Bundle the library and its dependencies
-        #[structopt(long, conflicts_with_all(&["bin", "example"]))]
-        lib: bool,
+            This option is intended to be used from editors such as VSCode. Use `--lib`, `--bin` or `--example` for normal usage.
+        "#})
+    )]
+    src: Option<PathBuf>,
 
-        /// Bundle the binary and its dependencies
-        #[structopt(long, value_name("NAME"), conflicts_with("example"))]
-        bin: Option<String>,
+    /// Bundle the library and its dependencies
+    #[structopt(long, conflicts_with_all(&["bin", "example"]))]
+    lib: bool,
 
-        /// Bundle the binary example and its dependencies
-        #[structopt(long, value_name("NAME"))]
-        example: Option<String>,
+    /// Bundle the binary and its dependencies
+    #[structopt(long, value_name("NAME"), conflicts_with("example"))]
+    bin: Option<String>,
 
-        /// Path to Cargo.toml
-        #[structopt(long, value_name("PATH"))]
-        manifest_path: Option<PathBuf>,
+    /// Bundle the binary example and its dependencies
+    #[structopt(long, value_name("NAME"))]
+    example: Option<String>,
 
-        /// Exclude library crates from bundling
-        #[structopt(long, value_name("SPEC"))]
-        exclude: Vec<PkgSpec>,
+    /// Path to Cargo.toml
+    #[structopt(long, value_name("PATH"))]
+    manifest_path: Option<PathBuf>,
 
-        /// Alias for `--exclude {crates available on AtCoder}`
-        #[structopt(
-            long,
-            long_help(Box::leak(
-                format!(
-                    "Alias for:\n--exclude {}\n ",
-                    ATCODER_CRATES.iter().format("\n          "),
-                )
-                .into_boxed_str(),
-            ))
-        )]
-        exclude_atcoder_crates: bool,
+    /// Exclude library crates from bundling
+    #[structopt(long, value_name("SPEC"))]
+    exclude: Vec<PkgSpec>,
 
-        /// Alias for `--exclude {crates available on CodinGame}`
-        #[structopt(
-            long,
-            long_help(Box::leak(
-                format!(
-                    "Alias for:\n--exclude {}\n ",
-                    CODINGAME_CRATES.iter().format("\n          "),
-                )
-                .into_boxed_str(),
-            ))
-        )]
-        exclude_codingame_crates: bool,
-
-        /// Do not include license and copyright notices for the users
-        #[structopt(
-            long,
-            value_name("DOMAIN_AND_USERNAME"),
-            long_help(
-                concat!(
-                    indoc! {r#"
-                        Do not include license and copyright notices for the users.
-
-                        Supported formats:
-                        * github.com/{username}
-                        * gitlab.com/{username}
-                    "#},
-                    ' ',
-                )
+    /// Alias for `--exclude {crates available on AtCoder}`
+    #[structopt(
+        long,
+        long_help(Box::leak(
+            format!(
+                "Alias for:\n--exclude {}\n ",
+                ATCODER_CRATES.iter().format("\n          "),
             )
-        )]
-        mine: Vec<User>,
+            .into_boxed_str(),
+        ))
+    )]
+    exclude_atcoder_crates: bool,
 
-        /// `nightly` toolchain for `cargo-udeps`
-        #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
-        toolchain: String,
+    /// Alias for `--exclude {crates available on CodinGame}`
+    #[structopt(
+        long,
+        long_help(Box::leak(
+            format!(
+                "Alias for:\n--exclude {}\n ",
+                CODINGAME_CRATES.iter().format("\n          "),
+            )
+            .into_boxed_str(),
+        ))
+    )]
+    exclude_codingame_crates: bool,
 
-        /// Expand the libraries to the module
-        #[structopt(long, value_name("MODULE_PATH"), default_value("crate::__cargo_equip"))]
-        mod_path: CrateSinglePath,
-
-        /// Remove some part [possible values: docs, comments]
-        #[structopt(
-            long,
-            value_name("REMOVE"),
-            possible_values(Remove::VARIANTS),
-            hide_possible_values(true),
-            long_help(concat!(
+    /// Do not include license and copyright notices for the users
+    #[structopt(
+        long,
+        value_name("DOMAIN_AND_USERNAME"),
+        long_help(
+            concat!(
                 indoc! {r#"
-                    Removes
-                    * doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`) with `--remove docs`.
-                    * comments (`// ..`, `/* .. */`) with `--remove comments`.
+                    Do not include license and copyright notices for the users.
 
-                    ```
-                    #[allow(dead_code)]
-                    pub mod a {
-                        //! A.
-
-                        /// A.
-                        pub struct A; // aaaaa
-                    }
-                    ```
-
-                    ↓
-
-                    ```
-                    #[allow(dead_code)]
-                    pub mod a {
-                        pub struct A;
-                    }
-                    ```
+                    Supported formats:
+                    * github.com/{username}
+                    * gitlab.com/{username}
                 "#},
                 ' ',
-            ))
-        )]
-        remove: Vec<Remove>,
+            )
+        )
+    )]
+    mine: Vec<User>,
 
-        /// Minify part of the output before emitting [default: none]  [possible values: none, libs, all]
-        #[structopt(
-            long,
-            value_name("MINIFY"),
-            possible_values(Minify::VARIANTS),
-            hide_possible_values(true),
-            default_value("none"),
-            hide_default_value(true),
-            long_help(concat!(
-                indoc! {r#"
-                    Minifies
-                    - each expaned library with `--minify lib`.
-                    - the whole code with `--minify all`.
+    /// `nightly` toolchain for `cargo-udeps`
+    #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
+    toolchain: String,
 
-                    Not that the minification function is incomplete. Unnecessary spaces may be inserted.
-                "#},
-                ' ',
-            ))
-        )]
-        minify: Minify,
+    /// Expand the libraries to the module
+    #[structopt(long, value_name("MODULE_PATH"), default_value("crate::__cargo_equip"))]
+    mod_path: CrateSinglePath,
 
-        /// Do not resolve `cfg(..)`s
-        #[structopt(long)]
-        no_resolve_cfgs: bool,
+    /// Remove some part [possible values: docs, comments]
+    #[structopt(
+        long,
+        value_name("REMOVE"),
+        possible_values(Remove::VARIANTS),
+        hide_possible_values(true),
+        long_help(concat!(
+            indoc! {r#"
+                Removes
+                * doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`) with `--remove docs`.
+                * comments (`// ..`, `/* .. */`) with `--remove comments`.
 
-        /// Do not format the output before emitting
-        #[structopt(long)]
-        no_rustfmt: bool,
+                ```
+                #[allow(dead_code)]
+                pub mod a {
+                    //! A.
 
-        /// Do not check the output before emitting
-        #[structopt(long)]
-        no_check: bool,
+                    /// A.
+                    pub struct A; // aaaaa
+                }
+                ```
 
-        /// Write to the file instead of STDOUT
-        #[structopt(short, long, value_name("PATH"))]
-        output: Option<PathBuf>,
+                ↓
 
-        /// [Deprecated] Alias for `--minify`
-        #[structopt(
-            long,
-            value_name("MINIFY"),
-            possible_values(Minify::VARIANTS),
-            default_value("none")
-        )]
-        oneline: Minify,
+                ```
+                #[allow(dead_code)]
+                pub mod a {
+                    pub struct A;
+                }
+                ```
+            "#},
+            ' ',
+        ))
+    )]
+    remove: Vec<Remove>,
 
-        /// [Deprecated] No-op
-        #[structopt(long, conflicts_with("no_resolve_cfgs"))]
-        resolve_cfgs: bool,
+    /// Minify part of the output before emitting [default: none]  [possible values: none, libs, all]
+    #[structopt(
+        long,
+        value_name("MINIFY"),
+        possible_values(Minify::VARIANTS),
+        hide_possible_values(true),
+        default_value("none"),
+        hide_default_value(true),
+        long_help(concat!(
+            indoc! {r#"
+                Minifies
+                - each expaned library with `--minify lib`.
+                - the whole code with `--minify all`.
 
-        /// [Deprecated] No-op
-        #[structopt(long, conflicts_with("no_rustfmt"))]
-        rustfmt: bool,
+                Not that the minification function is incomplete. Unnecessary spaces may be inserted.
+            "#},
+            ' ',
+        ))
+    )]
+    minify: Minify,
 
-        /// [Deprecated] No-op
-        #[structopt(long, conflicts_with("no_check"))]
-        check: bool,
-    },
+    /// Do not resolve `cfg(..)`s
+    #[structopt(long)]
+    no_resolve_cfgs: bool,
+
+    /// Do not format the output before emitting
+    #[structopt(long)]
+    no_rustfmt: bool,
+
+    /// Do not check the output before emitting
+    #[structopt(long)]
+    no_check: bool,
+
+    /// Write to the file instead of STDOUT
+    #[structopt(short, long, value_name("PATH"))]
+    output: Option<PathBuf>,
+
+    /// [Deprecated] Alias for `--minify`
+    #[structopt(
+        long,
+        value_name("MINIFY"),
+        possible_values(Minify::VARIANTS),
+        default_value("none")
+    )]
+    oneline: Minify,
+
+    /// [Deprecated] No-op
+    #[structopt(long, conflicts_with("no_resolve_cfgs"))]
+    resolve_cfgs: bool,
+
+    /// [Deprecated] No-op
+    #[structopt(long, conflicts_with("no_rustfmt"))]
+    rustfmt: bool,
+
+    /// [Deprecated] No-op
+    #[structopt(long, conflicts_with("no_check"))]
+    check: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -344,6 +352,7 @@ impl FromStr for Minify {
 
 pub struct Context<'a> {
     pub cwd: PathBuf,
+    pub cargo_equip_exe: AbsPathBuf,
     pub cache_dir: PathBuf,
     pub shell: &'a mut Shell,
 }
@@ -402,7 +411,11 @@ static CODINGAME_CRATES: &[&str] = &[
 ];
 
 pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
-    let Opt::Equip {
+    let opt = match opt {
+        Opt::Equip(opt) => opt,
+        Opt::RustAnalyzerProcMacro {} => return proc_macro_srv::cli::run().map_err(Into::into),
+    };
+    let OptEquip {
         src,
         lib,
         bin,
@@ -444,6 +457,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     let Context {
         cwd,
+        cargo_equip_exe,
         cache_dir,
         shell,
     } = ctx;
@@ -542,6 +556,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         &remove,
         minify,
         !no_rustfmt,
+        &cargo_equip_exe,
         &cache_dir,
         shell,
     )
@@ -578,6 +593,7 @@ fn bundle(
     remove: &[Remove],
     minify: Minify,
     rustfmt: bool,
+    cargo_equip_exe: &AbsPath,
     cache_dir: &Path,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
@@ -595,34 +611,27 @@ fn bundle(
         })
         .unwrap_or_else(|| Ok(vec![]))?;
 
-    let (ra_rustc_version, cargo_messages_for_proc_macro_dll_paths) = &libs_to_bundle
-        .keys()
-        .any(|p| metadata[p].has_proc_macro())
+    let has_proc_macro = libs_to_bundle.keys().any(|p| metadata[p].has_proc_macro());
+
+    let cargo_messages_for_proc_macro_dll_paths = &has_proc_macro
         .then(|| {
-            let (toolchain, version) = toolchain::find_toolchain_compatible_with_ra(
+            let toolchain = toolchain::find_toolchain_compatible_with_ra(
                 root_crate.package().manifest_dir(),
                 shell,
             )?;
             let msgs = cargo_check_message_format_json(&toolchain, shell)?;
-            Ok::<_, anyhow::Error>((Some(version), msgs))
+            Ok::<_, anyhow::Error>(msgs)
         })
-        .unwrap_or_else(|| Ok((None, vec![])))?;
+        .unwrap_or_else(|| Ok(vec![]))?;
 
     let out_dirs = workspace::list_out_dirs(metadata, cargo_messages_for_out_dirs);
-    let proc_macro_crate_dlls =
-        &ra_proc_macro::list_proc_macro_dlls(cargo_messages_for_proc_macro_dll_paths, |p| {
+    let proc_macro_crate_dylibs =
+        &ra_proc_macro::list_proc_macro_dylibs(cargo_messages_for_proc_macro_dll_paths, |p| {
             libs_to_bundle.contains_key(p)
         });
 
-    let macro_expander = ra_rustc_version
-        .as_ref()
-        .map(|ra_rustc_version| {
-            ProcMacroExpander::new(
-                &ra_proc_macro::dl_ra(cache_dir, ra_rustc_version, shell)?,
-                proc_macro_crate_dlls,
-                shell,
-            )
-        })
+    let macro_expander = has_proc_macro
+        .then(|| ProcMacroExpander::spawn(cargo_equip_exe, proc_macro_crate_dylibs))
         .transpose()?;
 
     let proc_macro_names = macro_expander
@@ -679,7 +688,6 @@ fn bundle(
                     Some(lib_package) if libs_to_bundle.contains_key(&lib_package.id)
                 )
             },
-            shell,
             || (bin_target.crate_name(), &bin_package.id.repr),
         )?;
     }

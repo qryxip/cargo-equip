@@ -567,9 +567,8 @@ const _: () = {
 </details>
 -->
 
-- `rust-analyzer(.exe)` is automatically downloaded.
-- `proc-macro` crates need to be compile with Rust 1.47.0+.
-   If version of the active toolchain is less than 1.47.0, cargo-equip finds an alternative toolchain and uses it for compiling `proc-macro`s.
+- `proc-macro` crates need to be compile with Rust 1.48.0+.
+   If version of the active toolchain is less than 1.48.0, cargo-equip finds an alternative toolchain and uses it for compiling `proc-macro`s.
 - procedural macros re-exported with `pub use $name::*;` are also able to be expanded.
 
 ## Options
