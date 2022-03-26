@@ -1053,7 +1053,7 @@ fn bundle(
             if minify == Minify::Libs {
                 for (pseudo_extern_crate_name, mod_content) in mods {
                     *code += "        pub mod ";
-                    *code += &pseudo_extern_crate_name.to_string();
+                    *code += pseudo_extern_crate_name;
                     *code += " {";
                     *code += &rustminify::minify_file(&rust::parse_file(mod_content)?);
                     *code += "}\n";

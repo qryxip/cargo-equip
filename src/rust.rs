@@ -1640,7 +1640,7 @@ impl<'opt> CodeEdit<'opt> {
         };
 
         let code = if code.starts_with("#!") {
-            let (_, code) = code.split_at(code.find('\n').unwrap_or_else(|| code.len()));
+            let (_, code) = code.split_at(code.find('\n').unwrap_or(code.len()));
             code
         } else {
             code
