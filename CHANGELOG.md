@@ -1,24 +1,24 @@
 # Changelog
 
-## [Unreleased]
+## [0.19.0] - 2022-03-26Z
 
 ### Added
 
-- Ignores [workspace members](https://doc.rust-lang.org/cargo/reference/workspaces.html) when checking licenses.
+- Ignores [workspace members](https://doc.rust-lang.org/cargo/reference/workspaces.html) when checking licenses. ([#184](https://github.com/qryxip/cargo-equip/pull/184))
 
 ### Changed
 
-- Embedded rust-analyzer for expanding procedural macros.
+- Embedded rust-analyzer for expanding procedural macros. ([#183](https://github.com/qryxip/cargo-equip/pull/183))
 
     Previously, cargo-equip downloaded rust-analyzer(.exe) from GitHub Releases and used it.
 
-- Requires additional 1.48+ toolchain for compiling proc-macro crates when cargo-equip is used for an old toolchain such as 1.42.
+- Requires additional 1.48+ toolchain for compiling proc-macro crates when cargo-equip is used for an old toolchain such as 1.42. ([#183](https://github.com/qryxip/cargo-equip/pull/183))
 
     Previously, 1.47 was compatible.
 
 ### Fixed
 
-- Fixed [the issue where cargo-equip cannot expand procedural macros for Rust 1.58+](https://github.com/qryxip/cargo-equip/issues/180).
+- Fixed [the issue where cargo-equip cannot expand procedural macros for Rust 1.58+](https://github.com/qryxip/cargo-equip/issues/180). ([#183](https://github.com/qryxip/cargo-equip/pull/183))
 
 ## [0.18.1] - 2021-12-23Z
 
