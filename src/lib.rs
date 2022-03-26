@@ -981,19 +981,15 @@ fn bundle(
             let notices = libs
                 .iter()
                 .filter(|(_, (p, _, _, _))| p.has_lib())
-                .map(|(_, (p, _, _, _))| p)
-                .flat_map(|lib_package| {
-                    if let Err(err) =
-                        shell.status("Checking", format!("the license of `{}`", lib_package.id))
-                    {
-                        return Some(Err(err.into()));
-                    }
-                    match lib_package.read_license_text(mine, cache_dir) {
-                        Ok(Some(license_text)) => Some(Ok((&lib_package.id, license_text))),
-                        Ok(None) => None,
-                        Err(err) => Some(Err(err)),
-                    }
+                .map(|(_, (lib_package, _, _, _))| {
+                    shell.status("Checking", format!("the license of `{}`", lib_package.id))?;
+                    lib_package
+                        .read_license_text(mine, cache_dir)
+                        .map(|license_text| {
+                            license_text.map(|license_text| (&lib_package.id, license_text))
+                        })
                 })
+                .flat_map(Result::transpose)
                 .collect::<Result<Vec<_>, _>>()?;
 
             if !notices.is_empty() {
