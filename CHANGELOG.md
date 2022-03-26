@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Ignores [workspace members](https://doc.rust-lang.org/cargo/reference/workspaces.html) when checking licenses.
+
 ### Changed
 
 - Embedded rust-analyzer for expanding procedural macros.

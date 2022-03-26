@@ -980,7 +980,9 @@ fn bundle(
 
             let notices = libs
                 .iter()
-                .filter(|(_, (p, _, _, _))| p.has_lib())
+                .filter(|(_, (p, _, _, _))| {
+                    p.has_lib() && !metadata.workspace_members.contains(&p.id)
+                })
                 .map(|(_, (lib_package, _, _, _))| {
                     shell.status("Checking", format!("the license of `{}`", lib_package.id))?;
                     lib_package
