@@ -22,18 +22,12 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Set up `stable`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          default: true
-          profile: minimal
           components: rustfmt
 
       - name: cargo-fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
   grcov:
     name: grcov
@@ -47,32 +41,28 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Set up `stable`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          profile: minimal
           components: llvm-tools-preview, rustfmt
 
       - name: Set up `${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
-          profile: minimal
-          default: true
 
       - name: Install cargo-binstall
         uses: taiki-e/install-action@cargo-binstall
 
       - name: Install cargo-udeps
         run: |
-          cargo binstall \
+          cargo +stable binstall \
             cargo-udeps@^0.1 \
             --no-confirm \
             --log-level debug
 
       - name: Install grcov
         run: |
-          cargo binstall \
+          cargo +stable binstall \
             grcov@^0.8 \
             --pkg-url '{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.bz2' \
             --pkg-fmt tbz2 \
@@ -81,11 +71,7 @@ jobs:
             --log-level debug
 
       - name: cargo-test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-fail-fast -v -- --test-threads 1
-          toolchain: stable
+        run: cargo +stable test --no-fail-fast -v -- --test-threads 1
         env:
           RUSTFLAGS: '-Cinstrument-coverage'
           RUST_BACKTRACE: full
@@ -128,20 +114,17 @@ jobs:
         uses: actions/checkout@v3
 
       - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
-        id: install-toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.channel }}
-          target: ${{ matrix.target-triple }}
-          default: true
-          profile: minimal
+          targets: ${{ matrix.target-triple }}
           components: clippy
 
       - name: Set up `${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
-          target: ${{ matrix.target-triple }}
+          targets: ${{ matrix.target-triple }}
           profile: minimal
 
       - name: Cache for build cache
@@ -158,44 +141,28 @@ jobs:
 
       - name: Install cargo-udeps
         run: |
-          cargo binstall \
+          cargo +${{ matrix.channel }} binstall \
             cargo-udeps@^0.1 \
             --no-confirm \
             --log-level debug
         shell: bash
 
       - name: cargo-clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-targets --target ${{ matrix.target-triple }} -- -D warnings
+        run: cargo +${{ matrix.channel }} clippy --all-targets --target ${{ matrix.target-triple }} -- -D warnings
 
       - name: cargo-test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-fail-fast --target ${{ matrix.target-triple }} -- --test-threads 1
+        run: cargo +${{ matrix.channel }} test --no-fail-fast --target ${{ matrix.target-triple }} -- --test-threads 1
         env:
           RUST_BACKTRACE: full
 
       - name: cargo-install (locked)
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path . --debug --target ${{ matrix.target-triple }} --locked
+        run: cargo +${{ matrix.channel }} install --path . --debug --target ${{ matrix.target-triple }} --locked
 
       - name: cargo-install
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path . --debug --target ${{ matrix.target-triple }}
+        run: cargo +${{ matrix.channel }} install --path . --debug --target ${{ matrix.target-triple }}
 
       - name: cargo-udeps
-        uses: actions-rs/cargo@v1
-        with:
-          command: udeps
-          args: --all-targets
-          toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
+        run: cargo +${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }} udeps --all-targets
 
   upload-archives:
     strategy:
@@ -223,18 +190,12 @@ jobs:
         uses: actions/checkout@v3
 
       - name: 'Set up `stable` (target: `${{ matrix.target-triple }}`)'
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: ${{ matrix.target-triple }}
-          default: true
-          profile: minimal
+          targets: ${{ matrix.target-triple }}
 
       - name: cargo-install
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path . --target ${{ matrix.target-triple }} -v --locked
+        run: cargo install --path . --target ${{ matrix.target-triple }} -v --locked
 
       - name: Create an asset
         id: asset
