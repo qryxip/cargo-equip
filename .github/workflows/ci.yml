@@ -62,7 +62,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up `stable`
         uses: actions-rs/toolchain@v1
@@ -87,7 +87,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up `stable`
         uses: actions-rs/toolchain@v1
@@ -151,7 +151,7 @@ jobs:
         run: rustup run "$CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN" grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
 
       - name: Codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: lcov.info
@@ -181,7 +181,7 @@ jobs:
         if: ${{ matrix.os == 'windows-2019' }}
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
         id: install-toolchain
@@ -291,7 +291,7 @@ jobs:
         if: ${{ matrix.os == 'windows-2019' }}
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: 'Set up `stable` (target: `${{ matrix.target-triple }}`)'
         uses: actions-rs/toolchain@v1
@@ -330,7 +330,7 @@ jobs:
         shell: bash
 
       - name: Upload the artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: assets
           path: ${{ steps.asset.outputs.asset }}
@@ -342,10 +342,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Python 3.9
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
@@ -368,7 +368,7 @@ jobs:
         shell: python
 
       - name: Upload the release notes
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: release-notes
           path: release-notes.md
@@ -380,13 +380,13 @@ jobs:
 
     steps:
       - name: Download the assets
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: assets
           path: ./assets
 
       - name: Download the release notes
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: release-notes
           path: .
