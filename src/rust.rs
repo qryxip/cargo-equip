@@ -366,19 +366,19 @@ impl<'opt> CodeEdit<'opt> {
                     } else if depth == 0 || src_path.file_name() == Some("mod.rs") {
                         vec![
                             src_path
-                                .with_file_name(&ident.to_string())
+                                .with_file_name(ident.to_string())
                                 .with_extension("rs"),
-                            src_path.with_file_name(&ident.to_string()).join("mod.rs"),
+                            src_path.with_file_name(ident.to_string()).join("mod.rs"),
                         ]
                     } else {
                         vec![
                             src_path
                                 .with_extension("")
-                                .with_file_name(&ident.to_string())
+                                .with_file_name(ident.to_string())
                                 .with_extension("rs"),
                             src_path
                                 .with_extension("")
-                                .with_file_name(&ident.to_string())
+                                .with_file_name(ident.to_string())
                                 .join("mod.rs"),
                         ]
                     };
