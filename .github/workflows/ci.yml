@@ -127,14 +127,8 @@ jobs:
           targets: ${{ matrix.target-triple }}
           profile: minimal
 
-      - name: Cache for build cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            ./target
-          key: build-build-${{ matrix.channel }}-${{ matrix.target-triple }}-${{ steps.install-toolchain.outputs.rustc_hash }}-${{ hashFiles('./Cargo.*') }}
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Install cargo-binstall
         uses: taiki-e/install-action@cargo-binstall
