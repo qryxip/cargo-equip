@@ -63,7 +63,7 @@ pub(crate) fn find_toolchain_compatible_with_ra(
         .map(|s| s.split_whitespace().next().unwrap())
         .flat_map(|toolchain| {
             let version = toolchain.split('-').next().unwrap().parse().ok()?;
-            GEQ_1_48_0.matches(&version).then(|| (version, toolchain))
+            GEQ_1_48_0.matches(&version).then_some((version, toolchain))
         })
         .collect::<BTreeMap<Version, _>>();
 

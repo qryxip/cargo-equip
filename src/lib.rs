@@ -575,7 +575,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
 
     if let Some(output) = output {
         let output = cwd.join(output);
-        cargo_util::paths::write(&output, code)
+        cargo_util::paths::write(output, code)
     } else {
         write!(shell.out(), "{}", code)?;
         Ok(())

@@ -252,8 +252,8 @@ pub(crate) trait MetadataExt {
         cargo_udeps_outcome: &HashSet<String>,
         exclude: &[PkgSpec],
     ) -> anyhow::Result<BTreeMap<&'a cm::PackageId, (&'a cm::Target, String)>>;
-    fn dep_lib_by_extern_crate_name<'a>(
-        &'a self,
+    fn dep_lib_by_extern_crate_name(
+        &self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
     ) -> Option<&cm::Package>;
@@ -509,8 +509,8 @@ impl MetadataExt for cm::Metadata {
         Ok(deps)
     }
 
-    fn dep_lib_by_extern_crate_name<'a>(
-        &'a self,
+    fn dep_lib_by_extern_crate_name(
+        &self,
         package_id: &cm::PackageId,
         extern_crate_name: &str,
     ) -> Option<&cm::Package> {
