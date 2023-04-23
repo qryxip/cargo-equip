@@ -166,7 +166,7 @@ jobs:
           - x86_64-unknown-linux-gnu
         include:
           - { channel: stable, target-triple: x86_64-pc-windows-msvc  , exe-suffix: .exe, os: windows-2019 }
-          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-10.15  }
+          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-11     }
           - { channel: stable, target-triple: x86_64-unknown-linux-gnu, exe-suffix: ''  , os: ubuntu-20.04 }
 
     name: ${{ matrix.channel }}-${{ matrix.target-triple }}
@@ -278,7 +278,7 @@ jobs:
           - x86_64-unknown-linux-gnu
         include:
           - { target-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
-          - { target-triple: x86_64-apple-darwin     , os: macos-10.15  }
+          - { target-triple: x86_64-apple-darwin     , os: macos-11     }
           - { target-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
 
     name: Upload (${{ matrix.target-triple }})
