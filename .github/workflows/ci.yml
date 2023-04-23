@@ -12,49 +12,6 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+**'
   pull_request:
 
-env:
-  RESOLVE_VERSIONS_PY: |
-    from argparse import ArgumentParser
-    import json
-    import urllib.request
-    import re
-
-    CRATE_SPEC = re.compile(r'\A([a-zA-Z0-9_-]+)@\^([0-9]+)\.([0-9]+)\Z')
-
-
-    def main() -> None:
-        parser = ArgumentParser()
-        parser.add_argument('specs', metavar='PSEUDO_SPECS', type=CrateSpec, nargs='+')
-        print('\n'.join(map(resolve, parser.parse_args().specs)))
-
-
-    class CrateSpec:
-        def __init__(self, s: str):
-            if not (m := CRATE_SPEC.match(s)):
-                raise RuntimeError(f'the version must be `{CRATE_SPEC.pattern}`')
-            self.package_name = m.group(1)
-            self.version_req_major = int(m.group(2))
-            self.version_req_minor = int(m.group(3))
-
-
-    def resolve(spec: CrateSpec) -> str:
-        with urllib.request.urlopen(f'https://crates.io/api/v1/crates/{spec.package_name}') as res:
-            versions = json.load(res)['versions']
-        matched = set()
-        for version in versions:
-            major, minor, patch_pre_build = version['num'].split('.')
-            major, minor = (int(major), int(minor))
-            if ((major, spec.version_req_major) == (0, 0) and minor == spec.version_req_minor or major == spec.version_req_major and minor >= spec.version_req_minor) and patch_pre_build.isdecimal():
-                matched.add((minor, int(patch_pre_build)))
-        if not matched:
-            raise RuntimeError(f'No such package: `{spec.package_name} ^{spec.version_req_major}.{spec.version_req_minor}`')
-        minor, patch = max(matched)
-        return f'::set-output name={spec.package_name}::{spec.version_req_major}.{minor}.{patch}'
-
-
-    if __name__ == '__main__':
-        main()
-
 jobs:
   rustfmt:
     name: Rustfmt
@@ -62,21 +19,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up `stable`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          default: true
-          profile: minimal
           components: rustfmt
 
       - name: cargo-fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
   grcov:
     name: grcov
@@ -87,71 +38,50 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up `stable`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          profile: minimal
+          components: llvm-tools-preview, rustfmt
 
       - name: Set up `${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
-          profile: minimal
-          components: llvm-tools-preview, rustfmt
-          default: true
 
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@cargo-binstall
 
-      - name: Resolve `cargo-udeps ^0.1` and `grcov ^0.8`
-        id: resolve-versions
-        run: python -c "$RESOLVE_VERSIONS_PY" cargo-udeps@^0.1 grcov@^0.8
+      - name: Install cargo-udeps
+        run: |
+          cargo +stable binstall \
+            cargo-udeps@^0.1 \
+            --no-confirm \
+            --log-level debug
 
-      - name: Cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin/cargo-udeps
-            ~/.cargo/bin/grcov
-          key: grcov-${{ steps.resolve-versions.outputs.cargo-udeps }}-${{ steps.resolve-versions.outputs.grcov }}
-
-      - name: Install cargo-udeps v${{ steps.resolve-versions.outputs.cargo-udeps }}
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-udeps --version '=${{ steps.resolve-versions.outputs.cargo-udeps }}'
-          toolchain: stable
-
-      - name: Install grcov v${{ steps.resolve-versions.outputs.grcov }}
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: grcov --version '=${{ steps.resolve-versions.outputs.grcov }}'
-          toolchain: stable
+      - name: Install grcov
+        run: |
+          cargo +stable binstall \
+            grcov@^0.8 \
+            --pkg-url '{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.bz2' \
+            --pkg-fmt tbz2 \
+            --bin-dir '{ bin }{ binary-ext }' \
+            --no-confirm \
+            --log-level debug
 
       - name: cargo-test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-fail-fast -v -- --test-threads 1
-          toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
+        run: cargo +stable test --no-fail-fast -v -- --test-threads 1
         env:
-          RUSTFLAGS: '-Zinstrument-coverage'
+          RUSTFLAGS: '-Cinstrument-coverage'
           RUST_BACKTRACE: full
           LLVM_PROFILE_FILE: '%p-%m.profraw'
 
       - name: grcov
-        run: rustup run "$CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN" grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+        run: grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore '/*' -o lcov.info
 
       - name: Codecov
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: lcov.info
@@ -166,7 +96,7 @@ jobs:
           - x86_64-unknown-linux-gnu
         include:
           - { channel: stable, target-triple: x86_64-pc-windows-msvc  , exe-suffix: .exe, os: windows-2019 }
-          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-10.15  }
+          - { channel: stable, target-triple: x86_64-apple-darwin     , exe-suffix: ''  , os: macos-11     }
           - { channel: stable, target-triple: x86_64-unknown-linux-gnu, exe-suffix: ''  , os: ubuntu-20.04 }
 
     name: ${{ matrix.channel }}-${{ matrix.target-triple }}
@@ -181,97 +111,52 @@ jobs:
         if: ${{ matrix.os == 'windows-2019' }}
 
       - name: Checkout
-        uses: actions/checkout@v2
-
-      # Workaround for https://github.com/actions/cache/issues/403
-      - name: Use GNU tar
-        run: echo "PATH=/usr/local/opt/gnu-tar/libexec/gnubin:$PATH" >>"$GITHUB_ENV"
-        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: actions/checkout@v3
 
       - name: 'Set up `${{ matrix.channel }}` (target: `${{ matrix.target-triple }}`)'
-        id: install-toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.channel }}
-          target: ${{ matrix.target-triple }}
-          default: true
-          profile: minimal
+          targets: ${{ matrix.target-triple }}
           components: clippy
 
       - name: Set up `${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}`
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
-          target: ${{ matrix.target-triple }}
+          targets: ${{ matrix.target-triple }}
           profile: minimal
 
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
 
-      - name: Resolve `cargo-udeps ^0.1`
-        id: resolve-versions
-        run: python -c "$RESOLVE_VERSIONS_PY" cargo-udeps@^0.1
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@cargo-binstall
+
+      - name: Install cargo-udeps
+        run: |
+          cargo +${{ matrix.channel }} binstall \
+            cargo-udeps@^0.1 \
+            --no-confirm \
+            --log-level debug
         shell: bash
 
-      - name: Cache for cargo-udeps
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/.crates.toml
-            ~/.cargo/.crates2.json
-            ~/.cargo/bin/cargo-udeps${{ matrix.exe-suffix }}
-          key: build-crates-${{ matrix.os }}-${{ steps.resolve-versions.outputs.cargo-udeps }}
-
-      - name: Cache for build cache
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            ./target
-          key: build-build-${{ matrix.channel }}-${{ matrix.target-triple }}-${{ steps.install-toolchain.outputs.rustc_hash }}-${{ hashFiles('./Cargo.*') }}
-
-      - name: Install cargo-udeps v${{ steps.resolve-versions.outputs.cargo-udeps }}
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-udeps --version '=${{ steps.resolve-versions.outputs.cargo-udeps }}'
-          toolchain: stable
-
       - name: cargo-clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-targets --target ${{ matrix.target-triple }} -- -D warnings
+        run: cargo +${{ matrix.channel }} clippy --all-targets --target ${{ matrix.target-triple }} -- -D warnings
 
       - name: cargo-test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-fail-fast --target ${{ matrix.target-triple }} -- --test-threads 1
+        run: cargo +${{ matrix.channel }} test --no-fail-fast --target ${{ matrix.target-triple }} -- --test-threads 1
         env:
           RUST_BACKTRACE: full
 
       - name: cargo-install (locked)
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path . --debug --target ${{ matrix.target-triple }} --locked
+        run: cargo +${{ matrix.channel }} install --path . --debug --target ${{ matrix.target-triple }} --locked
 
       - name: cargo-install
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path . --debug --target ${{ matrix.target-triple }}
+        run: cargo +${{ matrix.channel }} install --path . --debug --target ${{ matrix.target-triple }}
 
       - name: cargo-udeps
-        uses: actions-rs/cargo@v1
-        with:
-          command: udeps
-          args: --all-targets
-          toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
+        run: cargo +${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }} udeps --all-targets
 
   upload-archives:
     strategy:
@@ -283,7 +168,7 @@ jobs:
           - x86_64-unknown-linux-gnu
         include:
           - { target-triple: x86_64-pc-windows-msvc  , os: windows-2019 }
-          - { target-triple: x86_64-apple-darwin     , os: macos-10.15  }
+          - { target-triple: x86_64-apple-darwin     , os: macos-11     }
           - { target-triple: x86_64-unknown-linux-gnu, os: ubuntu-20.04 }
 
     name: Upload (${{ matrix.target-triple }})
@@ -296,21 +181,15 @@ jobs:
         if: ${{ matrix.os == 'windows-2019' }}
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: 'Set up `stable` (target: `${{ matrix.target-triple }}`)'
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: ${{ matrix.target-triple }}
-          default: true
-          profile: minimal
+          targets: ${{ matrix.target-triple }}
 
       - name: cargo-install
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: --path . --target ${{ matrix.target-triple }} -v --locked
+        run: cargo install --path . --target ${{ matrix.target-triple }} -v --locked
 
       - name: Create an asset
         id: asset
@@ -335,7 +214,7 @@ jobs:
         shell: bash
 
       - name: Upload the artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: assets
           path: ${{ steps.asset.outputs.asset }}
@@ -347,10 +226,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Python 3.9
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
@@ -373,7 +252,7 @@ jobs:
         shell: python
 
       - name: Upload the release notes
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: release-notes
           path: release-notes.md
@@ -385,13 +264,13 @@ jobs:
 
     steps:
       - name: Download the assets
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: assets
           path: ./assets
 
       - name: Download the release notes
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: release-notes
           path: .
