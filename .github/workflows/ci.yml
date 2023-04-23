@@ -94,13 +94,13 @@ jobs:
         with:
           toolchain: stable
           profile: minimal
+          components: llvm-tools-preview, rustfmt
 
       - name: Set up `${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}`
         uses: actions-rs/toolchain@v1
         with:
           toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
           profile: minimal
-          components: llvm-tools-preview, rustfmt
           default: true
 
       - name: Set up Python 3.9
@@ -141,14 +141,14 @@ jobs:
         with:
           command: test
           args: --no-fail-fast -v -- --test-threads 1
-          toolchain: ${{ env.CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN }}
+          toolchain: stable
         env:
-          RUSTFLAGS: '-Zinstrument-coverage'
+          RUSTFLAGS: '-Cinstrument-coverage'
           RUST_BACKTRACE: full
           LLVM_PROFILE_FILE: '%p-%m.profraw'
 
       - name: grcov
-        run: rustup run "$CARGO_EQUIP_TEST_NIGHTLY_TOOLCHAIN" grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+        run: grcov . -b ./target/debug -s . -t lcov --branch --ignore-not-existing --ignore '/*' -o lcov.info
 
       - name: Codecov
         uses: codecov/codecov-action@v3
