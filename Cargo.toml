@@ -9,45 +9,45 @@ keywords = ["competitive", "cli", "windows"]
 categories = ["command-line-utilities", "development-tools::cargo-plugins"]
 
 [dependencies]
-anyhow = "1.0.56"
+anyhow = "1.0.72"
 atty = "0.2.14"
-camino = { version = "1.0.7", features = ["serde1"] }
+camino = { version = "1.1.6", features = ["serde1"] }
 cargo-util = "0.1.2"
 cargo_metadata = "0.14.2"
-cfg-expr = "0.9.0"
+cfg-expr = "0.9.1"
 derive_more = "0.99.17"
 dirs-next = "2.0.0"
-fixedbitset = "0.4.1"
+fixedbitset = "0.4.2"
 if_chain = "1.0.2"
-indoc = "1.0.4"
-itertools = "0.10.3"
+indoc = "1.0.9"
+itertools = "0.10.5"
 krates = "0.8.1"
 maplit = "1.0.2"
-once_cell = "1.10.0"
-petgraph = "0.6.0"
+once_cell = "1.18.0"
+petgraph = "0.6.3"
 prettytable-rs = "0.10.0"
-proc-macro2 = { version = "1.0.36", features = ["span-locations"] }
-quote = "1.0.17"
+proc-macro2 = { version = "1.0.66", features = ["span-locations"] }
+quote = "1.0.32"
 ra_ap_paths = "=0.0.101"
 ra_ap_proc_macro_api = "=0.0.101"
 ra_ap_proc_macro_srv = "=0.0.101"
 ra_ap_tt = "=0.0.101"
 rand = "0.8.5"
 rustminify = "0.1.0"
-semver = { version = "1.0.6", features = ["serde"] }
-serde = { version = "1.0.136", features = ["derive"] }
-serde_json = "1.0.79"
-smol_str = { version = "0.1.21", features = ["serde"] }
-spdx = "0.6.0"
+semver = { version = "1.0.18", features = ["serde"] }
+serde = { version = "1.0.181", features = ["derive"] }
+serde_json = "1.0.104"
+smol_str = { version = "0.1.24", features = ["serde"] }
+spdx = "0.6.2"
 structopt = "0.3.26"
-syn = { version = "1.0.89", features = ["extra-traits", "full", "parsing", "visit"] }
-tempfile = "3.3.0"
-termcolor = "1.1.3"
+syn = { version = "1.0.109", features = ["extra-traits", "full", "parsing", "visit"] }
+tempfile = "3.7.0"
+termcolor = "1.2.0"
 toml_edit = "0.5.0"
-which = "4.2.5"
+which = "4.4.0"
 
 [dev-dependencies]
-assert_cmd = "2.0.4"
-insta = "1.13.0"
+assert_cmd = "2.0.12"
+insta = "1.31.0"
 md5 = "0.7.0"
-pretty_assertions = "1.2.0"
+pretty_assertions = "1.4.0"
