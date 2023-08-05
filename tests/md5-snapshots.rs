@@ -1,7 +1,6 @@
 use cargo_equip::shell::Shell;
 use insta::assert_snapshot;
 use once_cell::sync::Lazy;
-use ra_ap_paths::AbsPathBuf;
 use std::{
     cell::RefCell,
     env,
@@ -83,7 +82,6 @@ fn snapshot_test(name: &str, _: MutexGuard<'_, ()>) -> anyhow::Result<String> {
             cwd: Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests")
                 .join("solutions"),
-            cargo_equip_exe: AbsPathBuf::assert(env!("CARGO_BIN_EXE_cargo-equip").into()),
             cache_dir: Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("tests")
                 .join("cache"),

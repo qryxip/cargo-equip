@@ -29,13 +29,12 @@ use petgraph::{
 };
 use prettytable::{cell, format::FormatBuilder, row, Table};
 use quote::quote;
-use ra_ap_paths::{AbsPath, AbsPathBuf};
-use ra_ap_proc_macro_srv as proc_macro_srv;
 use std::{
     cmp,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Debug,
     path::{Path, PathBuf},
+    rc::Rc,
     str::FromStr,
 };
 use structopt::{clap::AppSettings, StructOpt};
@@ -69,8 +68,6 @@ pub enum Opt {
         )
     )]
     Equip(OptEquip),
-    #[structopt(setting(AppSettings::Hidden))]
-    RustAnalyzerProcMacro {},
 }
 
 #[derive(StructOpt, Debug)]
@@ -153,9 +150,17 @@ pub struct OptEquip {
     )]
     mine: Vec<User>,
 
+    /// [Deprecated] Alias for `--toolchain-for-udeps`
+    #[structopt(long, value_name("TOOLCHAIN"), conflicts_with("toolchain_for_udeps"))]
+    toolchain: Option<String>,
+
     /// `nightly` toolchain for `cargo-udeps`
     #[structopt(long, value_name("TOOLCHAIN"), default_value("nightly"))]
-    toolchain: String,
+    toolchain_for_udeps: String,
+
+    /// Toolchain for expanding procedural macros
+    #[structopt(long, value_name("TOOLCHAIN"))]
+    toolchain_for_proc_macro_srv: Option<String>,
 
     /// Expand the libraries to the module
     #[structopt(long, value_name("MODULE_PATH"), default_value("crate::__cargo_equip"))]
@@ -352,7 +357,6 @@ impl FromStr for Minify {
 
 pub struct Context<'a> {
     pub cwd: PathBuf,
-    pub cargo_equip_exe: AbsPathBuf,
     pub cache_dir: PathBuf,
     pub shell: &'a mut Shell,
 }
@@ -411,11 +415,7 @@ static CODINGAME_CRATES: &[&str] = &[
 ];
 
 pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
-    let opt = match opt {
-        Opt::Equip(opt) => opt,
-        Opt::RustAnalyzerProcMacro {} => return proc_macro_srv::cli::run().map_err(Into::into),
-    };
-    let OptEquip {
+    let Opt::Equip(OptEquip {
         src,
         lib,
         bin,
@@ -425,7 +425,9 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude_atcoder_crates,
         exclude_codingame_crates,
         mine,
-        toolchain,
+        toolchain: deprecated_toolchain_opt,
+        toolchain_for_udeps,
+        toolchain_for_proc_macro_srv,
         mod_path: CrateSinglePath(cargo_equip_mod_name),
         remove,
         minify,
@@ -437,7 +439,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         resolve_cfgs: deprecated_resolve_cfgs_flag,
         rustfmt: deprecated_rustfmt_flag,
         check: deprecated_check_flag,
-    } = opt;
+    }) = opt;
 
     let minify = match (minify, deprecated_oneline_opt) {
         (Minify::None, oneline) => oneline,
@@ -455,13 +457,19 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         exclude
     };
 
+    let toolchain_for_udeps = deprecated_toolchain_opt
+        .as_ref()
+        .unwrap_or(&toolchain_for_udeps);
+
     let Context {
         cwd,
-        cargo_equip_exe,
         cache_dir,
         shell,
     } = ctx;
 
+    if deprecated_toolchain_opt.is_some() {
+        shell.warn("`--toolchain` was renamed to `--toolchain-for-udeps`")?;
+    }
     if deprecated_resolve_cfgs_flag {
         shell.warn("`--resolve-cfgs` is deprecated. `#[cfg(..)]`s are resolved by default")?;
     }
@@ -496,7 +504,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         let unused_deps = &if root.is_lib() {
             hashset!()
         } else {
-            match cargo_udeps::cargo_udeps(root_package, root, &toolchain, shell) {
+            match cargo_udeps::cargo_udeps(root_package, root, toolchain_for_udeps, shell) {
                 Ok(unused_deps) => unused_deps,
                 Err(warning) => {
                     shell.warn(warning)?;
@@ -556,7 +564,7 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
         &remove,
         minify,
         !no_rustfmt,
-        &cargo_equip_exe,
+        toolchain_for_proc_macro_srv.as_deref(),
         &cache_dir,
         shell,
     )
@@ -593,45 +601,60 @@ fn bundle(
     remove: &[Remove],
     minify: Minify,
     rustfmt: bool,
-    cargo_equip_exe: &AbsPath,
+    toolchain_for_proc_macro_srv: Option<&str>,
     cache_dir: &Path,
     shell: &mut Shell,
 ) -> anyhow::Result<String> {
     let cargo_check_message_format_json = |toolchain: &str, shell: &mut Shell| -> _ {
         let (package, krate) = root_crate.split();
         workspace::cargo_check_message_format_json(toolchain, metadata, package, krate, shell)
+            .map(Rc::new)
     };
 
-    let cargo_messages_for_out_dirs = &libs_to_bundle
-        .keys()
-        .any(|p| metadata[p].has_custom_build())
-        .then(|| {
-            let toolchain = &toolchain::active_toolchain(root_crate.package().manifest_dir())?;
-            cargo_check_message_format_json(toolchain, shell)
-        })
-        .unwrap_or_else(|| Ok(vec![]))?;
+    let active_toolchain = &*toolchain::active_toolchain(root_crate.package().manifest_dir())?;
+    let toolchain_for_proc_macro_srv = toolchain_for_proc_macro_srv.unwrap_or(active_toolchain);
 
+    let has_custom_build = libs_to_bundle
+        .keys()
+        .any(|p| metadata[p].has_custom_build());
     let has_proc_macro = libs_to_bundle.keys().any(|p| metadata[p].has_proc_macro());
 
-    let cargo_messages_for_proc_macro_dll_paths = &has_proc_macro
-        .then(|| {
-            let toolchain = toolchain::find_toolchain_compatible_with_ra(
+    let (cargo_messages_for_out_dirs, cargo_messages_for_proc_macro_dll_paths) =
+        if has_custom_build && has_proc_macro && active_toolchain == toolchain_for_proc_macro_srv {
+            let cargo_messages = cargo_check_message_format_json(active_toolchain, shell)?;
+            (cargo_messages.clone(), Some(cargo_messages))
+        } else {
+            let cargo_messages_for_out_dirs = has_custom_build
+                .then(|| cargo_check_message_format_json(active_toolchain, shell))
+                .unwrap_or_else(|| Ok(Default::default()))?;
+
+            let cargo_messages_for_proc_macro_dll_paths = has_proc_macro
+                .then(|| cargo_check_message_format_json(toolchain_for_proc_macro_srv, shell))
+                .transpose()?;
+
+            (
+                cargo_messages_for_out_dirs,
+                cargo_messages_for_proc_macro_dll_paths,
+            )
+        };
+
+    let out_dirs = workspace::list_out_dirs(metadata, &cargo_messages_for_out_dirs);
+
+    let macro_expander = cargo_messages_for_proc_macro_dll_paths
+        .as_ref()
+        .map(|cargo_messages_for_proc_macro_dll_paths| {
+            let proc_macro_srv_exe = &toolchain::find_rust_analyzer_proc_macro_srv(
                 root_crate.package().manifest_dir(),
-                shell,
+                toolchain_for_proc_macro_srv,
             )?;
-            let msgs = cargo_check_message_format_json(&toolchain, shell)?;
-            Ok::<_, anyhow::Error>(msgs)
+
+            let proc_macro_crate_dylibs = &ra_proc_macro::list_proc_macro_dylibs(
+                cargo_messages_for_proc_macro_dll_paths,
+                |p| libs_to_bundle.contains_key(p),
+            );
+
+            ProcMacroExpander::spawn(proc_macro_srv_exe, proc_macro_crate_dylibs)
         })
-        .unwrap_or_else(|| Ok(vec![]))?;
-
-    let out_dirs = workspace::list_out_dirs(metadata, cargo_messages_for_out_dirs);
-    let proc_macro_crate_dylibs =
-        &ra_proc_macro::list_proc_macro_dylibs(cargo_messages_for_proc_macro_dll_paths, |p| {
-            libs_to_bundle.contains_key(p)
-        });
-
-    let macro_expander = has_proc_macro
-        .then(|| ProcMacroExpander::spawn(cargo_equip_exe, proc_macro_crate_dylibs))
         .transpose()?;
 
     let proc_macro_names = macro_expander

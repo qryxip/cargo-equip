@@ -1,5 +1,41 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Added `--toolchain-for-proc-macro-srv`.
+
+    ```console
+            --toolchain-for-proc-macro-srv <TOOLCHAIN>    Toolchain for expanding procedural macros
+    ```
+
+### Changed
+
+- Updated the embedded Rust Analyzer to `2023-07-31` (`0.0.166`).
+
+    For Rust <1.64, `--toolchain-for-proc-macro-srv` is required for macro expansion.
+
+    ```console
+    ❯ cargo +1.42.0 equip 2>&1 | tail -n 2
+      Rust ≧1.64.0 is required for expanding procedural macros. Specify one with `--toolchain-for-proc-macro-srv`
+    ```
+
+    This update should fix the issue where macro expansion segfaults.
+
+- `--toolchain` was renamed to `--toolchain-for-udeps`.
+
+    ```console
+    ❯ cargo equip --toolchain nightly
+    warning: `--toolchain` was renamed to `--toolchain-for-udeps`
+    ```
+
+### Fixed
+
+- Updated [prettytable](https://docs.rs/crate/prettytable). ([#193](https://github.com/qryxip/cargo-equip/pull/193) by [@ichyo](https://github.com/ichyo))
+
+    Now cargo-equip built with recent Rust works.
+
 ## [0.19.0] - 2022-03-26Z
 
 ### Added
