@@ -10,6 +10,7 @@ use indoc::indoc;
 use itertools::Itertools as _;
 use krates::PkgSpec;
 use rand::Rng as _;
+use serde::Deserialize;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     env,
@@ -17,6 +18,7 @@ use std::{
     path::{Path, PathBuf},
     str,
 };
+use strum::EnumString;
 
 pub(crate) fn locate_project(cwd: &Path) -> anyhow::Result<PathBuf> {
     cwd.ancestors()
@@ -35,6 +37,28 @@ pub(crate) fn cargo_metadata(manifest_path: &Path, cwd: &Path) -> cm::Result<cm:
         .manifest_path(manifest_path)
         .current_dir(cwd)
         .exec()
+}
+
+pub(crate) fn resolve_behavior(
+    package: &cm::Package,
+    workspace_root: &Utf8Path,
+) -> anyhow::Result<ResolveBehavior> {
+    let cargo_toml = &cargo_util::paths::read(workspace_root.join("Cargo.toml").as_ref())?;
+    let CargoToml { workspace } = toml::from_str(cargo_toml)?;
+    return Ok(workspace
+        .resolver
+        .unwrap_or_else(|| package.edition().default_resolver_behavior()));
+
+    #[derive(Deserialize)]
+    struct CargoToml {
+        #[serde(default)]
+        workspace: Workspace,
+    }
+
+    #[derive(Default, Deserialize)]
+    struct Workspace {
+        resolver: Option<ResolveBehavior>,
+    }
 }
 
 pub(crate) fn cargo_check_message_format_json(
@@ -640,6 +664,7 @@ pub(crate) trait PackageExt {
     fn has_proc_macro(&self) -> bool;
     fn lib_like_target(&self) -> Option<&cm::Target>;
     fn manifest_dir(&self) -> &Utf8Path;
+    fn edition(&self) -> Edition;
     fn read_license_text(&self, mine: &[User], cache_dir: &Path) -> anyhow::Result<Option<String>>;
 }
 
@@ -664,6 +689,10 @@ impl PackageExt for cm::Package {
 
     fn manifest_dir(&self) -> &Utf8Path {
         self.manifest_path.parent().expect("should not be empty")
+    }
+
+    fn edition(&self) -> Edition {
+        self.edition.parse().expect("`edition` modified invalidly")
     }
 
     fn read_license_text(&self, mine: &[User], cache_dir: &Path) -> anyhow::Result<Option<String>> {
@@ -751,4 +780,31 @@ impl SourceExt for cm::Source {
             _ => None,
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, EnumString)]
+pub(crate) enum Edition {
+    #[strum(serialize = "2015")]
+    Edition2015,
+    #[strum(serialize = "2018")]
+    Edition2018,
+    #[strum(serialize = "2021")]
+    Edition2021,
+}
+
+impl Edition {
+    fn default_resolver_behavior(self) -> ResolveBehavior {
+        match self {
+            Self::Edition2015 | Self::Edition2018 => ResolveBehavior::V1,
+            Self::Edition2021 => ResolveBehavior::V2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, PartialOrd, Deserialize)]
+pub(crate) enum ResolveBehavior {
+    #[serde(rename = "1")]
+    V1,
+    #[serde(rename = "2")]
+    V2,
 }
