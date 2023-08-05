@@ -1,14 +1,14 @@
-use crate::{process::ProcessBuilderExt as _, shell::Shell};
-use anyhow::{anyhow, Context as _};
+use crate::process::ProcessBuilderExt as _;
+use anyhow::{anyhow, ensure};
 use camino::Utf8Path;
 use cargo_util::ProcessBuilder;
-use once_cell::sync::Lazy;
-use semver::{Version, VersionReq};
+use ra_ap_paths::AbsPathBuf;
+use semver::Version;
 use std::{
-    collections::BTreeMap,
     env,
     path::{Path, PathBuf},
 };
+use tap::Pipe as _;
 
 pub(crate) fn rustup_exe(cwd: impl AsRef<Path>) -> anyhow::Result<PathBuf> {
     which::which_in("rustup", env::var_os("PATH"), cwd).map_err(|_| anyhow!("`rustup` not found"))
@@ -22,85 +22,49 @@ pub(crate) fn active_toolchain(manifest_dir: &Utf8Path) -> anyhow::Result<String
     Ok(output.split_whitespace().next().unwrap().to_owned())
 }
 
-pub(crate) fn find_toolchain_compatible_with_ra(
+pub(crate) fn find_rust_analyzer_proc_macro_srv(
     manifest_dir: &Utf8Path,
-    shell: &mut Shell,
-) -> anyhow::Result<String> {
+    toolchain: &str,
+) -> anyhow::Result<AbsPathBuf> {
+    use crate::ra_proc_macro::MSRV;
+
     let rustup_exe = &rustup_exe(manifest_dir)?;
 
-    let cargo_version = |toolchain| -> _ {
-        ProcessBuilder::new(rustup_exe)
-            .args(&["run", toolchain, "cargo", "-V"])
-            .cwd(manifest_dir)
-            .read_stdout::<String>()
-            .and_then(|o| extract_version(&o))
-    };
-
-    let active_toolchain = active_toolchain(manifest_dir)?;
-    let active_version = cargo_version(&active_toolchain)?;
-    if GEQ_1_48_0.matches(&active_version) {
-        return Ok(active_toolchain);
-    }
-
-    let status = &mut |toolchain: &str| -> _ {
-        shell.status(
-            "Using",
-            format!("`{}` for compiling `proc-macro` crates", toolchain),
-        )
-    };
-
-    let output = ProcessBuilder::new(rustup_exe)
-        .args(&["toolchain", "list"])
+    let version = ProcessBuilder::new(rustup_exe)
+        .args(&["run", toolchain, "rustc", "-V"])
         .cwd(manifest_dir)
-        .read_stdout::<String>()?;
-    let toolchains = output
-        .lines()
-        .map(|s| s.split_whitespace().next().unwrap())
-        .collect::<Vec<_>>();
+        .read_stdout::<String>()?
+        .pipe(|output| {
+            output
+                .split_ascii_whitespace()
+                .nth(1)
+                .and_then(|output| output.parse::<Version>().ok())
+                .ok_or_else(|| anyhow!("Could not parse {output:?}"))
+        })?;
 
-    let compatible_toolchains = &mut output
-        .lines()
-        .map(|s| s.split_whitespace().next().unwrap())
-        .flat_map(|toolchain| {
-            let version = toolchain.split('-').next().unwrap().parse().ok()?;
-            GEQ_1_48_0.matches(&version).then_some((version, toolchain))
-        })
-        .collect::<BTreeMap<Version, _>>();
+    ensure!(
+        version >= MSRV,
+        "Rust ≧{MSRV} is required for expanding procedural macros. Specify one with \
+         `--toolchain-for-proc-macro-srv`",
+    );
 
-    if let Some((_, toolchain)) = compatible_toolchains
-        .iter()
-        .next()
-        .filter(|(v, _)| v.to_string() == "1.48.0")
-    {
-        status(toolchain)?;
-        return Ok((*toolchain).to_owned());
+    let rust_analyzer_proc_macro_srv = ProcessBuilder::new(rustup_exe)
+        .args(&["run", toolchain, "rustc", "--print", "sysroot"])
+        .cwd(manifest_dir)
+        .read_stdout::<String>()?
+        .pipe_deref(str::trim_end)
+        .pipe(Path::new)
+        .join("libexec")
+        .join("rust-analyzer-proc-macro-srv")
+        .with_extension(env::consts::EXE_EXTENSION)
+        .pipe(AbsPathBuf::assert);
+
+    if !Path::new(rust_analyzer_proc_macro_srv.as_os_str()).try_exists()? {
+        anyhow::bail!(
+            "{} does not exist. Run `rustup component add rust-analyzer --toolchain {toolchain}`",
+            Path::new(rust_analyzer_proc_macro_srv.as_os_str()).display(),
+        );
     }
 
-    for toolchain in toolchains {
-        if ["stable-", "beta-", "nightly-"]
-            .iter()
-            .any(|p| toolchain.starts_with(p))
-        {
-            let version = cargo_version(toolchain)?;
-            if GEQ_1_48_0.matches(&version) {
-                compatible_toolchains.insert(version, toolchain);
-            }
-        }
-    }
-
-    let (_, compatible_toolchain) = compatible_toolchains
-        .iter()
-        .next()
-        .with_context(|| format!("no toolchain found that satisfies {}", *GEQ_1_48_0))?;
-    status(compatible_toolchain)?;
-    return Ok((*compatible_toolchain).to_owned());
-
-    static GEQ_1_48_0: Lazy<VersionReq> = Lazy::new(|| ">=1.48.0".parse().unwrap());
-
-    fn extract_version(output: &str) -> anyhow::Result<Version> {
-        output
-            .split_whitespace()
-            .find_map(|s| s.parse::<Version>().ok())
-            .with_context(|| format!("could not parse {:?}", output))
-    }
+    Ok(rust_analyzer_proc_macro_srv)
 }

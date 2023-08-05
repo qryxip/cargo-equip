@@ -1,7 +1,7 @@
 ---
 source: tests/help-snapshot.rs
+assertion_line: 7
 expression: "run(\"--help\")?"
-
 ---
 cargo-equip <version>
 Ryo Yamashita <qryxip@gmail.com>
@@ -18,27 +18,27 @@ USAGE:
     cargo equip [OPTIONS] --src <PATH>
 
 OPTIONS:
-        --src <PATH>                       
+        --src <PATH>                                  
             Bundle the lib/bin/example target and its dependencies.
             
             This option is intended to be used from editors such as VSCode. Use `--lib`, `--bin` or `--example` for
             normal usage.
-        --lib                              
+        --lib                                         
             Bundle the library and its dependencies
 
-        --bin <NAME>                       
+        --bin <NAME>                                  
             Bundle the binary and its dependencies
 
-        --example <NAME>                   
+        --example <NAME>                              
             Bundle the binary example and its dependencies
 
-        --manifest-path <PATH>             
+        --manifest-path <PATH>                        
             Path to Cargo.toml
 
-        --exclude <SPEC>...                
+        --exclude <SPEC>...                           
             Exclude library crates from bundling
 
-        --exclude-atcoder-crates           
+        --exclude-atcoder-crates                      
             Alias for:
             --exclude https://github.com/rust-lang/crates.io-index#alga:0.9.3
                       https://github.com/rust-lang/crates.io-index#ascii:1.0.0
@@ -82,7 +82,7 @@ OPTIONS:
                       https://github.com/rust-lang/crates.io-index#text_io:0.1.8
                       https://github.com/rust-lang/crates.io-index#whiteread:0.5.0
              
-        --exclude-codingame-crates         
+        --exclude-codingame-crates                    
             Alias for:
             --exclude https://github.com/rust-lang/crates.io-index#chrono:0.4.19
                       https://github.com/rust-lang/crates.io-index#itertools:0.10.0
@@ -91,20 +91,26 @@ OPTIONS:
                       https://github.com/rust-lang/crates.io-index#regex:1.4.5
                       https://github.com/rust-lang/crates.io-index#time:0.2.26
              
-        --mine <DOMAIN_AND_USERNAME>...    
+        --mine <DOMAIN_AND_USERNAME>...               
             Do not include license and copyright notices for the users.
             
             Supported formats:
             * github.com/{username}
             * gitlab.com/{username}
              
-        --toolchain <TOOLCHAIN>            
+        --toolchain <TOOLCHAIN>                       
+            [Deprecated] Alias for `--toolchain-for-udeps`
+
+        --toolchain-for-udeps <TOOLCHAIN>             
             `nightly` toolchain for `cargo-udeps` [default: nightly]
 
-        --mod-path <MODULE_PATH>           
+        --toolchain-for-proc-macro-srv <TOOLCHAIN>    
+            Toolchain for expanding procedural macros
+
+        --mod-path <MODULE_PATH>                      
             Expand the libraries to the module [default: crate::__cargo_equip]
 
-        --remove <REMOVE>...               
+        --remove <REMOVE>...                          
             Removes
             * doc comments (`//! ..`, `/// ..`, `/** .. */`, `#[doc = ".."]`) with `--remove docs`.
             * comments (`// ..`, `/* .. */`) with `--remove comments`.
@@ -128,41 +134,41 @@ OPTIONS:
             }
             ```
              
-        --minify <MINIFY>                  
+        --minify <MINIFY>
             Minifies
             - each expaned library with `--minify lib`.
             - the whole code with `--minify all`.
             
             Not that the minification function is incomplete. Unnecessary spaces may be inserted.
              
-        --no-resolve-cfgs                  
+        --no-resolve-cfgs                             
             Do not resolve `cfg(..)`s
 
-        --no-rustfmt                       
+        --no-rustfmt                                  
             Do not format the output before emitting
 
-        --no-check                         
+        --no-check                                    
             Do not check the output before emitting
 
-    -o, --output <PATH>                    
+    -o, --output <PATH>                               
             Write to the file instead of STDOUT
 
-        --oneline <MINIFY>                 
+        --oneline <MINIFY>
             [Deprecated] Alias for `--minify` [default: none]  [possible values: none, libs, all]
 
-        --resolve-cfgs                     
+        --resolve-cfgs                                
             [Deprecated] No-op
 
-        --rustfmt                          
+        --rustfmt                                     
             [Deprecated] No-op
 
-        --check                            
+        --check                                       
             [Deprecated] No-op
 
-    -h, --help                             
+    -h, --help                                        
             Prints help information
 
-    -V, --version                          
+    -V, --version                                     
             Prints version information
 
 
