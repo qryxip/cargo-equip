@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added `--exclude_atcoder-202301-crates`.
+
+    ```console
+            --exclude-atcoder-202301-crates               Alias for `--exclude {crates available on AtCoder 202301}`
+    ```
+
 - Added `--toolchain-for-proc-macro-srv`.
 
     ```console
