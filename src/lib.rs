@@ -15,7 +15,10 @@ use crate::{
     ra_proc_macro::ProcMacroExpander,
     rust::CodeEdit,
     shell::Shell,
-    workspace::{MetadataExt as _, PackageExt as _, PackageIdExt as _, TargetExt as _},
+    workspace::{
+        Edition, MetadataExt as _, PackageExt as _, PackageIdExt as _, ResolveBehavior,
+        TargetExt as _,
+    },
 };
 use anyhow::Context as _;
 use cargo_metadata as cm;
@@ -581,6 +584,17 @@ pub fn run(opt: Opt, ctx: Context<'_>) -> anyhow::Result<()> {
     } else {
         metadata.exactly_one_target()
     }?;
+
+    if root_package.edition() == Edition::Edition2015 {
+        shell.warn("Rust 2015 is unsupported")?;
+    }
+    let resolve_behavior = workspace::resolve_behavior(root_package, &metadata.workspace_root)?;
+    if resolve_behavior >= ResolveBehavior::V2 {
+        shell.warn(
+            "Currently cargo-equip only support Feature Resovler v1, and may go search more crates \
+             than real Cargo does. Please watch https://github.com/qryxip/cargo-equip/issues/94",
+        )?;
+    }
 
     let libs_to_bundle = {
         let unused_deps = &if root.is_lib() {

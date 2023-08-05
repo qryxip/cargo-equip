@@ -36,6 +36,18 @@
     warning: `--toolchain` was renamed to `--toolchain-for-udeps`
     ```
 
+- cargo-equip now warns for `resolver = "2"` and `edition = "2015"`.
+
+    Note that both has been unsupported.
+
+    ```console
+    warning: Currently cargo-equip only support Feature Resovler v1, and may go search more crates than real Cargo does. Please watch https://github.com/qryxip/cargo-equip/issues/94
+    ```
+
+    ```console
+    warning: Rust 2015 is unsupported
+    ```
+
 ### Fixed
 
 - Updated [prettytable](https://docs.rs/crate/prettytable). ([#193](https://github.com/qryxip/cargo-equip/pull/193) by [@ichyo](https://github.com/ichyo))
