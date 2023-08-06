@@ -54,6 +54,10 @@
 
     Now cargo-equip built with recent Rust works.
 
+- Adapted [the new reserving syntax in Rust 2021](https://doc.rust-lang.org/edition-guide/rust-2021/reserving-syntax.html) when minifying. ([qryxip/rustminify#7](https://github.com/qryxip/rustminify/pull/7) by [@mizar](https://github.com/mizar)).
+
+    This fix affects Rust 2018. The output might be few characters longer.
+
 ## [0.19.0] - 2022-03-26Z
 
 ### Added

@@ -1144,9 +1144,9 @@ dependencies = [
 
 [[package]]
 name = "rustminify"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ebf2755dbb7825d6215fa58eb885419385d62d29a5bba66eda6dce2655043d9"
+checksum = "2cd48802ac21406f1324dd919bad11157662eaafeb449011d50bd7cbab889762"
 dependencies = [
  "proc-macro2",
  "quote",
