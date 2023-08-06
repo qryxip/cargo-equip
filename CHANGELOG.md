@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Fixed `--exclude-atcoder-202301-crates`.
+
+    Previously, it was for the "7/3 freeze".
+
 ## [0.20.0] - 2023-08-06Z
 
 ### Added
