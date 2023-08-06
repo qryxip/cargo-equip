@@ -31,7 +31,7 @@ ra_ap_paths = "=0.0.166"
 ra_ap_proc_macro_api = "=0.0.166"
 ra_ap_tt = "=0.0.166"
 rand = "0.8.5"
-rustminify = "0.1.0"
+rustminify = "0.2.0"
 semver = { version = "1.0.18", features = ["serde"] }
 serde = { version = "1.0.181", features = ["derive"] }
 serde_json = "1.0.104"
