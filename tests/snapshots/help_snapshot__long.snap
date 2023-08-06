@@ -101,13 +101,13 @@ OPTIONS:
                       https://github.com/rust-lang/crates.io-index#easy-ext:1.0.1
                       https://github.com/rust-lang/crates.io-index#multimap:0.9.0
                       https://github.com/rust-lang/crates.io-index#btreemultimap:0.1.1
-                      https://github.com/rust-lang/crates.io-index#bstr:1.5.0
+                      https://github.com/rust-lang/crates.io-index#bstr:1.6.0
                       https://github.com/rust-lang/crates.io-index#az:1.2.1
                       https://github.com/rust-lang/crates.io-index#glidesort:0.1.2
                       https://github.com/rust-lang/crates.io-index#tap:1.0.1
                       https://github.com/rust-lang/crates.io-index#omniswap:0.1.0
                       https://github.com/rust-lang/crates.io-index#multiversion:0.7.2
-                      https://github.com/rust-lang/crates.io-index#num:0.4.0
+                      https://github.com/rust-lang/crates.io-index#num:0.4.1
                       https://github.com/rust-lang/crates.io-index#num-bigint:0.4.3
                       https://github.com/rust-lang/crates.io-index#num-complex:0.4.3
                       https://github.com/rust-lang/crates.io-index#num-integer:0.1.45
@@ -116,7 +116,7 @@ OPTIONS:
                       https://github.com/rust-lang/crates.io-index#num-traits:0.2.15
                       https://github.com/rust-lang/crates.io-index#num-derive:0.4.0
                       https://github.com/rust-lang/crates.io-index#ndarray:0.15.6
-                      https://github.com/rust-lang/crates.io-index#nalgebra:0.32.2
+                      https://github.com/rust-lang/crates.io-index#nalgebra:0.32.3
                       https://github.com/rust-lang/crates.io-index#alga:0.9.3
                       https://github.com/rust-lang/crates.io-index#libm:0.2.7
                       https://github.com/rust-lang/crates.io-index#rand:0.8.5
@@ -128,7 +128,7 @@ OPTIONS:
                       https://github.com/rust-lang/crates.io-index#rand_distr:0.4.3
                       https://github.com/rust-lang/crates.io-index#petgraph:0.6.3
                       https://github.com/rust-lang/crates.io-index#indexmap:2.0.0
-                      https://github.com/rust-lang/crates.io-index#regex:1.8.4
+                      https://github.com/rust-lang/crates.io-index#regex:1.9.1
                       https://github.com/rust-lang/crates.io-index#lazy_static:1.4.0
                       https://github.com/rust-lang/crates.io-index#ordered-float:3.7.0
                       https://github.com/rust-lang/crates.io-index#ascii:1.1.0
@@ -144,7 +144,7 @@ OPTIONS:
                       https://github.com/rust-lang/crates.io-index#proconio:0.4.5
                       https://github.com/rust-lang/crates.io-index#text_io:0.1.12
                       https://github.com/rust-lang/crates.io-index#rustc-hash:1.1.0
-                      https://github.com/rust-lang/crates.io-index#smallvec:1.10.0
+                      https://github.com/rust-lang/crates.io-index#smallvec:1.11.0
              
         --exclude-codingame-crates                    
             Alias for:
