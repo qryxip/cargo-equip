@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.20.1] - 2023-08-06Z
 
 ### Fixed
 
-- Fixed `--exclude-atcoder-202301-crates`.
+- Fixed `--exclude-atcoder-202301-crates`. ([#200](https://github.com/qryxip/cargo-equip/pull/200))
 
     Previously, it was for the "7/3 freeze".
 
