@@ -1,16 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [0.20.0] - 2023-08-06Z
 
 ### Added
 
-- Added `--exclude_atcoder-202301-crates`.
+- Added `--exclude-atcoder-202301-crates`. ([#197](https://github.com/qryxip/cargo-equip/pull/197))
 
     ```console
             --exclude-atcoder-202301-crates               Alias for `--exclude {crates available on AtCoder 202301}`
     ```
 
-- Added `--toolchain-for-proc-macro-srv`.
+- Added `--toolchain-for-proc-macro-srv`. ([#195](https://github.com/qryxip/cargo-equip/pull/195))
 
     ```console
             --toolchain-for-proc-macro-srv <TOOLCHAIN>    Toolchain for expanding procedural macros
@@ -18,25 +18,25 @@
 
 ### Changed
 
-- Updated the embedded Rust Analyzer to `2023-07-31` (`0.0.166`).
+- Updated the embedded Rust Analyzer to `2023-07-31` (`0.0.166`). ([#195](https://github.com/qryxip/cargo-equip/pull/195))
 
-    For Rust <1.64, `--toolchain-for-proc-macro-srv` is required for macro expansion.
+    For Rust \<1.64, `--toolchain-for-proc-macro-srv` is required for macro expansion.
 
     ```console
-    ❯ cargo +1.42.0 equip 2>&1 | tail -n 2
+    ❯ cargo +1.42.0 equip 2>&1 | tail -n 1
       Rust ≧1.64.0 is required for expanding procedural macros. Specify one with `--toolchain-for-proc-macro-srv`
     ```
 
     This update should fix the issue where macro expansion segfaults.
 
-- `--toolchain` was renamed to `--toolchain-for-udeps`.
+- Renamed `--toolchain` to `--toolchain-for-udeps`. ([#195](https://github.com/qryxip/cargo-equip/pull/195))
 
     ```console
     ❯ cargo equip --toolchain nightly
     warning: `--toolchain` was renamed to `--toolchain-for-udeps`
     ```
 
-- cargo-equip now warns for `resolver = "2"` and `edition = "2015"`.
+- cargo-equip now warns for `resolver = "2"` and `edition = "2015"`. ([#196](https://github.com/qryxip/cargo-equip/pull/196))
 
     Note that both has been unsupported.
 
@@ -54,9 +54,9 @@
 
     Now cargo-equip built with recent Rust works.
 
-- Adapted [the new reserving syntax in Rust 2021](https://doc.rust-lang.org/edition-guide/rust-2021/reserving-syntax.html) when minifying. ([qryxip/rustminify#7](https://github.com/qryxip/rustminify/pull/7) by [@mizar](https://github.com/mizar)).
+- Adapted [the new reserving syntax in Rust 2021](https://doc.rust-lang.org/edition-guide/rust-2021/reserving-syntax.html) when minifying. ([qryxip/rustminify#7](https://github.com/qryxip/rustminify/pull/7) by [@mizar](https://github.com/mizar), [#198](https://github.com/qryxip/cargo-equip/pull/198)).
 
-    This fix affects Rust 2018. The output might be few characters longer.
+    This fix also affects Rust 2018. The output might be few characters longer.
 
 ## [0.19.0] - 2022-03-26Z
 
