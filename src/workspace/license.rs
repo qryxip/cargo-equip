@@ -204,7 +204,7 @@ fn read(package: &cm::Package, cache_dir: &Path) -> Result<Option<String>, Vec<S
 
     let is = |name| license.evaluate(|r| r.license.id() == spdx::license_id(name));
 
-    if is("CC0-1.0") || is("Unlicense") {
+    if is("0BSD") || is("CC0-1.0") || is("Unlicense") {
         return Ok(None);
     }
 
