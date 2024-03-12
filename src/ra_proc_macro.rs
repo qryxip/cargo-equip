@@ -1,13 +1,17 @@
 use anyhow::{anyhow, Context as _};
 use cargo_metadata as cm;
 use itertools::chain;
+use la_arena::RawIdx;
 use maplit::btreemap;
 use ra_ap_paths::AbsPath;
 use ra_ap_proc_macro_api::{
     msg::PanicMessage, MacroDylib, ProcMacro, ProcMacroKind, ProcMacroServer,
 };
-use ra_ap_tt::{self as tt, DelimiterKind, Leaf, TokenId};
+use ra_ap_span::{ErasedFileAstId, FileId, Span, SpanAnchor, SyntaxContextId};
+use ra_ap_tt::{self as tt, DelimiterKind, Leaf};
+use rustc_hash::FxHashMap;
 use semver::Version;
+use tt::TextRange;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const MSRV: Version = Version::new(1, 64, 0);
@@ -49,7 +53,7 @@ impl<'msg> ProcMacroExpander<'msg> {
         proc_macro_srv_exe: &AbsPath,
         dylib_paths: &BTreeMap<&'msg cm::PackageId, &'msg AbsPath>,
     ) -> anyhow::Result<Self> {
-        let server = ProcMacroServer::spawn(proc_macro_srv_exe.to_path_buf())?;
+        let server = ProcMacroServer::spawn(proc_macro_srv_exe.to_path_buf(), &FxHashMap::default())?;
 
         let mut custom_derive = btreemap!();
         let mut func_like = btreemap!();
@@ -120,6 +124,10 @@ impl<'msg> ProcMacroExpander<'msg> {
         subtree: impl FnOnce() -> proc_macro2::TokenStream,
         attr: Option<impl FnOnce() -> proc_macro2::Group>,
     ) -> anyhow::Result<Option<proc_macro2::Group>> {
+        let anchor = SpanAnchor {
+            file_id: FileId::from_raw(0),
+            ast_id: ErasedFileAstId::from_raw(RawIdx::from(0)),
+        };
         match kind {
             ProcMacroKind::CustomDerive => &self.custom_derive,
             ProcMacroKind::FuncLike => &self.func_like,
@@ -127,127 +135,181 @@ impl<'msg> ProcMacroExpander<'msg> {
         }
         .get(name)
         .map(|(_, proc_macro)| {
+            let group = proc_macro2::Group::new(
+                proc_macro2::Delimiter::None,
+                subtree(),
+            );
+            let subtree = from_proc_macro2_group(&group);
             let output = &proc_macro
                 .expand(
-                    &from_proc_macro2_group(&proc_macro2::Group::new(
-                        proc_macro2::Delimiter::None,
-                        subtree(),
-                    )),
+                    &subtree,
                     attr.map(|f| from_proc_macro2_group(&f())).as_ref(),
                     vec![],
+                    Span {
+                        range: TextRange::empty(0.into()),
+                        anchor,
+                        ctx: SyntaxContextId::ROOT
+                    },
+                    Span {
+                        range: TextRange::empty(0.into()),
+                        anchor,
+                        ctx: SyntaxContextId::ROOT
+                    },
+                    Span {
+                        range: TextRange::empty(0.into()),
+                        anchor,
+                        ctx: SyntaxContextId::ROOT
+                    }
                 )
                 .map_err(|e| anyhow!("{}", e))
                 .with_context(|| "rust-analyzer error")?
-                .map_err(|PanicMessage(s)| anyhow!("proc macro paniced: {s:?}"))?;
+                .map_err(|PanicMessage(s)| anyhow!("proc macro panicked: {s:?}"))?;
             Ok(from_ra_subtree(output))
         })
         .transpose()
     }
 }
 
-fn from_proc_macro2_group(group: &proc_macro2::Group) -> tt::Subtree<TokenId> {
-    return tt::Subtree {
+fn from_proc_macro2_group(group: &proc_macro2::Group) -> tt::Subtree<Span> {
+    tt::Subtree {
         delimiter: from_proc_macro2_delimiter(group.delimiter()),
         token_trees: group
             .stream()
             .into_iter()
             .map(|tt| from_proc_macro2_token_tree(&tt))
             .collect(),
+    }
+}
+
+fn from_proc_macro2_delimiter(delimiter: proc_macro2::Delimiter) -> tt::Delimiter<Span> {
+    let anchor = SpanAnchor {
+        file_id: FileId::from_raw(0),
+        ast_id: ErasedFileAstId::from_raw(RawIdx::from(0)),
+    };
+    tt::Delimiter {
+        open: Span {
+            range: TextRange::empty(0.into()),
+            anchor,
+            ctx: SyntaxContextId::ROOT
+        },
+        close: Span {
+            range: TextRange::empty(0.into()),
+            anchor,
+            ctx: SyntaxContextId::ROOT
+        },
+        kind: match delimiter {
+            proc_macro2::Delimiter::Parenthesis => DelimiterKind::Parenthesis,
+            proc_macro2::Delimiter::Brace => DelimiterKind::Brace,
+            proc_macro2::Delimiter::Bracket => DelimiterKind::Bracket,
+            proc_macro2::Delimiter::None => DelimiterKind::Invisible,
+        },
+    }
+}
+
+fn from_proc_macro2_token_tree(tt: &proc_macro2::TokenTree) -> tt::TokenTree<Span> {
+    match tt {
+        proc_macro2::TokenTree::Group(g) => from_proc_macro2_group(g).into(),
+        proc_macro2::TokenTree::Ident(i) => Leaf::from(from_proc_macro2_ident(i)).into(),
+        proc_macro2::TokenTree::Punct(p) => Leaf::from(from_proc_macro2_punct(p)).into(),
+        proc_macro2::TokenTree::Literal(l) => Leaf::from(from_proc_macro2_literal(l)).into(),
+    }
+}
+
+fn from_proc_macro2_ident(ident: &proc_macro2::Ident) -> tt::Ident<Span> {
+    let anchor = SpanAnchor {
+        file_id: FileId::from_raw(0),
+        ast_id: ErasedFileAstId::from_raw(RawIdx::from(0)),
     };
 
-    fn from_proc_macro2_delimiter(delimiter: proc_macro2::Delimiter) -> tt::Delimiter<TokenId> {
-        tt::Delimiter {
-            open: TokenId::unspecified(),
-            close: TokenId::unspecified(),
-            kind: match delimiter {
-                proc_macro2::Delimiter::Parenthesis => DelimiterKind::Parenthesis,
-                proc_macro2::Delimiter::Brace => DelimiterKind::Brace,
-                proc_macro2::Delimiter::Bracket => DelimiterKind::Bracket,
-                proc_macro2::Delimiter::None => DelimiterKind::Invisible,
-            },
-        }
+    tt::Ident {
+        text: ident.to_string().into(),
+        span: Span {
+            range: TextRange::empty(0.into()),
+            anchor,
+            ctx: SyntaxContextId::ROOT
+        },
     }
+}
 
-    fn from_proc_macro2_token_tree(tt: &proc_macro2::TokenTree) -> tt::TokenTree<TokenId> {
-        match tt {
-            proc_macro2::TokenTree::Group(g) => from_proc_macro2_group(g).into(),
-            proc_macro2::TokenTree::Ident(i) => Leaf::from(from_proc_macro2_ident(i)).into(),
-            proc_macro2::TokenTree::Punct(p) => Leaf::from(from_proc_macro2_punct(p)).into(),
-            proc_macro2::TokenTree::Literal(l) => Leaf::from(from_proc_macro2_literal(l)).into(),
-        }
+fn from_proc_macro2_punct(punct: &proc_macro2::Punct) -> tt::Punct<Span> {
+    let anchor = SpanAnchor {
+        file_id: FileId::from_raw(0),
+        ast_id: ErasedFileAstId::from_raw(RawIdx::from(0)),
+    };
+    tt::Punct {
+        char: punct.as_char(),
+        spacing: from_proc_macro2_spacing(punct.spacing()),
+        span: Span {
+            range: TextRange::empty(0.into()),
+            anchor,
+            ctx: SyntaxContextId::ROOT
+        },
     }
+}
 
-    fn from_proc_macro2_ident(ident: &proc_macro2::Ident) -> tt::Ident<TokenId> {
-        tt::Ident {
-            text: ident.to_string().into(),
-            span: TokenId::unspecified(),
-        }
+fn from_proc_macro2_spacing(spacing: proc_macro2::Spacing) -> tt::Spacing {
+    match spacing {
+        proc_macro2::Spacing::Alone => tt::Spacing::Alone,
+        proc_macro2::Spacing::Joint => tt::Spacing::Joint,
     }
+}
 
-    fn from_proc_macro2_punct(punct: &proc_macro2::Punct) -> tt::Punct<TokenId> {
-        tt::Punct {
-            char: punct.as_char(),
-            spacing: from_proc_macro2_spacing(punct.spacing()),
-            span: TokenId::unspecified(),
-        }
-    }
-
-    fn from_proc_macro2_spacing(spacing: proc_macro2::Spacing) -> tt::Spacing {
-        match spacing {
-            proc_macro2::Spacing::Alone => tt::Spacing::Alone,
-            proc_macro2::Spacing::Joint => tt::Spacing::Joint,
-        }
-    }
-
-    fn from_proc_macro2_literal(lit: &proc_macro2::Literal) -> tt::Literal<TokenId> {
-        tt::Literal {
-            text: lit.to_string().into(),
-            span: TokenId::unspecified(),
-        }
+fn from_proc_macro2_literal(lit: &proc_macro2::Literal) -> tt::Literal<Span> {
+    let anchor = SpanAnchor {
+        file_id: FileId::from_raw(0),
+        ast_id: ErasedFileAstId::from_raw(RawIdx::from(0)),
+    };
+    tt::Literal {
+        text: lit.to_string().into(),
+        span: Span {
+            range: TextRange::empty(0.into()),
+            anchor,
+            ctx: SyntaxContextId::ROOT
+        },
     }
 }
 
 fn from_ra_subtree(subtree: &tt::Subtree<impl Copy>) -> proc_macro2::Group {
-    return proc_macro2::Group::new(
+    proc_macro2::Group::new(
         from_ra_delimiter(subtree.delimiter),
         subtree.token_trees.iter().map(from_ra_token_tree).collect(),
-    );
+    )
+}
 
-    fn from_ra_delimiter(delimiter: tt::Delimiter<impl Copy>) -> proc_macro2::Delimiter {
-        match delimiter.kind {
-            DelimiterKind::Parenthesis => proc_macro2::Delimiter::Parenthesis,
-            DelimiterKind::Brace => proc_macro2::Delimiter::Brace,
-            DelimiterKind::Bracket => proc_macro2::Delimiter::Bracket,
-            DelimiterKind::Invisible => proc_macro2::Delimiter::None,
-        }
+fn from_ra_delimiter(delimiter: tt::Delimiter<impl Copy>) -> proc_macro2::Delimiter {
+    match delimiter.kind {
+        DelimiterKind::Parenthesis => proc_macro2::Delimiter::Parenthesis,
+        DelimiterKind::Brace => proc_macro2::Delimiter::Brace,
+        DelimiterKind::Bracket => proc_macro2::Delimiter::Bracket,
+        DelimiterKind::Invisible => proc_macro2::Delimiter::None,
     }
+}
 
-    fn from_ra_token_tree(tt: &tt::TokenTree<impl Copy>) -> proc_macro2::TokenTree {
-        match tt {
-            tt::TokenTree::Subtree(s) => proc_macro2::TokenTree::Group(from_ra_subtree(s)),
-            tt::TokenTree::Leaf(Leaf::Ident(i)) => from_ra_ident(i).into(),
-            &tt::TokenTree::Leaf(Leaf::Punct(p)) => from_ra_punct(p).into(),
-            tt::TokenTree::Leaf(Leaf::Literal(l)) => from_ra_literal(l).into(),
-        }
+fn from_ra_token_tree(tt: &tt::TokenTree<impl Copy>) -> proc_macro2::TokenTree {
+    match tt {
+        tt::TokenTree::Subtree(s) => proc_macro2::TokenTree::Group(from_ra_subtree(s)),
+        tt::TokenTree::Leaf(Leaf::Ident(i)) => from_ra_ident(i).into(),
+        &tt::TokenTree::Leaf(Leaf::Punct(p)) => from_ra_punct(p).into(),
+        tt::TokenTree::Leaf(Leaf::Literal(l)) => from_ra_literal(l).into(),
     }
+}
 
-    fn from_ra_ident(ident: &tt::Ident<impl Copy>) -> proc_macro2::Ident {
-        proc_macro2::Ident::new(&ident.text, proc_macro2::Span::call_site())
-    }
+fn from_ra_ident(ident: &tt::Ident<impl Copy>) -> proc_macro2::Ident {
+    proc_macro2::Ident::new(&ident.text, proc_macro2::Span::call_site())
+}
 
-    fn from_ra_punct(punct: tt::Punct<impl Copy>) -> proc_macro2::Punct {
-        proc_macro2::Punct::new(punct.char, from_ra_spacing(punct.spacing))
-    }
+fn from_ra_punct(punct: tt::Punct<impl Copy>) -> proc_macro2::Punct {
+    proc_macro2::Punct::new(punct.char, from_ra_spacing(punct.spacing))
+}
 
-    fn from_ra_spacing(spacing: tt::Spacing) -> proc_macro2::Spacing {
-        match spacing {
-            tt::Spacing::Alone => proc_macro2::Spacing::Alone,
-            tt::Spacing::Joint => proc_macro2::Spacing::Joint,
-        }
+fn from_ra_spacing(spacing: tt::Spacing) -> proc_macro2::Spacing {
+    match spacing {
+        tt::Spacing::Alone => proc_macro2::Spacing::Alone,
+        tt::Spacing::Joint => proc_macro2::Spacing::Joint,
     }
+}
 
-    fn from_ra_literal(lit: &tt::Literal<impl Copy>) -> proc_macro2::Literal {
-        syn::parse_str(&lit.text)
-            .unwrap_or_else(|e| panic!("could not parse {:?} as a literal: {}", &lit.text, e))
-    }
+fn from_ra_literal(lit: &tt::Literal<impl Copy>) -> proc_macro2::Literal {
+    syn::parse_str(&lit.text)
+        .unwrap_or_else(|e| panic!("could not parse {:?} as a literal: {}", &lit.text, e))
 }
